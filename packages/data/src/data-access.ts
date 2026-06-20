@@ -26,13 +26,19 @@ export const SEED_DEVIATION = 350;
 export const SEED_VOLATILITY = 0.06;
 
 /**
- * Create a Supabase client. Disables session persistence by default so it is
- * safe in the generator and in tests (the play app's auth flow, #13, opts back
- * in).
+ * Create a Supabase client. Session persistence is OFF by default so the
+ * generator and tests stay stateless; the play app's auth flow (#13) opts in
+ * with `{ persistSession: true }` so a signed-in session survives reloads and
+ * is portable across devices.
  */
-export function createSupabaseClient(url: string, key: string): SupabaseClient {
+export function createSupabaseClient(
+  url: string,
+  key: string,
+  options: { persistSession?: boolean } = {},
+): SupabaseClient {
+  const persist = options.persistSession ?? false;
   return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
+    auth: { persistSession: persist, autoRefreshToken: persist },
   });
 }
 
@@ -69,6 +75,7 @@ function rowToAttempt(row: AttemptRow): Attempt {
     puzzleId: row.puzzle_id,
     userLine: row.user_line,
     solved: row.solved,
+    ratingAfter: row.rating_after,
     createdAt: row.created_at,
   };
 }
@@ -182,6 +189,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
         puzzle_id: attempt.puzzleId,
         user_line: attempt.userLine,
         solved: attempt.solved,
+        rating_after: attempt.ratingAfter ?? null,
       })
       .select('*')
       .single();

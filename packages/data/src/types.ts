@@ -57,6 +57,8 @@ export interface Attempt {
   puzzleId: string;
   userLine: readonly Placement[];
   solved: boolean;
+  /** The player's rating immediately after this attempt (the trend point). */
+  ratingAfter: number | null;
   createdAt: string;
 }
 
@@ -66,6 +68,8 @@ export interface NewAttempt {
   puzzleId: string;
   userLine: readonly Placement[];
   solved: boolean;
+  /** The player's rating after this attempt, for the rating history (#13). */
+  ratingAfter?: number;
 }
 
 // --- Postgres row shapes (snake_case, as returned by supabase-js). ---
@@ -97,5 +101,6 @@ export interface AttemptRow {
   puzzle_id: string;
   user_line: readonly Placement[];
   solved: boolean;
+  rating_after: number | null;
   created_at: string;
 }

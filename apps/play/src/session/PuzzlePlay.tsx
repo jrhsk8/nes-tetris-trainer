@@ -17,9 +17,11 @@ export type PlayDb = Pick<
 export interface PuzzlePlayProps {
   db: PlayDb;
   userId: string;
+  /** Called when a new puzzle is loaded (e.g. to refresh the rating history). */
+  onAdvance?: () => void;
 }
 
-export function PuzzlePlay({ db, userId }: PuzzlePlayProps) {
+export function PuzzlePlay({ db, userId, onAdvance }: PuzzlePlayProps) {
   // undefined = loading, null = empty bank, Puzzle = ready.
   const [puzzle, setPuzzle] = useState<Puzzle | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -27,12 +29,13 @@ export function PuzzlePlay({ db, userId }: PuzzlePlayProps) {
   const load = useCallback(async () => {
     setPuzzle(undefined);
     setError(null);
+    onAdvance?.();
     try {
       setPuzzle(await db.getRandomPuzzle());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load a puzzle');
     }
-  }, [db]);
+  }, [db, onAdvance]);
 
   useEffect(() => {
     void load();

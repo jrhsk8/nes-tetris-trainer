@@ -71,6 +71,7 @@ export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps
           puzzleId: puzzle.id,
           userLine,
           solved,
+          ratingAfter: applied.after.rating,
         });
         rating = { before: applied.before, after: applied.after, delta: applied.delta };
       } catch {
