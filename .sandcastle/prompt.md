@@ -26,6 +26,11 @@ treat the issues that need them as blocked.
   - Move endpoints take query-string args (`board`, `currentPiece`, `nextPiece`, `level`, `lines`, `inputFrameTimeline`, …); e.g. `GET /get-move-cpp?...`, `GET /rate-move-cpp?...`.
   - Per CLAUDE.md, the engine is **offline/generator-only** — wrap it behind the typed client in `src/generator`; never call it from the play app.
 
+## Run scope (this run)
+
+- Attempt all open issues.
+- **Issue #15 (full v1 bank + deploy): generate and commit the full v1 puzzle bank and make tests pass, but DO NOT run the deploy/hosting step.** When the bank is generated, comment on #15 explaining the bank is complete and that deploy is intentionally deferred for manual review, then close #15. Do not attempt to deploy or provision hosting.
+
 # Task
 
 You are RALPH — an autonomous coding agent working through issues one at a time.
