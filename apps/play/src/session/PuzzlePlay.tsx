@@ -4,7 +4,7 @@
  * Handles the loading, empty-bank, and error states.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DataAccess, Puzzle } from '@trainer/data';
 import { PuzzleSession } from './PuzzleSession.js';
 
@@ -26,16 +26,26 @@ export function PuzzlePlay({ db, userId, onAdvance }: PuzzlePlayProps) {
   const [puzzle, setPuzzle] = useState<Puzzle | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
+  // Hold the latest `onAdvance` in a ref so `load` does NOT depend on its
+  // identity. Callers (e.g. Account) pass a fresh inline callback every render;
+  // if `load` (and thus the mount effect) depended on it, each render would
+  // re-select a puzzle — the rapid flashing loop in #17. With the ref, `load`
+  // only changes when `db` does, so the loader runs exactly once on mount.
+  const onAdvanceRef = useRef(onAdvance);
+  useEffect(() => {
+    onAdvanceRef.current = onAdvance;
+  }, [onAdvance]);
+
   const load = useCallback(async () => {
     setPuzzle(undefined);
     setError(null);
-    onAdvance?.();
+    onAdvanceRef.current?.();
     try {
       setPuzzle(await db.getRandomPuzzle());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load a puzzle');
     }
-  }, [db, onAdvance]);
+  }, [db]);
 
   useEffect(() => {
     void load();
