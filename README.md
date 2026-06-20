@@ -1,6 +1,6 @@
 # NES Tetris Stacking Trainer
 
-A public, multi-user web app that serves pre-generated **2-ply NES Tetris placement puzzles** and tracks each player's stacking skill with a **Glicko co-rating**. The goal is to train *stacking judgment* — where to put each piece — independent of execution speed.
+A public, multi-user web app that serves pre-generated **2-ply NES Tetris placement puzzles** and tracks each player's stacking skill with a **Glicko co-rating**. The goal is to train _stacking judgment_ — where to put each piece — independent of execution speed.
 
 > **v1 is a working prototype of the core loop.** See the full spec: [`docs/PRD-v1.md`](docs/PRD-v1.md).
 
@@ -16,6 +16,30 @@ A public, multi-user web app that serves pre-generated **2-ply NES Tetris placem
 - Rating: Glicko-2 (npm library), client-side.
 - Generator: offline Node script.
 
+## Repository layout
+
+npm workspaces monorepo:
+
+- `packages/core` (`@trainer/core`) — pure puzzle logic (board model, metrics,
+  checker, rating glue) shared by both halves. No engine, network, or DOM.
+- `apps/play` (`@trainer/play`) — the static React + Vite SPA players use.
+- `generator` (`@trainer/generator`) — the offline Node + TypeScript pipeline.
+
+## Development
+
+```bash
+npm install        # install all workspaces and link @trainer/core
+npm run typecheck  # tsc --build across all workspaces (project references)
+npm test           # Vitest across all workspaces
+npm run lint       # ESLint (flat config)
+npm run format     # Prettier --write
+npm run build      # static production build of apps/play (GitHub Pages-ready)
+```
+
+The play app builds with a relative `base` so the static output works both on a
+GitHub Pages project subpath and on the owner's own domain.
+
 ## Status
 
-Net-new — PRD written, implementation not yet started.
+Net-new — scaffold in place (issue #1). Core puzzle logic, generator pipeline,
+and play UI land in subsequent issues.

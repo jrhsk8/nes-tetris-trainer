@@ -1,0 +1,168 @@
+/**
+ * Puzzle session flow (#11) — the headline play loop (docs/PRD-v1.md "Solution",
+ * user stories 1-10). Presents the board with the current and next piece,
+ * captures placement 1, then presents the second piece with NO lookahead and
+ * captures placement 2, grades the line (#5), updates the rating (#6), and
+ * records the attempt (#2).
+ *
+ * A wrong FIRST placement ends the puzzle immediately and reveals the optimal
+ * line — the second move is not played, since it would no longer make sense
+ * (user story 7 / the checker's whole-line rule).
+ */
+
+import { useCallback, useMemo, useState } from 'react';
+import {
+  applyPlacement,
+  decodeBoard,
+  gradeAttempt,
+  type Line,
+  type Placement,
+} from '@trainer/core';
+import type { DataAccess, Glicko, Puzzle } from '@trainer/data';
+import { applyAttempt, seedRating, updateRatings } from '@trainer/rating';
+import { PlacementInput } from '../board/PlacementInput.js';
+import { Feedback } from '../feedback/index.js';
+
+/** The persistence the session needs (rating read/write + attempt insert). */
+export type SessionDb = Pick<DataAccess, 'getUserRating' | 'upsertUserRating' | 'insertAttempt'>;
+
+export interface PuzzleSessionProps {
+  puzzle: Puzzle;
+  /** The player's id (a stub before auth, #13). */
+  userId: string;
+  db: SessionDb;
+  /** Called when the player asks for the next puzzle. */
+  onNext?: () => void;
+}
+
+interface RatingChange {
+  before: Glicko;
+  after: Glicko;
+  delta: number;
+}
+
+interface SessionResult {
+  solved: boolean;
+  rating: RatingChange;
+  userLine: readonly Placement[];
+}
+
+type Phase = 'place1' | 'place2' | 'grading' | 'done';
+
+export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps) {
+  const board0 = useMemo(() => decodeBoard(puzzle.board), [puzzle.board]);
+  const [phase, setPhase] = useState<Phase>('place1');
+  const [placement1, setPlacement1] = useState<Placement | null>(null);
+  const [result, setResult] = useState<SessionResult | null>(null);
+
+  const board1 = useMemo(
+    () => (placement1 ? applyPlacement(board0, puzzle.piece1, placement1) : null),
+    [board0, puzzle.piece1, placement1],
+  );
+
+  const finish = useCallback(
+    async (userLine: Placement[], solved: boolean) => {
+      setPhase('grading');
+      let rating: RatingChange;
+      try {
+        const applied = await applyAttempt(db, userId, puzzle.glicko, solved);
+        await db.insertAttempt({
+          userId,
+          puzzleId: puzzle.id,
+          userLine,
+          solved,
+          ratingAfter: applied.after.rating,
+        });
+        rating = { before: applied.before, after: applied.after, delta: applied.delta };
+      } catch {
+        // Persistence unavailable (e.g. before auth/RLS lands in #13): still
+        // show the computed rating change so the loop stays playable.
+        const update = updateRatings(seedRating(), puzzle.glicko, solved);
+        rating = {
+          before: seedRating(),
+          after: update.user,
+          delta: update.user.rating - seedRating().rating,
+        };
+      }
+      setResult({ solved, rating, userLine });
+      setPhase('done');
+    },
+    [db, userId, puzzle.glicko, puzzle.id],
+  );
+
+  const onConfirm1 = useCallback(
+    (p1: Placement) => {
+      setPlacement1(p1);
+      const firstCorrect = gradeAttempt(puzzle.optimalLine, [p1, p1]).firstCorrect;
+      if (!firstCorrect) {
+        // Wrong first move — end immediately and reveal the line.
+        void finish([p1], false);
+      } else {
+        setPhase('place2');
+      }
+    },
+    [puzzle.optimalLine, finish],
+  );
+
+  const onConfirm2 = useCallback(
+    (p2: Placement) => {
+      const line: Line = [placement1!, p2];
+      const graded = gradeAttempt(puzzle.optimalLine, line);
+      void finish([placement1!, p2], graded.solved);
+    },
+    [placement1, puzzle.optimalLine, finish],
+  );
+
+  if (phase === 'place1') {
+    return (
+      <section aria-label="puzzle">
+        <p>
+          Place the <strong>{puzzle.piece1}</strong>. Next:{' '}
+          <strong data-testid="next-piece">{puzzle.piece2}</strong>
+        </p>
+        <PlacementInput board={board0} piece={puzzle.piece1} onConfirm={onConfirm1} />
+      </section>
+    );
+  }
+
+  if (phase === 'place2' && board1) {
+    return (
+      <section aria-label="puzzle">
+        <p>
+          Place the <strong>{puzzle.piece2}</strong>. <em>(no next piece)</em>
+        </p>
+        <PlacementInput board={board1} piece={puzzle.piece2} onConfirm={onConfirm2} />
+      </section>
+    );
+  }
+
+  if (phase === 'grading') {
+    return <section aria-label="puzzle">Grading…</section>;
+  }
+
+  // phase === 'done'
+  const outcome = result!.solved ? 'Solved!' : 'Not solved';
+  const { before, after, delta } = result!.rating;
+  return (
+    <section aria-label="result">
+      <h2 data-testid="outcome">{outcome}</h2>
+      <p data-testid="rating-change">
+        Rating: {Math.round(before.rating)} → {Math.round(after.rating)} ({delta >= 0 ? '+' : ''}
+        {Math.round(delta)})
+      </p>
+      <Feedback
+        board0={board0}
+        piece1={puzzle.piece1}
+        piece2={puzzle.piece2}
+        optimalLine={puzzle.optimalLine}
+        optimalMetrics={puzzle.optimalMetrics}
+        userLine={result!.userLine}
+      />
+      {onNext ? (
+        <button type="button" onClick={onNext}>
+          Next puzzle
+        </button>
+      ) : null}
+    </section>
+  );
+}

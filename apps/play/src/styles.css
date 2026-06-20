@@ -1,0 +1,410 @@
+/*
+ * Play app theme (#19) — a deliberately designed, modern layout with a retro
+ * NES arcade skin, cohesive with the pixel-accurate level-18 board (#18).
+ *
+ * Design language:
+ *  - Palette is the NES level-18 set: black field, white, red ($16 #d82800),
+ *    blue ($12 #0058f8), plus NES grey. No violet gradients, no glassmorphism.
+ *  - Pixel display type ("Press Start 2P") for headings/HUD; a clean readable
+ *    sans for body copy, so it reads modern, not like an unreadable ROM.
+ *  - Chunky 8-bit chrome: hard borders, hard offset shadows, zero rounding.
+ *  - A tasteful CRT layer (scanlines + vignette) over the whole page.
+ */
+
+:root {
+  --nes-black: #0b0c10;
+  --nes-field: #000000;
+  --nes-white: #fcfcfc;
+  --nes-red: #d82800;
+  --nes-blue: #0058f8;
+  --nes-grey: #bcbcbc;
+  --nes-grey-dark: #4a4a52;
+  --nes-gold: #fcd000;
+
+  --panel: #14151c;
+  --panel-edge: #2a2c38;
+  --ink: #e8e8ee;
+  --ink-dim: #9aa0b4;
+
+  --font-pixel: 'Press Start 2P', 'Courier New', monospace;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --space: 16px;
+  --shadow-hard: 4px 4px 0 0 #000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background-color: var(--nes-black);
+  /* Subtle blocky field texture — NES black with a faint grid, not a gradient. */
+  background-image:
+    linear-gradient(rgba(0, 88, 248, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 88, 248, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* CRT overlay: scanlines + corner vignette, purely decorative. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.18) 0,
+    rgba(0, 0, 0, 0.18) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  box-shadow: inset 0 0 160px 40px rgba(0, 0, 0, 0.7);
+  mix-blend-mode: multiply;
+}
+
+img,
+svg {
+  image-rendering: pixelated;
+}
+
+/* ---- Shell + header ---------------------------------------------------- */
+
+#root {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: clamp(16px, 4vw, 40px);
+}
+
+main {
+  display: block;
+}
+
+.app-header {
+  border: 4px solid var(--nes-white);
+  box-shadow: var(--shadow-hard);
+  background: var(--nes-field);
+  padding: clamp(18px, 3vw, 28px);
+  margin-bottom: calc(var(--space) * 1.75);
+  position: relative;
+}
+
+/* A red/white/blue arcade marquee rule along the top of the header. */
+.app-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--nes-red) 0,
+    var(--nes-red) 16px,
+    var(--nes-white) 16px,
+    var(--nes-white) 32px,
+    var(--nes-blue) 32px,
+    var(--nes-blue) 48px
+  );
+}
+
+h1 {
+  font-family: var(--font-pixel);
+  font-size: clamp(15px, 3.4vw, 26px);
+  line-height: 1.5;
+  letter-spacing: 1px;
+  margin: 6px 0 10px;
+  color: var(--nes-white);
+  text-shadow:
+    3px 3px 0 var(--nes-blue),
+    6px 6px 0 var(--nes-red);
+}
+
+.app-header p {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 0.95rem;
+  max-width: 60ch;
+}
+
+h2 {
+  font-family: var(--font-pixel);
+  font-size: clamp(11px, 2vw, 15px);
+  line-height: 1.6;
+  letter-spacing: 1px;
+  color: var(--nes-gold);
+  margin: 0 0 var(--space);
+}
+
+/* ---- Layout: play area + rating rail ----------------------------------- */
+
+.account {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: calc(var(--space) * 1.5);
+}
+
+@media (min-width: 820px) {
+  .account {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    align-items: start;
+  }
+  .account-header {
+    grid-column: 1 / -1;
+  }
+}
+
+.account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  border: 3px solid var(--panel-edge);
+  background: var(--panel);
+  padding: 12px 16px;
+}
+
+[data-testid='account-email'] {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  color: var(--nes-blue);
+  word-break: break-all;
+}
+
+/* ---- Cards (panels) ---------------------------------------------------- */
+
+section[aria-label='rating'],
+section[aria-label='puzzle'],
+section[aria-label='result'],
+section[aria-label='sign in'],
+.feedback {
+  border: 3px solid var(--panel-edge);
+  background: var(--panel);
+  padding: var(--space);
+  box-shadow: var(--shadow-hard);
+}
+
+section[aria-label='rating'] {
+  position: sticky;
+  top: var(--space);
+}
+
+[data-testid='current-rating'] {
+  font-family: var(--font-pixel);
+  font-size: 22px;
+  color: var(--nes-white);
+}
+
+[data-testid='attempt-count'] {
+  color: var(--ink-dim);
+  font-size: 0.85rem;
+}
+
+[data-testid='rating-trend'] {
+  display: block;
+  margin-top: 8px;
+  border: 2px solid var(--panel-edge);
+  background: var(--nes-field);
+  padding: 6px;
+  width: 100%;
+  height: auto;
+}
+
+/* ---- Buttons: 8-bit blocks -------------------------------------------- */
+
+button {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.5px;
+  color: var(--nes-white);
+  background: var(--nes-blue);
+  border: 3px solid var(--nes-white);
+  box-shadow: var(--shadow-hard);
+  padding: 10px 14px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition:
+    transform 0.05s steps(1),
+    box-shadow 0.05s steps(1);
+}
+
+button:hover {
+  background: var(--nes-red);
+}
+
+button:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 0 #000;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--nes-gold);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  background: var(--nes-grey-dark);
+  border-color: var(--nes-grey);
+  color: var(--nes-grey);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* Placement D-pad row reads like an arcade control deck. */
+.placement-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: var(--space);
+}
+
+.placement-input {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.placement-input:focus-visible {
+  outline: 3px solid var(--nes-gold);
+  outline-offset: 4px;
+}
+
+/* ---- Forms ------------------------------------------------------------- */
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: var(--space);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+}
+
+input {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--nes-field);
+  border: 3px solid var(--panel-edge);
+  padding: 10px;
+}
+
+input:focus-visible {
+  outline: none;
+  border-color: var(--nes-blue);
+}
+
+.oauth {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.oauth button {
+  flex: 1 1 auto;
+  background: var(--nes-field);
+}
+
+.oauth button:hover {
+  background: var(--nes-blue);
+}
+
+/* ---- Feedback table ---------------------------------------------------- */
+
+.feedback {
+  margin-top: var(--space);
+}
+
+.metric-deltas {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--space);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-deltas th,
+.metric-deltas td {
+  border: 2px solid var(--panel-edge);
+  padding: 8px 10px;
+  text-align: right;
+}
+
+.metric-deltas th {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--nes-gold);
+  background: var(--nes-field);
+}
+
+.metric-deltas th:first-child,
+.metric-deltas td:first-child {
+  text-align: left;
+}
+
+[data-testid^='delta-'] {
+  font-weight: 700;
+  color: var(--nes-red);
+}
+
+[data-testid='outcome'] {
+  color: var(--nes-gold);
+}
+
+[data-testid='rating-change'] {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--nes-white);
+}
+
+/* Status / error messages */
+[role='alert'] {
+  border-left: 4px solid var(--nes-red);
+  padding: 8px 12px;
+  background: rgba(216, 40, 0, 0.12);
+  color: #ffb3a0;
+}
+
+[role='status'] {
+  border-left: 4px solid var(--nes-blue);
+  padding: 8px 12px;
+  background: rgba(0, 88, 248, 0.12);
+  color: #a8c4ff;
+}
+
+/* The board centers itself within the play card. */
+section[aria-label='puzzle'] .board-well,
+.feedback .board-well {
+  display: block;
+  margin: var(--space) auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+}

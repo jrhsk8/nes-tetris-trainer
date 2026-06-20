@@ -1,0 +1,19 @@
+{
+  "name": "@trainer/rating",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@trainer/core": "*",
+    "@trainer/data": "*",
+    "glicko2-lite": "^6.0.0"
+  }
+}

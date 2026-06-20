@@ -1,0 +1,51 @@
+# Static deploy of the play app to GitHub Pages (#15).
+#
+# DEFERRED / MANUAL ONLY: this workflow is triggered by hand (workflow_dispatch),
+# never automatically on push, so enabling Pages and the first deploy stay a
+# deliberate, reviewed step. See docs/DEPLOY.md.
+#
+# Required repository configuration before the first run:
+#   - Settings → Pages → Source: GitHub Actions.
+#   - Secrets VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (the public anon key;
+#     never the service-role key — that stays offline with the generator).
+name: Deploy play app to Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace @trainer/play
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/play/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
