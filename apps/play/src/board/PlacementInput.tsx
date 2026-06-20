@@ -14,6 +14,7 @@ import {
   COLS,
   ORIENTATIONS,
   restingCells,
+  type ColorGrid,
   type Grid,
   type Piece,
   type Placement,
@@ -38,6 +39,8 @@ function nearest(target: number, options: number[]): number {
 export interface PlacementInputProps {
   /** The board the piece is placed on. */
   board: Grid;
+  /** Optional colour grid parallel to `board` for the existing stack (#28). */
+  colorGrid?: ColorGrid;
   /** The piece being placed. */
   piece: Piece;
   /** Called with the chosen resting placement when the player confirms. */
@@ -53,6 +56,7 @@ const SPAWN_COLUMN = 3;
 
 export function PlacementInput({
   board,
+  colorGrid,
   piece,
   onConfirm,
   label,
@@ -145,7 +149,7 @@ export function PlacementInput({
       data-col={col}
     >
       {label ? <p className="placement-label">{label}</p> : null}
-      <Board grid={board} ghostCells={ghostCells} ghostPiece={piece} />
+      <Board grid={board} colorGrid={colorGrid} ghostCells={ghostCells} ghostPiece={piece} />
       <div className="placement-controls" role="group" aria-label="placement controls">
         <button type="button" onClick={moveLeft} aria-label="Move left">
           ◀

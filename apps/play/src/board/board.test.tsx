@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyBoard, restingCells, type Grid, type Placement } from '@trainer/core';
+import { emptyBoard, emptyColorGrid, restingCells, type Grid, type Placement } from '@trainer/core';
 import { Board } from './Board.js';
 import { PlacementInput } from './PlacementInput.js';
 
@@ -50,6 +50,28 @@ describe('Board', () => {
     render(<Board grid={emptyBoard()} ghostCells={[[18, 4]]} ghostPiece="Z" />);
     const ghost = screen.getByTestId('cell-18-4');
     expect(decodeURIComponent(ghost.style.backgroundImage)).toContain('#d82800');
+  });
+
+  it('colours filled cells by their colour group from the colour grid (#28)', () => {
+    const grid: Grid = emptyBoard();
+    const colorGrid = emptyColorGrid();
+    grid[19][0] = 1;
+    colorGrid[19][0] = 2; // Z/L group → $16 red
+    grid[19][1] = 1;
+    colorGrid[19][1] = 3; // J/S group → $12 blue
+    grid[19][2] = 1; // no colour-grid entry → white fallback
+
+    render(<Board grid={grid} colorGrid={colorGrid} />);
+
+    expect(decodeURIComponent(screen.getByTestId('cell-19-0').style.backgroundImage)).toContain(
+      '#d82800',
+    );
+    const blueCell = decodeURIComponent(screen.getByTestId('cell-19-1').style.backgroundImage);
+    expect(blueCell).toContain('#0058f8');
+    expect(blueCell).not.toContain('#d82800');
+    // A filled cell with no colour-grid group falls back to the white sprite.
+    const whiteCell = decodeURIComponent(screen.getByTestId('cell-19-2').style.backgroundImage);
+    expect(whiteCell).not.toContain('#d82800');
   });
 });
 

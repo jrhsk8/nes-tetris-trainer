@@ -40,6 +40,20 @@ const noopDb: SessionDb = {
   },
 };
 
+describe('Authentic stack colours (#28)', () => {
+  it('renders the stored colour grid: a filled stack cell shows its NES colour group', () => {
+    // A board with one filled cell at row 19, col 0, coloured group 2 (Z/L red).
+    const board = '0'.repeat(190) + '1' + '0'.repeat(9);
+    const colors = '0'.repeat(190) + '2' + '0'.repeat(9);
+    const puzzle: Puzzle = { ...makePuzzle(), board, colors };
+
+    render(<PuzzleSession puzzle={puzzle} userId="u1" db={noopDb} />);
+
+    const cell = screen.getByTestId('cell-19-0');
+    expect(decodeURIComponent(cell.style.backgroundImage)).toContain('#d82800');
+  });
+});
+
 describe('Play screen flanking layout (#22)', () => {
   it('renders the board in the centre with the rating rail on the left and the next box on the right', () => {
     render(

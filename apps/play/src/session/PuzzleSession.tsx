@@ -18,8 +18,14 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   applyPlacement,
+  applyPlacementColored,
   decodeBoard,
+  decodeColors,
   gradeAttempt,
+  PIECE_GROUP,
+  ROWS,
+  COLS,
+  type ColorGrid,
   type Line,
   type Placement,
 } from '@trainer/core';
@@ -70,6 +76,12 @@ export function PuzzleSession({
   bindings = DEFAULT_BINDINGS,
 }: PuzzleSessionProps) {
   const board0 = useMemo(() => decodeBoard(puzzle.board), [puzzle.board]);
+  // The puzzle's stored colour grid (#28), decoded once. Legacy puzzles carry
+  // an empty string; those render with the white-group fallback.
+  const colors0 = useMemo<ColorGrid | undefined>(
+    () => (puzzle.colors && puzzle.colors.length === ROWS * COLS ? decodeColors(puzzle.colors) : undefined),
+    [puzzle.colors],
+  );
   const [phase, setPhase] = useState<Phase>('place1');
   const [placement1, setPlacement1] = useState<Placement | null>(null);
   const [result, setResult] = useState<SessionResult | null>(null);
@@ -77,6 +89,16 @@ export function PuzzleSession({
   const board1 = useMemo(
     () => (placement1 ? applyPlacement(board0, puzzle.piece1, placement1) : null),
     [board0, puzzle.piece1, placement1],
+  );
+  // Colours after the player's first move, so the stack stays authentic into
+  // placement 2 (the placed piece takes its own colour group).
+  const colors1 = useMemo<ColorGrid | undefined>(
+    () =>
+      colors0 && placement1
+        ? applyPlacementColored(board0, colors0, puzzle.piece1, placement1, PIECE_GROUP[puzzle.piece1])
+            .colors
+        : undefined,
+    [colors0, board0, puzzle.piece1, placement1],
   );
 
   const finish = useCallback(
@@ -141,6 +163,7 @@ export function PuzzleSession({
           </p>
           <PlacementInput
             board={board0}
+            colorGrid={colors0}
             piece={puzzle.piece1}
             onConfirm={onConfirm1}
             bindings={bindings}
@@ -162,6 +185,7 @@ export function PuzzleSession({
           </p>
           <PlacementInput
             board={board1}
+            colorGrid={colors1}
             piece={puzzle.piece2}
             onConfirm={onConfirm2}
             bindings={bindings}
