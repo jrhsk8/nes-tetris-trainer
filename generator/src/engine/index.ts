@@ -7,12 +7,14 @@ export {
   StackRabbitClient,
   parseMoveResponse,
   parseRateResponse,
+  parseTopMovesResponse,
   SPAWN_COLUMN,
   DEFAULT_BASE_URL,
 } from './client.js';
 export type {
   MoveQuery,
   EngineMove,
+  ScoredMove,
   RateMoveResult,
   StackRabbitClientOptions,
   ParsedMove,

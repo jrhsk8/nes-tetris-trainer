@@ -81,7 +81,11 @@ export class SelfPlayBoardSource implements BoardSource {
   private readonly rng: () => number;
   private readonly config: SelfPlayConfig;
 
-  constructor(engine: MoveEngine, rng: () => number = Math.random, config: Partial<SelfPlayConfig> = {}) {
+  constructor(
+    engine: MoveEngine,
+    rng: () => number = Math.random,
+    config: Partial<SelfPlayConfig> = {},
+  ) {
     this.engine = engine;
     this.rng = rng;
     this.config = { ...DEFAULT_CONFIG, ...config };

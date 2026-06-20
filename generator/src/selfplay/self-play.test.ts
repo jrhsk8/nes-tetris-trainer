@@ -23,7 +23,8 @@ const forbiddenEngine: MoveEngine = {
 };
 
 const isValidGrid = (g: Grid) =>
-  g.length === ROWS && g.every((row) => row.length === COLS && row.every((c) => c === 0 || c === 1));
+  g.length === ROWS &&
+  g.every((row) => row.length === COLS && row.every((c) => c === 0 || c === 1));
 const filledCells = (g: Grid) => g.flat().filter((c) => c).length;
 
 describe('enumerateLegalMoves', () => {

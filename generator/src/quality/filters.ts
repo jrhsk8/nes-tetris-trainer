@@ -40,7 +40,11 @@ export function movesEqual(a: ComparableMove, b: ComparableMove): boolean {
  * Apply this to BOTH plies of a candidate line; the line is fair only if every
  * ply clears the gate.
  */
-export function isUnambiguous(bestValue: number, secondBestValue: number, threshold: number): boolean {
+export function isUnambiguous(
+  bestValue: number,
+  secondBestValue: number,
+  threshold: number,
+): boolean {
   if (!Number.isFinite(bestValue) || !Number.isFinite(secondBestValue)) return false;
   return bestValue - secondBestValue >= threshold;
 }

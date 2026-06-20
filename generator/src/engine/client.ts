@@ -48,6 +48,18 @@ export interface EngineMove {
   totalValue: number;
 }
 
+/** A ranked move with its engine valuation (from the top-moves endpoint). */
+export interface ScoredMove {
+  /** Rotation index (StackRabbit's numbering). */
+  rotation: number;
+  /** Horizontal offset of the piece origin from the spawn column. */
+  x: number;
+  /** Vertical offset of the piece origin from its spawn row. */
+  y: number;
+  /** Engine valuation of the move (playout score; higher is better). */
+  totalValue: number;
+}
+
 /** The valuations from scoring a specific placement against the engine's best. */
 export interface RateMoveResult {
   /** Value of the supplied (player) move. */
@@ -70,6 +82,13 @@ export interface StackRabbitClientOptions {
   playoutCount?: number;
   /** Playout length for value queries (only used when `playoutCount > 0`). */
   playoutLength?: number;
+  /**
+   * Playout count for the top-moves endpoint, which requires playouts to
+   * populate its ranked list (an eval-only query returns an empty list).
+   */
+  topMovesPlayoutCount?: number;
+  /** Playout length for the top-moves endpoint. */
+  topMovesPlayoutLength?: number;
 }
 
 /** Parsed fields of a `get-move-cpp` response (`rot,x,y|inputs|board|level|lines`). */
@@ -132,6 +151,31 @@ export function parseRateResponse(body: string): RateMoveResult {
   };
 }
 
+/** One entry of an `engine-movelist-cpp` JSON response. */
+interface TopMoveJson {
+  firstPlacement: [number, number, number];
+  playoutScore: number;
+}
+
+/**
+ * Parse an `engine-movelist-cpp` JSON response into scored moves, sorted
+ * best-first by value. Returns an empty list for the engine's "No legal moves"
+ * sentinel.
+ */
+export function parseTopMovesResponse(body: string): ScoredMove[] {
+  const trimmed = body.trim();
+  if (trimmed === '' || trimmed.startsWith('No legal moves')) return [];
+  const parsed = JSON.parse(trimmed) as TopMoveJson[];
+  return parsed
+    .map((move) => ({
+      rotation: move.firstPlacement[0],
+      x: move.firstPlacement[1],
+      y: move.firstPlacement[2],
+      totalValue: move.playoutScore,
+    }))
+    .sort((a, b) => b.totalValue - a.totalValue);
+}
+
 /**
  * Build the query string shared by the move endpoints. `secondBoard` is the
  * post-move board, required only by `rate-move-cpp`.
@@ -164,12 +208,16 @@ export class StackRabbitClient {
   private readonly fetchImpl: typeof fetch;
   private readonly playoutCount: number;
   private readonly playoutLength: number;
+  private readonly topMovesPlayoutCount: number;
+  private readonly topMovesPlayoutLength: number;
 
   constructor(options: StackRabbitClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.playoutCount = options.playoutCount ?? 0;
     this.playoutLength = options.playoutLength ?? 2;
+    this.topMovesPlayoutCount = options.topMovesPlayoutCount ?? 30;
+    this.topMovesPlayoutLength = options.topMovesPlayoutLength ?? 2;
   }
 
   /** GET a path and return the response body as text, throwing on non-2xx. */
@@ -212,6 +260,19 @@ export class StackRabbitClient {
       // Leave totalValue as NaN if scoring is unavailable; the placement stands.
     }
     return { ...move, totalValue };
+  }
+
+  /**
+   * The engine's ranked candidate moves for the current piece, best-first with
+   * values — used by the fairness (unambiguity) gate to compare the best move
+   * against the second-best. Requires playouts, so it is unsuitable for
+   * degenerate (e.g. empty) boards; mid-game candidates are well-defined.
+   */
+  async getTopMoves(query: MoveQuery): Promise<ScoredMove[]> {
+    const body = await this.get(
+      `engine-movelist-cpp?${buildQuery(query, this.topMovesPlayoutCount, this.topMovesPlayoutLength)}`,
+    );
+    return parseTopMovesResponse(body);
   }
 
   /**
