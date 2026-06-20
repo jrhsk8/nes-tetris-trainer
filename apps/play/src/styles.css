@@ -126,22 +126,12 @@ h2 {
   margin: 0 0 var(--space);
 }
 
-/* ---- Layout: play area + rating rail ----------------------------------- */
+/* ---- Layout: flanking dashboard (#22) ---------------------------------- */
 
 .account {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: calc(var(--space) * 1.5);
-}
-
-@media (min-width: 820px) {
-  .account {
-    grid-template-columns: minmax(0, 1fr) 300px;
-    align-items: start;
-  }
-  .account-header {
-    grid-column: 1 / -1;
-  }
 }
 
 .account-header {
@@ -149,9 +139,88 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: var(--space);
+  flex-wrap: wrap;
   border: 3px solid var(--panel-edge);
   background: var(--panel);
   padding: 12px 16px;
+}
+
+/* In-app view nav (Play / History / Controls) — no router (#22). */
+.app-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.app-nav button {
+  background: var(--nes-field);
+}
+
+.app-nav button.nav-active {
+  background: var(--nes-blue);
+}
+
+/*
+ * Play screen: a three-column flank grid — rating rail | board hero | next /
+ * result rail. The board is always the centre column and never moves between
+ * phases. Below 900px it collapses to a single stacked column.
+ */
+.play-screen {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 260px);
+  gap: calc(var(--space) * 1.5);
+  align-items: start;
+}
+
+.flank-left {
+  grid-column: 1;
+}
+
+.play-center {
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.flank-right {
+  grid-column: 3;
+}
+
+/*
+ * The feedback view drops its two regions (board + result panel) straight into
+ * the centre and right columns, so the board keeps its solving position.
+ */
+.feedback {
+  display: contents;
+}
+
+.play-instruction {
+  margin: 0;
+  text-align: center;
+  color: var(--ink);
+}
+
+/* The board hero: scales with the viewport height, preserving its 1:2 aspect
+ * (10 wide cells → height = 2 × width). No fixed pixel cap (#22). */
+.board {
+  --board-width: min(40vh, 86vw);
+}
+
+@media (max-width: 900px) {
+  .play-screen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .flank-left,
+  .play-center,
+  .flank-right {
+    grid-column: 1;
+  }
+  .board {
+    --board-width: min(78vw, 46vh);
+  }
 }
 
 [data-testid='account-email'] {
@@ -164,19 +233,66 @@ h2 {
 /* ---- Cards (panels) ---------------------------------------------------- */
 
 section[aria-label='rating'],
-section[aria-label='puzzle'],
-section[aria-label='result'],
 section[aria-label='sign in'],
-.feedback {
+section[aria-label='history'],
+section[aria-label='controls'],
+.result-panel,
+.next-box {
   border: 3px solid var(--panel-edge);
   background: var(--panel);
   padding: var(--space);
   box-shadow: var(--shadow-hard);
 }
 
-section[aria-label='rating'] {
-  position: sticky;
-  top: var(--space);
+/* Every panel clips its children, so a chart/table can never spill past its
+ * border (#22). Children are held to the panel width. */
+.flank,
+.result-panel,
+.next-box,
+.play-center,
+section[aria-label='history'],
+section[aria-label='controls'] {
+  overflow: hidden;
+}
+
+.flank > *,
+.result-panel > *,
+.next-box > *,
+.play-center > * {
+  max-width: 100%;
+}
+
+/* The rating rail keeps the sticky-card chrome it had before the dashboard;
+ * the flank wrapper is just a clipping grid cell, not a second card. */
+.flank-left section[aria-label='rating'] {
+  margin: 0;
+}
+
+/* ---- Next-piece box (#22, #23) ----------------------------------------- */
+
+.next-box {
+  text-align: center;
+}
+
+.next-box-label {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--nes-gold);
+  margin: 0 0 10px;
+}
+
+.next-box-piece {
+  font-family: var(--font-pixel);
+  font-size: 28px;
+  color: var(--nes-white);
+  margin: 0;
+}
+
+.next-box-empty {
+  color: var(--ink-dim);
+  margin: 0;
 }
 
 [data-testid='current-rating'] {
@@ -314,10 +430,6 @@ input:focus-visible {
 
 /* ---- Feedback table ---------------------------------------------------- */
 
-.feedback {
-  margin-top: var(--space);
-}
-
 .metric-deltas {
   width: 100%;
   border-collapse: collapse;
@@ -376,11 +488,11 @@ input:focus-visible {
   color: #a8c4ff;
 }
 
-/* The board centers itself within the play card. */
-section[aria-label='puzzle'] .board-well,
-.feedback .board-well {
+/* The board centres itself within the centre column. */
+.play-center .board-well {
   display: block;
-  margin: var(--space) auto;
+  margin: 0 auto;
+  max-width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -8,9 +8,14 @@
  * A wrong FIRST placement ends the puzzle immediately and reveals the optimal
  * line — the second move is not played, since it would no longer make sense
  * (user story 7 / the checker's whole-line rule).
+ *
+ * Laid out as a flanking dashboard (#22): the board is the centred hero and
+ * never moves between phases; the left rail holds the rating, the right rail
+ * holds the next-piece box while solving and the result + chart after an
+ * attempt (see {@link PlayScreen} and {@link Feedback}).
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   applyPlacement,
   decodeBoard,
@@ -21,7 +26,9 @@ import {
 import type { DataAccess, Glicko, Puzzle } from '@trainer/data';
 import { applyAttempt, seedRating, updateRatings } from '@trainer/rating';
 import { PlacementInput } from '../board/PlacementInput.js';
+import { NextPieceBox } from '../board/NextPieceBox.js';
 import { Feedback } from '../feedback/index.js';
+import { PlayScreen } from './PlayScreen.js';
 
 /** The persistence the session needs (rating read/write + attempt insert). */
 export type SessionDb = Pick<DataAccess, 'getUserRating' | 'upsertUserRating' | 'insertAttempt'>;
@@ -33,6 +40,8 @@ export interface PuzzleSessionProps {
   db: SessionDb;
   /** Called when the player asks for the next puzzle. */
   onNext?: () => void;
+  /** Content for the left rail (the rating panel). */
+  leftFlank?: ReactNode;
 }
 
 interface RatingChange {
@@ -49,7 +58,7 @@ interface SessionResult {
 
 type Phase = 'place1' | 'place2' | 'grading' | 'done';
 
-export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps) {
+export function PuzzleSession({ puzzle, userId, db, onNext, leftFlank }: PuzzleSessionProps) {
   const board0 = useMemo(() => decodeBoard(puzzle.board), [puzzle.board]);
   const [phase, setPhase] = useState<Phase>('place1');
   const [placement1, setPlacement1] = useState<Placement | null>(null);
@@ -115,41 +124,49 @@ export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps
 
   if (phase === 'place1') {
     return (
-      <section aria-label="puzzle">
-        <p>
-          Place the <strong>{puzzle.piece1}</strong>. Next:{' '}
-          <strong data-testid="next-piece">{puzzle.piece2}</strong>
-        </p>
-        <PlacementInput board={board0} piece={puzzle.piece1} onConfirm={onConfirm1} />
-      </section>
+      <PlayScreen leftFlank={leftFlank}>
+        <div className="play-center" data-testid="board-center">
+          <p className="play-instruction">
+            Place the <strong>{puzzle.piece1}</strong>.
+          </p>
+          <PlacementInput board={board0} piece={puzzle.piece1} onConfirm={onConfirm1} />
+        </div>
+        <aside className="flank flank-right" aria-label="next piece">
+          <NextPieceBox piece={puzzle.piece2} />
+        </aside>
+      </PlayScreen>
     );
   }
 
   if (phase === 'place2' && board1) {
     return (
-      <section aria-label="puzzle">
-        <p>
-          Place the <strong>{puzzle.piece2}</strong>. <em>(no next piece)</em>
-        </p>
-        <PlacementInput board={board1} piece={puzzle.piece2} onConfirm={onConfirm2} />
-      </section>
+      <PlayScreen leftFlank={leftFlank}>
+        <div className="play-center" data-testid="board-center">
+          <p className="play-instruction">
+            Place the <strong>{puzzle.piece2}</strong>. <em>(no next piece)</em>
+          </p>
+          <PlacementInput board={board1} piece={puzzle.piece2} onConfirm={onConfirm2} />
+        </div>
+        <aside className="flank flank-right" aria-label="next piece">
+          <NextPieceBox piece={null} />
+        </aside>
+      </PlayScreen>
     );
   }
 
   if (phase === 'grading') {
-    return <section aria-label="puzzle">Grading…</section>;
+    return (
+      <PlayScreen leftFlank={leftFlank}>
+        <div className="play-center" data-testid="board-center">
+          <p role="status">Grading…</p>
+        </div>
+      </PlayScreen>
+    );
   }
 
   // phase === 'done'
-  const outcome = result!.solved ? 'Solved!' : 'Not solved';
-  const { before, after, delta } = result!.rating;
   return (
-    <section aria-label="result">
-      <h2 data-testid="outcome">{outcome}</h2>
-      <p data-testid="rating-change">
-        Rating: {Math.round(before.rating)} → {Math.round(after.rating)} ({delta >= 0 ? '+' : ''}
-        {Math.round(delta)})
-      </p>
+    <PlayScreen leftFlank={leftFlank}>
       <Feedback
         board0={board0}
         piece1={puzzle.piece1}
@@ -157,12 +174,10 @@ export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps
         optimalLine={puzzle.optimalLine}
         optimalMetrics={puzzle.optimalMetrics}
         userLine={result!.userLine}
+        solved={result!.solved}
+        ratingChange={result!.rating}
+        onNext={onNext}
       />
-      {onNext ? (
-        <button type="button" onClick={onNext}>
-          Next puzzle
-        </button>
-      ) : null}
-    </section>
+    </PlayScreen>
   );
 }

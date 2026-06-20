@@ -42,3 +42,28 @@ describe('Site design (#19)', () => {
     expect(main).toMatch(/styles\.css/);
   });
 });
+
+describe('Flanking dashboard layout (#22)', () => {
+  it('lays the play screen out as a three-column flank grid', () => {
+    expect(css).toMatch(/\.play-screen\s*\{[^}]*display:\s*grid/i);
+    // Three columns: rating rail | board | next/result rail.
+    expect(css).toMatch(/\.play-screen\s*\{[^}]*grid-template-columns:[^;]*minmax/i);
+  });
+
+  it('collapses to a single column on a narrow viewport', () => {
+    expect(css).toMatch(/@media[^{]*max-width:\s*900px/i);
+  });
+
+  it('clips every panel so content cannot spill past its border', () => {
+    expect(css).toMatch(/overflow:\s*hidden/i);
+    expect(css).toMatch(/max-width:\s*100%/i);
+  });
+
+  it('sizes the board as a viewport-height hero with no fixed 280px cap', () => {
+    const board = readFileSync(fileURLToPath(new URL('./board/Board.tsx', import.meta.url)), 'utf8');
+    // The old hard 280px width cap is gone.
+    expect(board).not.toMatch(/280px/);
+    // The board hero scales with the viewport height.
+    expect(css).toMatch(/--board-width:\s*min\([^)]*vh/i);
+  });
+});

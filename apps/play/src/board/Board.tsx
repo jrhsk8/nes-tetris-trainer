@@ -65,7 +65,10 @@ export function Board({
           display: 'grid',
           gridTemplateColumns: `repeat(${COLS}, 1fr)`,
           gap: 0,
-          width: 'min(86vw, 280px)',
+          // Sized as the centred hero in styles.css (#22): scales with the
+          // viewport height, no fixed pixel cap. Falls back to a sane width if
+          // the stylesheet is absent (e.g. unit tests).
+          width: 'var(--board-width, min(86vw, 320px))',
         }}
       >
         {grid.map((row, r) =>

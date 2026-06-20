@@ -1,11 +1,17 @@
 /**
- * Feedback view (#12) — the teaching payoff (docs/PRD-v1.md "Feedback").
+ * Feedback view (#12, #22) — the teaching payoff (docs/PRD-v1.md "Feedback").
  *
  * After an attempt it animates the stored optimal two-ply line on the board and
  * shows geometric metric deltas (holes, bumpiness, height) of the player's
  * result versus the optimal result. The optimal-side metrics are precomputed at
  * generation and passed in; the player-side metrics are computed here,
  * client-side, via @trainer/core (#3). No engine call is made.
+ *
+ * Laid out for the flanking dashboard (#22): the component uses `display:
+ * contents` so its two regions — the animating board and the result panel
+ * (outcome + rating change + chart + Next) — drop straight into the play
+ * screen's centre and right columns. The board therefore stays in the same
+ * centre position it occupied while solving.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -20,6 +26,13 @@ import {
 } from '@trainer/core';
 import { Board, type Cell } from '../board/Board.js';
 
+/** A player rating change to surface alongside the outcome. */
+export interface RatingChange {
+  before: { rating: number };
+  after: { rating: number };
+  delta: number;
+}
+
 export interface FeedbackProps {
   /** The starting board. */
   board0: Grid;
@@ -33,6 +46,12 @@ export interface FeedbackProps {
   userLine: readonly Placement[];
   /** Milliseconds between animation steps. */
   stepMs?: number;
+  /** Whether the player solved the puzzle (shows the outcome heading). */
+  solved?: boolean;
+  /** The rating change to display, if any. */
+  ratingChange?: RatingChange;
+  /** Called when the player asks for the next puzzle (renders the button). */
+  onNext?: () => void;
 }
 
 interface Frame {
@@ -79,6 +98,9 @@ export function Feedback({
   optimalMetrics,
   userLine,
   stepMs = 900,
+  solved,
+  ratingChange,
+  onNext,
 }: FeedbackProps) {
   const frames = useMemo<Frame[]>(() => {
     const board1 = applyPlacement(board0, piece1, optimalLine[0]);
@@ -105,47 +127,68 @@ export function Feedback({
 
   return (
     <div className="feedback">
-      <p>The optimal line:</p>
-      <Board
-        grid={frames[step].grid}
-        highlightCells={frames[step].highlight}
-        highlightPiece={frames[step].piece}
-      />
-      <p data-testid="feedback-step">
-        Step {step + 1} of {frames.length}
-      </p>
-      <button type="button" onClick={() => setStep(0)} disabled={step === 0}>
-        Replay
-      </button>
+      <div className="play-center feedback-board" data-testid="board-center">
+        <p className="play-instruction">The optimal line:</p>
+        <Board
+          grid={frames[step].grid}
+          highlightCells={frames[step].highlight}
+          highlightPiece={frames[step].piece}
+        />
+        <p data-testid="feedback-step">
+          Step {step + 1} of {frames.length}
+        </p>
+        <button type="button" onClick={() => setStep(0)} disabled={step === 0}>
+          Replay
+        </button>
+      </div>
 
-      <table className="metric-deltas">
-        <thead>
-          <tr>
-            <th>Metric</th>
-            <th>You</th>
-            <th>Optimal</th>
-            <th>Δ</th>
-          </tr>
-        </thead>
-        <tbody>
-          {METRICS.map(({ key, label }) => {
-            const you = userMetrics[key];
-            const optimal = optimalMetrics[key];
-            const delta = you - optimal;
-            return (
-              <tr key={key} data-testid={`metric-${key}`}>
-                <td>{label}</td>
-                <td>{you}</td>
-                <td>{optimal}</td>
-                <td data-testid={`delta-${key}`}>
-                  {delta > 0 ? '+' : ''}
-                  {delta}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <aside className="flank flank-right result-panel" aria-label="result">
+        {solved !== undefined ? (
+          <h2 data-testid="outcome">{solved ? 'Solved!' : 'Not solved'}</h2>
+        ) : null}
+        {ratingChange ? (
+          <p data-testid="rating-change">
+            Rating: {Math.round(ratingChange.before.rating)} →{' '}
+            {Math.round(ratingChange.after.rating)} ({ratingChange.delta >= 0 ? '+' : ''}
+            {Math.round(ratingChange.delta)})
+          </p>
+        ) : null}
+
+        <table className="metric-deltas">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>You</th>
+              <th>Optimal</th>
+              <th>Δ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {METRICS.map(({ key, label }) => {
+              const you = userMetrics[key];
+              const optimal = optimalMetrics[key];
+              const delta = you - optimal;
+              return (
+                <tr key={key} data-testid={`metric-${key}`}>
+                  <td>{label}</td>
+                  <td>{you}</td>
+                  <td>{optimal}</td>
+                  <td data-testid={`delta-${key}`}>
+                    {delta > 0 ? '+' : ''}
+                    {delta}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        {onNext ? (
+          <button type="button" onClick={onNext}>
+            Next puzzle
+          </button>
+        ) : null}
+      </aside>
     </div>
   );
 }
