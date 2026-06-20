@@ -22,9 +22,10 @@ await run({
   promptFile: "./.sandcastle/prompt.md",
 
   // Maximum number of iterations (agent invocations) to run in a session.
-  // Each iteration works on a single issue. Increase this to process more issues
-  // per run, or set it to 1 for a single-shot mode.
-  maxIterations: 3,
+  // Each iteration works on a single issue. ~10 actionable issues remain; 25
+  // leaves headroom for retries/blocked-then-unblocked re-picks. The run also
+  // stops early when the prompt emits <promise>COMPLETE</promise>.
+  maxIterations: 25,
 
   // Branch strategy — merge-to-head creates a temporary branch for the agent
   // to work on, then merges the result back to HEAD when the run completes.
@@ -44,7 +45,20 @@ await run({
       // onSandboxReady runs once after the sandbox is initialised and the repo is
       // synced in, before the agent starts. Use it to install dependencies or run
       // any other setup steps your project needs.
-      onSandboxReady: [{ command: "npm install" }],
+      onSandboxReady: [
+        { command: "npm install" },
+        // Start the offline StackRabbit engine (baked into the image) in the
+        // background and wait until /ping responds (which only happens after its
+        // precompute finishes). Reached by the generator at $STACKRABBIT_URL.
+        // Non-fatal: if it doesn't come up, only the engine-dependent issues are
+        // affected — the rest of the AFK backlog still proceeds.
+        {
+          command:
+            "cd /home/agent/stackrabbit && (PORT=3000 nohup node built/src/server/app.js > /tmp/stackrabbit.log 2>&1 &) ; " +
+            "for i in $(seq 1 90); do curl -fsS http://127.0.0.1:3000/ping >/dev/null 2>&1 && { echo 'StackRabbit engine ready on :3000'; exit 0; }; sleep 1; done; " +
+            "echo 'WARN: StackRabbit engine not ready after 90s; see /tmp/stackrabbit.log'; tail -n 20 /tmp/stackrabbit.log 2>/dev/null || true",
+        },
+      ],
     },
   },
 });

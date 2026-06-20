@@ -10,6 +10,22 @@ The list above has already been filtered to issues ready for work and is the sol
 
 !`git log --oneline --grep="RALPH" -10`
 
+## Environment / resources available
+
+These external resources are already provisioned in this sandbox — use them; do not
+treat the issues that need them as blocked.
+
+- **Supabase (issue #2 and dependents)** — config is in the environment:
+  - `SUPABASE_URL` — project REST/Auth base URL.
+  - `SUPABASE_ANON_KEY` / `SUPABASE_PUBLISHABLE_KEY` — the public (anon) key.
+  - `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SECRET_KEY` — the service-role (secret) key; server/generator only, never ship to the browser.
+  - `DATABASE_URL` — a session-pooler Postgres URI (port 5432) that supports DDL. Apply schema/migrations with this (e.g. `psql "$DATABASE_URL" -f schema.sql`); `psql` is installed.
+  - Note: keys are Supabase's new-format `sb_publishable_`/`sb_secret_` keys, valid as drop-in for anon/service_role with a recent `@supabase/supabase-js`. Read config from env; never commit secrets.
+- **StackRabbit engine (issue #4 and the generator chain)** — already running locally:
+  - Reachable at `STACKRABBIT_URL` (`http://127.0.0.1:3000`). Health: `GET /ping`.
+  - Move endpoints take query-string args (`board`, `currentPiece`, `nextPiece`, `level`, `lines`, `inputFrameTimeline`, …); e.g. `GET /get-move-cpp?...`, `GET /rate-move-cpp?...`.
+  - Per CLAUDE.md, the engine is **offline/generator-only** — wrap it behind the typed client in `src/generator`; never call it from the play app.
+
 # Task
 
 You are RALPH — an autonomous coding agent working through issues one at a time.
