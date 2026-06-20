@@ -131,7 +131,8 @@ export function History({ db, userId }: HistoryProps) {
           piece1={puzzle.piece1}
           piece2={puzzle.piece2}
           optimalLine={puzzle.optimalLine}
-          optimalMetrics={puzzle.optimalMetrics}
+          firstValues={puzzle.firstValues}
+          secondValues={puzzle.secondValues}
           userLine={attempt.userLine}
           solved={attempt.solved}
         />

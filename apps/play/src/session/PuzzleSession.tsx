@@ -216,7 +216,8 @@ export function PuzzleSession({
         piece1={puzzle.piece1}
         piece2={puzzle.piece2}
         optimalLine={puzzle.optimalLine}
-        optimalMetrics={puzzle.optimalMetrics}
+        firstValues={puzzle.firstValues}
+        secondValues={puzzle.secondValues}
         userLine={result!.userLine}
         solved={result!.solved}
         ratingChange={result!.rating}

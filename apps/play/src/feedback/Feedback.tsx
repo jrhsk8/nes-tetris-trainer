@@ -20,17 +20,11 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-  applyPlacement,
-  boardMetrics,
-  type BoardMetrics,
-  type Grid,
-  type Line,
-  type Piece,
-  type Placement,
-} from '@trainer/core';
+import { type Grid, type Line, type Piece, type Placement } from '@trainer/core';
+import type { PlacementValue } from '@trainer/data';
 import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
+import { SolutionsChart } from './SolutionsChart.js';
 import { buildReplay, finalBoard, type Keyframe, type ReplayOverlay } from './replay.js';
 
 /** A player rating change to surface alongside the outcome. */
@@ -47,8 +41,10 @@ export interface FeedbackProps {
   piece2: Piece;
   /** The stored optimal two-ply line. */
   optimalLine: Line;
-  /** Precomputed metrics of the optimal result board. */
-  optimalMetrics: BoardMetrics;
+  /** Value table for piece 1 — every legal placement + engine value (#29). */
+  firstValues: readonly PlacementValue[];
+  /** Value table for piece 2, on the post-optimal-first-move board (#29). */
+  secondValues: readonly PlacementValue[];
   /** The placements the player actually made (one or two). */
   userLine: readonly Placement[];
   /** Milliseconds per animation step (also the falling-piece transition time). */
@@ -133,30 +129,13 @@ function LineFlash({ rows }: { rows: readonly number[] }) {
   );
 }
 
-/** Board after applying the placements the player made (1 or 2). */
-function applyUserLine(
-  board0: Grid,
-  piece1: Piece,
-  piece2: Piece,
-  userLine: readonly Placement[],
-): Grid {
-  let board = applyPlacement(board0, piece1, userLine[0]);
-  if (userLine.length > 1) board = applyPlacement(board, piece2, userLine[1]);
-  return board;
-}
-
-const METRICS = [
-  { key: 'holes', label: 'Holes' },
-  { key: 'bumpiness', label: 'Bumpiness' },
-  { key: 'aggregateHeight', label: 'Height' },
-] as const;
-
 export function Feedback({
   board0,
   piece1,
   piece2,
   optimalLine,
-  optimalMetrics,
+  firstValues,
+  secondValues,
   userLine,
   stepMs = 320,
   solved,
@@ -173,11 +152,6 @@ export function Feedback({
     }
     return keyframes;
   }, [board0, piece1, piece2, optimalLine, reduced]);
-
-  const userMetrics = useMemo(
-    () => boardMetrics(applyUserLine(board0, piece1, piece2, userLine)),
-    [board0, piece1, piece2, userLine],
-  );
 
   const [step, setStep] = useState(0);
 
@@ -231,34 +205,24 @@ export function Feedback({
           </p>
         ) : null}
 
-        <table className="metric-deltas">
-          <thead>
-            <tr>
-              <th>Metric</th>
-              <th>You</th>
-              <th>Optimal</th>
-              <th>Δ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {METRICS.map(({ key, label }) => {
-              const you = userMetrics[key];
-              const optimal = optimalMetrics[key];
-              const delta = you - optimal;
-              return (
-                <tr key={key} data-testid={`metric-${key}`}>
-                  <td>{label}</td>
-                  <td>{you}</td>
-                  <td>{optimal}</td>
-                  <td data-testid={`delta-${key}`}>
-                    {delta > 0 ? '+' : ''}
-                    {delta}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="solutions-charts" data-testid="solutions-charts">
+          <SolutionsChart
+            label={`First piece (${piece1})`}
+            values={firstValues}
+            optimal={optimalLine[0]}
+            player={userLine[0]}
+          />
+          {/* The piece-2 distribution is only meaningful once the player reached
+              placement 2 — i.e. their first move was optimal. */}
+          {userLine.length > 1 ? (
+            <SolutionsChart
+              label={`Second piece (${piece2})`}
+              values={secondValues}
+              optimal={optimalLine[1]}
+              player={userLine[1]}
+            />
+          ) : null}
+        </div>
 
         {onNext ? (
           <button type="button" onClick={onNext}>

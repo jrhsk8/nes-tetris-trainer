@@ -447,39 +447,74 @@ input:focus-visible {
   background: var(--nes-blue);
 }
 
-/* ---- Feedback table ---------------------------------------------------- */
+/* ---- Feedback solutions chart (#29) ------------------------------------ */
 
-.metric-deltas {
-  width: 100%;
-  border-collapse: collapse;
+.solutions-charts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space);
   margin-top: var(--space);
-  font-variant-numeric: tabular-nums;
 }
 
-.metric-deltas th,
-.metric-deltas td {
-  border: 2px solid var(--panel-edge);
-  padding: 8px 10px;
-  text-align: right;
+.solutions-chart {
+  margin: 0;
 }
 
-.metric-deltas th {
+.solutions-chart-label {
   font-family: var(--font-pixel);
   font-size: 8px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--nes-gold);
-  background: var(--nes-field);
+  margin-bottom: 8px;
 }
 
-.metric-deltas th:first-child,
-.metric-deltas td:first-child {
-  text-align: left;
+/* The 0–100 axis: a thin track the dots sit on (optimal at the right). */
+.strip-track {
+  height: 18px;
+  margin: 10px 6px 6px;
+  border-bottom: 2px solid var(--panel-edge);
 }
 
-[data-testid^='delta-'] {
+.strip-dot {
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  margin-top: -3px;
+  background: var(--ink-dim, #9a9a9a);
+}
+
+.strip-dot.is-optimal {
+  background: var(--nes-gold);
+}
+
+.strip-dot.is-player {
+  background: var(--nes-red);
+}
+
+/* Rings drawn over the optimal / player dots so they read clearly. */
+.strip-marker {
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  box-sizing: border-box;
+}
+
+.strip-marker.is-optimal {
+  border: 2px solid var(--nes-gold);
+}
+
+.strip-marker.is-player {
+  border: 2px solid var(--nes-red);
+}
+
+.strip-rank {
   font-weight: 700;
   color: var(--nes-red);
+  margin: 0;
 }
 
 /* ---- Controls panel (#24) ---------------------------------------------- */

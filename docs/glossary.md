@@ -48,7 +48,15 @@ v1 grading: the player must match the optimal first *and* second placement, wher
 
 ### Geometric metrics
 
-Board measures shown as deltas after an attempt: **holes** (empty cells with a filled cell somewhere above), **bumpiness** (sum of height differences between adjacent columns), and **height** (the stack's overall height). Optimal-side values are precomputed at generation; player-side values are computed client-side from the player's board.
+Board measures: **holes** (empty cells with a filled cell somewhere above), **bumpiness** (sum of height differences between adjacent columns), and **height** (the stack's overall height). Computed by `@trainer/core` and stored as the optimal-result metrics at generation. No longer surfaced in feedback (the metrics table was replaced by the Solutions chart); still used by the generator.
+
+### Solutions chart
+
+The feedback view's per-piece strip plot (replaces the geometric-metrics table). For each ply it plots every legal placement's engine **value** on a single 0–100 axis (field-normalised from the table's worst value to the optimal, which is pinned at 100): each alternative is a dot, the optimal and the player's placements are marked, and a "rank N of M" callout says how good the player's move was. Driven entirely by the puzzle's stored **value tables** (`first_values` / `second_values`); no engine call at play time.
+
+### Value tables
+
+Two per-puzzle tables stored with each puzzle (`first_values`, `second_values`): every legal placement of a piece paired with its engine value, keyed by the app's own `(rotation, col)`. `first_values` covers piece 1 (scored with the optimal follow-up); `second_values` covers piece 2 on the board after the optimal first move. Computed offline by the generator; read by the Solutions chart.
 
 ### Self-play / board source
 
