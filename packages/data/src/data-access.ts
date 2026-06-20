@@ -1,0 +1,213 @@
+/**
+ * Typed data-access layer (#2) — the only way the app and generator touch
+ * Supabase. It maps Postgres rows to/from the domain types and hides the table
+ * shapes. Construct it with a Supabase client (anon key in the browser,
+ * service-role key in the offline generator).
+ */
+
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { isPiece, type Piece } from '@trainer/core';
+import type {
+  Attempt,
+  AttemptRow,
+  NewAttempt,
+  NewPuzzle,
+  Puzzle,
+  PuzzleRow,
+  UserRating,
+  UserRatingRow,
+} from './types.js';
+
+/** Flat seed rating every player and puzzle starts at (docs/PRD-v1.md "Rating"). */
+export const SEED_RATING = 1500;
+/** Seed rating deviation. */
+export const SEED_DEVIATION = 350;
+/** Seed rating volatility. */
+export const SEED_VOLATILITY = 0.06;
+
+/**
+ * Create a Supabase client. Disables session persistence by default so it is
+ * safe in the generator and in tests (the play app's auth flow, #13, opts back
+ * in).
+ */
+export function createSupabaseClient(url: string, key: string): SupabaseClient {
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+function asPiece(value: string, field: string): Piece {
+  if (!isPiece(value)) throw new Error(`invalid piece in ${field}: ${value}`);
+  return value;
+}
+
+function rowToPuzzle(row: PuzzleRow): Puzzle {
+  return {
+    id: row.id,
+    board: row.board,
+    piece1: asPiece(row.piece1, 'piece1'),
+    piece2: asPiece(row.piece2, 'piece2'),
+    optimalLine: row.optimal_line,
+    optimalMetrics: row.optimal_metrics,
+    glicko: { rating: row.rating, deviation: row.deviation, volatility: row.volatility },
+  };
+}
+
+function rowToUserRating(row: UserRatingRow): UserRating {
+  return {
+    userId: row.user_id,
+    rating: row.rating,
+    deviation: row.deviation,
+    volatility: row.volatility,
+  };
+}
+
+function rowToAttempt(row: AttemptRow): Attempt {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    puzzleId: row.puzzle_id,
+    userLine: row.user_line,
+    solved: row.solved,
+    createdAt: row.created_at,
+  };
+}
+
+/** The data-access surface shared by the play app and the generator. */
+export interface DataAccess {
+  getPuzzle(id: string): Promise<Puzzle | null>;
+  getRandomPuzzle(): Promise<Puzzle | null>;
+  countPuzzles(): Promise<number>;
+  insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle>;
+  insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]>;
+  getUserRating(userId: string): Promise<UserRating | null>;
+  upsertUserRating(rating: UserRating): Promise<UserRating>;
+  insertAttempt(attempt: NewAttempt): Promise<Attempt>;
+  getUserAttempts(userId: string): Promise<Attempt[]>;
+}
+
+function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    board: puzzle.board,
+    piece1: puzzle.piece1,
+    piece2: puzzle.piece2,
+    optimal_line: puzzle.optimalLine,
+    optimal_metrics: puzzle.optimalMetrics,
+  };
+  if (puzzle.glicko?.rating !== undefined) row.rating = puzzle.glicko.rating;
+  if (puzzle.glicko?.deviation !== undefined) row.deviation = puzzle.glicko.deviation;
+  if (puzzle.glicko?.volatility !== undefined) row.volatility = puzzle.glicko.volatility;
+  return row;
+}
+
+/** Build a {@link DataAccess} over a Supabase client. */
+export function createDataAccess(client: SupabaseClient): DataAccess {
+  async function getPuzzle(id: string): Promise<Puzzle | null> {
+    const { data, error } = await client.from('puzzles').select('*').eq('id', id).maybeSingle();
+    if (error) throw new Error(`getPuzzle failed: ${error.message}`);
+    return data ? rowToPuzzle(data as PuzzleRow) : null;
+  }
+
+  async function countPuzzles(): Promise<number> {
+    const { count, error } = await client
+      .from('puzzles')
+      .select('*', { count: 'exact', head: true });
+    if (error) throw new Error(`countPuzzles failed: ${error.message}`);
+    return count ?? 0;
+  }
+
+  async function getRandomPuzzle(): Promise<Puzzle | null> {
+    const total = await countPuzzles();
+    if (total === 0) return null;
+    const offset = Math.floor(Math.random() * total);
+    const { data, error } = await client
+      .from('puzzles')
+      .select('*')
+      .order('created_at', { ascending: true })
+      .range(offset, offset);
+    if (error) throw new Error(`getRandomPuzzle failed: ${error.message}`);
+    const rows = (data ?? []) as PuzzleRow[];
+    return rows.length > 0 ? rowToPuzzle(rows[0]) : null;
+  }
+
+  async function insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]> {
+    if (puzzles.length === 0) return [];
+    const { data, error } = await client
+      .from('puzzles')
+      .insert(puzzles.map(newPuzzleToRow))
+      .select('*');
+    if (error) throw new Error(`insertPuzzles failed: ${error.message}`);
+    return (data as PuzzleRow[]).map(rowToPuzzle);
+  }
+
+  async function insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle> {
+    const [inserted] = await insertPuzzles([puzzle]);
+    return inserted;
+  }
+
+  async function getUserRating(userId: string): Promise<UserRating | null> {
+    const { data, error } = await client
+      .from('user_ratings')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw new Error(`getUserRating failed: ${error.message}`);
+    return data ? rowToUserRating(data as UserRatingRow) : null;
+  }
+
+  async function upsertUserRating(rating: UserRating): Promise<UserRating> {
+    const { data, error } = await client
+      .from('user_ratings')
+      .upsert(
+        {
+          user_id: rating.userId,
+          rating: rating.rating,
+          deviation: rating.deviation,
+          volatility: rating.volatility,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+      .select('*')
+      .single();
+    if (error) throw new Error(`upsertUserRating failed: ${error.message}`);
+    return rowToUserRating(data as UserRatingRow);
+  }
+
+  async function insertAttempt(attempt: NewAttempt): Promise<Attempt> {
+    const { data, error } = await client
+      .from('attempts')
+      .insert({
+        user_id: attempt.userId,
+        puzzle_id: attempt.puzzleId,
+        user_line: attempt.userLine,
+        solved: attempt.solved,
+      })
+      .select('*')
+      .single();
+    if (error) throw new Error(`insertAttempt failed: ${error.message}`);
+    return rowToAttempt(data as AttemptRow);
+  }
+
+  async function getUserAttempts(userId: string): Promise<Attempt[]> {
+    const { data, error } = await client
+      .from('attempts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(`getUserAttempts failed: ${error.message}`);
+    return (data as AttemptRow[]).map(rowToAttempt);
+  }
+
+  return {
+    getPuzzle,
+    getRandomPuzzle,
+    countPuzzles,
+    insertPuzzle,
+    insertPuzzles,
+    getUserRating,
+    upsertUserRating,
+    insertAttempt,
+    getUserAttempts,
+  };
+}

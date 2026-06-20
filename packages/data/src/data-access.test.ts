@@ -1,0 +1,111 @@
+import { describe, it, expect, afterAll } from 'vitest';
+import { boardMetrics, emptyBoard, encodeBoard, type Line } from '@trainer/core';
+import { createDataAccess, createSupabaseClient, SEED_RATING } from './data-access.js';
+
+// Round-trip integration test (#2 acceptance) against a real Supabase instance.
+// Uses the service-role key, which bypasses RLS. Skipped cleanly when the
+// environment is not configured (e.g. CI without secrets).
+const url = process.env.SUPABASE_URL;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
+const configured = Boolean(url && serviceKey);
+
+const db = configured ? createDataAccess(createSupabaseClient(url!, serviceKey!)) : null;
+
+// Track rows we create so we can clean up regardless of assertion outcomes.
+const createdPuzzleIds: string[] = [];
+const createdUserIds: string[] = [];
+
+afterAll(async () => {
+  if (!configured) return;
+  const client = createSupabaseClient(url!, serviceKey!);
+  for (const id of createdPuzzleIds) {
+    // attempts cascade-delete with their puzzle.
+    await client.from('puzzles').delete().eq('id', id);
+  }
+  for (const id of createdUserIds) {
+    await client.from('user_ratings').delete().eq('user_id', id);
+  }
+});
+
+const sampleLine: Line = [
+  { rotation: 0, col: 0 },
+  { rotation: 1, col: 3 },
+];
+
+describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
+  it('round-trips a puzzle: insert then read back by id', async () => {
+    const board = encodeBoard(emptyBoard());
+    const inserted = await db!.insertPuzzle({
+      board,
+      piece1: 'T',
+      piece2: 'L',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+    });
+    createdPuzzleIds.push(inserted.id);
+
+    expect(inserted.glicko.rating).toBe(SEED_RATING);
+
+    const fetched = await db!.getPuzzle(inserted.id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.board).toBe(board);
+    expect(fetched!.piece1).toBe('T');
+    expect(fetched!.optimalLine).toEqual(sampleLine);
+    expect(fetched!.optimalMetrics.holes).toBe(0);
+  });
+
+  it('selects a random puzzle from the bank', async () => {
+    const random = await db!.getRandomPuzzle();
+    expect(random).not.toBeNull();
+    expect(await db!.countPuzzles()).toBeGreaterThan(0);
+  });
+
+  it('round-trips a user rating via upsert and read', async () => {
+    const userId = crypto.randomUUID();
+    createdUserIds.push(userId);
+
+    expect(await db!.getUserRating(userId)).toBeNull();
+
+    const saved = await db!.upsertUserRating({
+      userId,
+      rating: 1620,
+      deviation: 180,
+      volatility: 0.055,
+    });
+    expect(saved.rating).toBe(1620);
+
+    const reread = await db!.getUserRating(userId);
+    expect(reread).toEqual(saved);
+
+    // Upsert again to confirm it updates rather than duplicating.
+    const updated = await db!.upsertUserRating({ ...saved, rating: 1700 });
+    expect(updated.rating).toBe(1700);
+  });
+
+  it('records an attempt against a puzzle and reads it back', async () => {
+    const puzzle = await db!.insertPuzzle({
+      board: encodeBoard(emptyBoard()),
+      piece1: 'S',
+      piece2: 'Z',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+    });
+    createdPuzzleIds.push(puzzle.id);
+
+    const userId = crypto.randomUUID();
+    const attempt = await db!.insertAttempt({
+      userId,
+      puzzleId: puzzle.id,
+      userLine: sampleLine,
+      solved: true,
+    });
+
+    expect(attempt.solved).toBe(true);
+    expect(attempt.puzzleId).toBe(puzzle.id);
+    expect(typeof attempt.createdAt).toBe('string');
+
+    const attempts = await db!.getUserAttempts(userId);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].id).toBe(attempt.id);
+  });
+});
