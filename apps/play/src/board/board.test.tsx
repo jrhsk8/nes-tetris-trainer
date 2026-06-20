@@ -35,6 +35,22 @@ describe('Board', () => {
     render(<Board grid={emptyBoard()} ghostCells={[[18, 4]]} />);
     expect(screen.getByTestId('cell-18-4')).toHaveAttribute('data-state', 'ghost');
   });
+
+  it('renders filled cells as crisp NES block sprites, not flat squares (#18)', () => {
+    const grid: Grid = emptyBoard();
+    grid[19][0] = 1;
+    render(<Board grid={grid} />);
+    const filled = screen.getByTestId('cell-19-0');
+    const bg = decodeURIComponent(filled.style.backgroundImage);
+    expect(bg).toContain('data:image/svg+xml');
+    expect(bg).toContain('shape-rendering="crispEdges"');
+  });
+
+  it('colours the ghost in its piece colour (Z → $16 red) (#18)', () => {
+    render(<Board grid={emptyBoard()} ghostCells={[[18, 4]]} ghostPiece="Z" />);
+    const ghost = screen.getByTestId('cell-18-4');
+    expect(decodeURIComponent(ghost.style.backgroundImage)).toContain('#d82800');
+  });
 });
 
 describe('PlacementInput', () => {

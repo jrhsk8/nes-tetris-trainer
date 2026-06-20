@@ -38,6 +38,8 @@ export interface FeedbackProps {
 interface Frame {
   grid: Grid;
   highlight: Cell[];
+  /** The piece that landed in this frame (drives the highlight colour). */
+  piece: Piece | undefined;
 }
 
 /** Cells filled in `next` but not in `prev` (the piece that just landed). */
@@ -82,9 +84,9 @@ export function Feedback({
     const board1 = applyPlacement(board0, piece1, optimalLine[0]);
     const board2 = applyPlacement(board1, piece2, optimalLine[1]);
     return [
-      { grid: board0, highlight: [] },
-      { grid: board1, highlight: newlyFilled(board0, board1) },
-      { grid: board2, highlight: newlyFilled(board1, board2) },
+      { grid: board0, highlight: [], piece: undefined },
+      { grid: board1, highlight: newlyFilled(board0, board1), piece: piece1 },
+      { grid: board2, highlight: newlyFilled(board1, board2), piece: piece2 },
     ];
   }, [board0, piece1, piece2, optimalLine]);
 
@@ -104,7 +106,11 @@ export function Feedback({
   return (
     <div className="feedback">
       <p>The optimal line:</p>
-      <Board grid={frames[step].grid} highlightCells={frames[step].highlight} />
+      <Board
+        grid={frames[step].grid}
+        highlightCells={frames[step].highlight}
+        highlightPiece={frames[step].piece}
+      />
       <p data-testid="feedback-step">
         Step {step + 1} of {frames.length}
       </p>

@@ -127,7 +127,7 @@ export function PlacementInput({ board, piece, onConfirm, label }: PlacementInpu
       data-col={col}
     >
       {label ? <p className="placement-label">{label}</p> : null}
-      <Board grid={board} ghostCells={ghostCells} />
+      <Board grid={board} ghostCells={ghostCells} ghostPiece={piece} />
       <div className="placement-controls" role="group" aria-label="placement controls">
         <button type="button" onClick={moveLeft} aria-label="Move left">
           ◀
