@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createDataAccess, createSupabaseClient } from '@trainer/data';
 import { Account, SignIn, createAuth, useAuth } from './auth/index.js';
+import { AUTH_BYPASS_ENABLED, bypassUser } from './auth/devBypass.js';
 
 /**
  * Root of the play app. Loads Supabase config from the env, then gates play
@@ -31,15 +32,22 @@ export function App() {
   );
 }
 
-function Authenticated({
+export function Authenticated({
   db,
   auth,
+  bypass = AUTH_BYPASS_ENABLED,
 }: {
   db: ReturnType<typeof createDataAccess>;
   auth: ReturnType<typeof createAuth>;
+  /** Dev login bypass (#20); defaults to the `VITE_AUTH_BYPASS` build flag. */
+  bypass?: boolean;
 }) {
   const user = useAuth(auth);
   if (user === undefined) return <p>Loading…</p>;
-  if (user === null) return <SignIn auth={auth} />;
-  return <Account db={db} user={user} auth={auth} />;
+  // DEV-ONLY login bypass (#20, TEMPORARY): with VITE_AUTH_BYPASS on, an
+  // unauthenticated visitor plays as a throwaway dev user instead of being sent
+  // to sign-in. Remove this single guard + ./auth/devBypass.ts to restore login.
+  const effectiveUser = user ?? bypassUser(bypass);
+  if (effectiveUser === null) return <SignIn auth={auth} />;
+  return <Account db={db} user={effectiveUser} auth={auth} />;
 }

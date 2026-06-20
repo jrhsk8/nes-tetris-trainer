@@ -34,6 +34,15 @@
    offline with the generator).
 3. Run the **"Deploy play app to Pages"** workflow from the Actions tab.
 
+### Dev-only login bypass (#20, temporary)
+
+While the site is in development, set `VITE_AUTH_BYPASS=1` (build env / repo
+variable) to make a preview deployment **open** — visitors skip sign-in and play
+as a throwaway dev user. **Leave it unset for production** so login stays
+mandatory. This is intentionally a single flag + single guard
+(`apps/play/src/auth/devBypass.ts`); remove both when the bypass is no longer
+wanted (see issue #20).
+
 ## Acceptance
 
 Once deployed, the app serves the full bank to authenticated users: a player
