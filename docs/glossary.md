@@ -24,7 +24,7 @@ The piece being placed now, and the lookahead piece. Placement 1 shows both; the
 
 ### The bank
 
-The set of puzzles that have survived both quality gates and are stored complete in Supabase — so the play app needs nothing from the engine. Produced offline; the play app only ever reads it. Each entry stores the board, both pieces, the optimal line, precomputed optimal metrics, and a starting rating.
+The set of puzzles that have survived both quality gates and are stored complete in Supabase — so the play app needs nothing from the engine. Produced offline; the play app only ever reads it. Each entry stores the board, both pieces, the optimal line, precomputed optimal metrics, a starting rating, and (since the 2026-06-20 overhaul) the [color grid](#color-grid) and the [value tables](#value-table).
 
 ### Co-rating
 
@@ -48,7 +48,7 @@ v1 grading: the player must match the optimal first *and* second placement, wher
 
 ### Geometric metrics
 
-Board measures shown as deltas after an attempt: **holes** (empty cells with a filled cell somewhere above), **bumpiness** (sum of height differences between adjacent columns), and **height** (the stack's overall height). Optimal-side values are precomputed at generation; player-side values are computed client-side from the player's board.
+Board measures: **holes** (empty cells with a filled cell somewhere above), **bumpiness** (sum of height differences between adjacent columns), and **height** (the stack's overall height). Optimal-side values are precomputed at generation; player-side values are computed client-side from the player's board. As of the 2026-06-20 overhaul these are no longer shown to the player (the feedback display was replaced by the [solutions chart](#solutions-chart)); the functions remain because the generator still uses them.
 
 ### Self-play / board source
 
@@ -57,3 +57,19 @@ Generation sources candidate boards via simulated semi-random self-play (mostly-
 ### StackRabbit
 
 The local NES Tetris AI engine that evaluates moves ([github.com/GregoryCannon/StackRabbit](https://github.com/GregoryCannon/StackRabbit)). Used only in the offline generator. Never deployed, never queried at play time.
+
+### Solutions chart
+
+The post-attempt feedback display (replaced the [geometric metrics](#geometric-metrics) table on 2026-06-20). Two per-piece **value distributions** drawn as strip plots: every legal placement of the piece is a dot positioned by its engine value (field-normalized 0–100), with the [optimal line](#optimal-line)'s placement (★) and the player's placement (●) marked, plus a rank callout ("5th of 17"). Piece-1 covers all its legal placements; piece-2 covers all its legal placements on the board *after the optimal first move* — a wrong first move ends the puzzle, so no cross-product is needed.
+
+### Value table
+
+The per-placement engine values precomputed at generation and stored with each puzzle (`first_values`, `second_values`) so the [solutions chart](#solutions-chart) needs no live engine. One entry per legal placement: its rotation, column, and StackRabbit value.
+
+### Next box
+
+The NES-style bordered preview of the next piece, drawn as a real piece graphic in its spawn orientation and color, top-right of the board. Empty on placement 2 (no lookahead). The [current piece](#current-piece--next-piece) is not boxed — it is the on-board [ghost placement](#ghost-placement).
+
+### Color grid
+
+A per-cell color-group encoding stored alongside the binary board (a 200-char string: `'0'` empty, `'1'/'2'/'3'` = NES color group) so the existing stack renders in authentic NES colors. Kept separate from the binary `Grid` so metrics, the checker, and placement logic stay color-blind. Produced by color-tracking self-play during generation.
