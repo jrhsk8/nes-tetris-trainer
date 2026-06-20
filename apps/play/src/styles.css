@@ -517,6 +517,53 @@ input:focus-visible {
   outline: 2px solid var(--nes-gold);
 }
 
+/* ---- History view (#26) ------------------------------------------------ */
+
+.history-controls {
+  margin: 0 0 12px;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.history-table th,
+.history-table td {
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.history-table th button {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--nes-gold);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.history-pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.history-review-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.history-review-result {
+  font-family: var(--font-pixel);
+  color: var(--nes-gold);
+}
+
 [data-testid='outcome'] {
   color: var(--nes-gold);
 }

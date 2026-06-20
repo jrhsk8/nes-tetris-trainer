@@ -110,6 +110,27 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(attempts[0].id).toBe(attempt.id);
   });
 
+  it('reads attempt history joined with the puzzle difficulty', async () => {
+    const puzzle = await db!.insertPuzzle({
+      board: encodeBoard(emptyBoard()),
+      piece1: 'I',
+      piece2: 'O',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+      glicko: { rating: 1623 },
+    });
+    createdPuzzleIds.push(puzzle.id);
+
+    const userId = crypto.randomUUID();
+    await db!.insertAttempt({ userId, puzzleId: puzzle.id, userLine: sampleLine, solved: false });
+
+    const history = await db!.getUserAttemptHistory(userId);
+    expect(history).toHaveLength(1);
+    expect(history[0].puzzleId).toBe(puzzle.id);
+    expect(history[0].difficulty).toBe(1623);
+    expect(history[0].solved).toBe(false);
+  });
+
   it('round-trips user prefs (key bindings) via upsert and read', async () => {
     const userId = crypto.randomUUID();
     createdUserIds.push(userId);

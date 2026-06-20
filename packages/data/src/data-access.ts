@@ -9,6 +9,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isPiece, type Piece } from '@trainer/core';
 import type {
   Attempt,
+  AttemptHistoryEntry,
   AttemptRow,
   NewAttempt,
   NewPuzzle,
@@ -97,6 +98,7 @@ export interface DataAccess {
   upsertUserRating(rating: UserRating): Promise<UserRating>;
   insertAttempt(attempt: NewAttempt): Promise<Attempt>;
   getUserAttempts(userId: string): Promise<Attempt[]>;
+  getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]>;
   getUserPrefs(userId: string): Promise<UserPrefs | null>;
   upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs>;
 }
@@ -215,6 +217,19 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return (data as AttemptRow[]).map(rowToAttempt);
   }
 
+  async function getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]> {
+    // Join each attempt to its puzzle's rating (difficulty). The puzzle is
+    // null for an orphaned attempt (its puzzle was removed by a bank regen).
+    const { data, error } = await client
+      .from('attempts')
+      .select('*, puzzles(rating)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(`getUserAttemptHistory failed: ${error.message}`);
+    const rows = (data ?? []) as (AttemptRow & { puzzles: { rating: number } | null })[];
+    return rows.map((row) => ({ ...rowToAttempt(row), difficulty: row.puzzles?.rating ?? null }));
+  }
+
   async function getUserPrefs(userId: string): Promise<UserPrefs | null> {
     const { data, error } = await client
       .from('user_prefs')
@@ -252,6 +267,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     upsertUserRating,
     insertAttempt,
     getUserAttempts,
+    getUserAttemptHistory,
     getUserPrefs,
     upsertUserPrefs,
   };

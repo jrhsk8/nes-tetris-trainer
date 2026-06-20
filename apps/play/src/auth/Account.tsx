@@ -8,8 +8,8 @@
  * (threaded into the play screen via `leftFlank`), the board is the centred
  * hero, and the right rail carries the next-piece box / result chart. The
  * Controls view (#24) edits the player's key bindings, loaded from and synced
- * to Supabase prefs and threaded into the placement input; the History view is
- * still a placeholder (#26).
+ * to Supabase prefs and threaded into the placement input; the History view
+ * (#26) lists past attempts and re-opens each read-only in the Feedback view.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -17,13 +17,17 @@ import type { Attempt, DataAccess } from '@trainer/data';
 import { seedRating } from '@trainer/rating';
 import { PuzzlePlay, type PlayDb } from '../session/index.js';
 import { Controls } from '../controls/index.js';
+import { History } from '../history/index.js';
 import { DEFAULT_BINDINGS, sanitizeBindings, type KeyBindings } from '../board/keybindings.js';
 import type { AuthApi, AuthUser } from './auth.js';
 import { RatingHistory } from './RatingHistory.js';
 
 /** The persistence the account view needs (play loop + history + prefs). */
 export type AccountDb = PlayDb &
-  Pick<DataAccess, 'getUserAttempts' | 'getUserPrefs' | 'upsertUserPrefs'>;
+  Pick<
+    DataAccess,
+    'getUserAttempts' | 'getUserAttemptHistory' | 'getPuzzle' | 'getUserPrefs' | 'upsertUserPrefs'
+  >;
 
 export interface AccountProps {
   db: AccountDb;
@@ -122,10 +126,7 @@ export function Account({ db, user, auth }: AccountProps) {
           />
         </div>
       ) : view === 'history' ? (
-        <section data-testid="view-history" aria-label="history">
-          <h2>History</h2>
-          <p>Your past attempts will appear here.</p>
-        </section>
+        <History db={db} userId={user.id} />
       ) : (
         <Controls bindings={bindings} onChange={changeBindings} />
       )}

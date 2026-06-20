@@ -18,6 +18,7 @@ export type {
   UserRating,
   Attempt,
   NewAttempt,
+  AttemptHistoryEntry,
   UserPrefs,
   PuzzleRow,
   UserRatingRow,

@@ -71,6 +71,15 @@ export interface UserPrefs {
   bindings: Record<string, string>;
 }
 
+/**
+ * An attempt enriched with its puzzle's current rating for the History view
+ * (#26). Difficulty is not stored on the attempt; it is read by joining to the
+ * puzzle, and is null when the puzzle no longer exists (orphaned attempt).
+ */
+export interface AttemptHistoryEntry extends Attempt {
+  difficulty: number | null;
+}
+
 /** The fields needed to record an attempt. */
 export interface NewAttempt {
   userId: string;
