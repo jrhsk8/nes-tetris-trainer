@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Env / secrets (Supabase keys, etc.)
+.env
+.env.*
+!.env.example
+
+# Generated puzzle banks / local artifacts
+*.local.json
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
