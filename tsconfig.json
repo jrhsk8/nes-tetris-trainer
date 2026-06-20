@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/data" },
+    { "path": "./packages/rating" },
     { "path": "./apps/play" },
     { "path": "./generator" }
   ]
