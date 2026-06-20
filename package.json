@@ -1,0 +1,20 @@
+{
+  "name": "nes-tetris-trainer",
+  "version": "1.0.0",
+  "description": "A public, multi-user web app that serves pre-generated **2-ply NES Tetris placement puzzles** and tracks each player's stacking skill with a **Glicko co-rating**. The goal is to train *stacking judgment* — where to put each piece — independent of execution speed.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "sandcastle": "npx tsx .sandcastle/main.mts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@ai-hero/sandcastle": "^0.10.0",
+    "tsx": "^4.22.4"
+  }
+}
