@@ -1,14 +1,25 @@
 {
   "name": "nes-tetris-trainer",
   "version": "1.0.0",
+  "private": true,
+  "type": "module",
   "description": "A public, multi-user web app that serves pre-generated **2-ply NES Tetris placement puzzles** and tracks each player's stacking skill with a **Glicko co-rating**. The goal is to train *stacking judgment* — where to put each piece — independent of execution speed.",
-  "main": "index.js",
   "directories": {
     "doc": "docs"
   },
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "generator"
+  ],
   "scripts": {
-    "test": "echo \"(placeholder) no tests configured yet — replace with your test runner (e.g. vitest) in issue #1\" && exit 0",
-    "typecheck": "echo \"(placeholder) no typecheck configured yet — replace with: tsc --noEmit in issue #1\" && exit 0",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc --build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "sandcastle": "npx tsx .sandcastle/main.mts"
   },
   "keywords": [],
@@ -16,6 +27,15 @@
   "license": "ISC",
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.10.0",
-    "tsx": "^4.22.4"
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "jsdom": "^25.0.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.22.4",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^3.0.0"
   }
 }

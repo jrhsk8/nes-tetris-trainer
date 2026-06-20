@@ -3,7 +3,11 @@ node_modules/
 
 # Build output
 dist/
+dist-types/
 build/
+
+# TypeScript incremental build info
+*.tsbuildinfo
 
 # Env / secrets (Supabase keys, etc.)
 .env
