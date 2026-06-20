@@ -12,9 +12,19 @@ describe('Site design (#19)', () => {
     expect(css).toMatch(/#fcfcfc/i); // NES white
   });
 
-  it('commits to the retro aesthetic: pixel font + CRT scanlines', () => {
+  it('commits to the retro aesthetic: pixel font + hard offset shadows', () => {
     expect(css).toMatch(/Press Start 2P/i);
-    expect(css).toMatch(/scanline|repeating-linear-gradient/i);
+    // Chunky 8-bit chrome: hard offset shadows on panels (no soft blur radius).
+    expect(css).toMatch(/--shadow-hard:\s*4px 4px 0/i);
+  });
+
+  it('has no full-viewport CRT overlay (scroll-jank fix, #21)', () => {
+    // The expensive compositing layer is gone: no blend mode, no huge blurred
+    // full-screen inset shadow, no body grid texture.
+    expect(css).not.toMatch(/mix-blend-mode/i);
+    expect(css).not.toMatch(/box-shadow:\s*inset[^;]*\b\d{2,}px/i);
+    expect(css).not.toMatch(/body::after/i);
+    expect(css).not.toMatch(/background-size:\s*32px 32px/i);
   });
 
   it('avoids the telltale generic-AI UI patterns', () => {
