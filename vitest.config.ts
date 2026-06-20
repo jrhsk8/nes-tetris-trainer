@@ -17,7 +17,7 @@ export default defineConfig({
     // over time / a node upgrade resolves the root cause.
     pool: 'forks',
     poolOptions: {
-      forks: { execArgv: ['--no-concurrent-recompilation'] },
+      forks: { execArgv: ['--no-concurrent-recompilation'], maxForks: 4, minForks: 1 /* cap fork count: vitest pool=forks defaults to ~1 fork/CPU (~24 on the sandbox VM), each ~2.5GB RSS, which OOMs the 24GB VM */ },
     },
   },
 });
