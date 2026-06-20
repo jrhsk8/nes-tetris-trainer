@@ -6,6 +6,7 @@ import {
   encodeBoard,
   decodeBoard,
   applyPlacement,
+  restingCells,
   clearFullRows,
   columnHeights,
 } from './index.js';
@@ -89,6 +90,40 @@ describe('applyPlacement', () => {
 
   it('throws when the placement runs off the edge', () => {
     expect(() => applyPlacement(emptyBoard(), 'I', { rotation: 0, col: 8 })).toThrow();
+  });
+});
+
+describe('restingCells', () => {
+  it('returns the cells a piece rests on, on the floor of an empty board', () => {
+    const cells = restingCells(emptyBoard(), 'O', { rotation: 0, col: 0 });
+    expect(cells).not.toBeNull();
+    // An O on an empty board rests on the floor (rows 18-19), columns 0-1.
+    expect(new Set(cells!.map(([r, c]) => `${r},${c}`))).toEqual(
+      new Set(['18,0', '18,1', '19,0', '19,1']),
+    );
+  });
+
+  it('rests on top of the existing stack', () => {
+    const board = emptyBoard();
+    board[19][0] = 1; // a block on the floor in column 0
+    const cells = restingCells(board, 'O', { rotation: 0, col: 0 });
+    // The O cannot enter column 0's floor, so it rests one row higher (rows 17-18).
+    expect(cells!.every(([r]) => r === 17 || r === 18)).toBe(true);
+  });
+
+  it('returns null for an illegal placement (off the edge), matching applyPlacement', () => {
+    expect(restingCells(emptyBoard(), 'I', { rotation: 0, col: 8 })).toBeNull();
+    expect(() => applyPlacement(emptyBoard(), 'I', { rotation: 0, col: 8 })).toThrow();
+  });
+
+  it('agrees with applyPlacement: locking the resting cells yields the same board', () => {
+    const board = emptyBoard();
+    board[19][5] = 1;
+    const placement = { rotation: 0, col: 3 };
+    const cells = restingCells(board, 'T', placement)!;
+    const manual = board.map((row) => row.slice());
+    for (const [r, c] of cells) manual[r][c] = 1;
+    expect(manual).toEqual(applyPlacement(board, 'T', placement));
   });
 });
 

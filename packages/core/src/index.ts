@@ -17,6 +17,7 @@ export {
   decodeBoard,
   encodeBoard,
   applyPlacement,
+  restingCells,
   clearFullRows,
 } from './board.js';
 export type { Grid, Placement } from './board.js';

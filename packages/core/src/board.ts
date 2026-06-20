@@ -98,12 +98,19 @@ function fits(grid: Grid, piece: Piece, rotation: number, col: number, drop: num
 }
 
 /**
- * Apply a placement: drop `piece` (in `placement.rotation`) into `placement.col`
- * until it rests on the stack or floor, lock it, then clear any full rows. Returns
- * a NEW grid; `grid` is not mutated. Throws if the placement cannot legally sit on
- * the board (column off the edge, or no room to enter).
+ * The board cells `piece` (in `placement.rotation`, left edge at `placement.col`)
+ * would occupy after dropping straight down until it rests on the stack or floor.
+ * Returns the resting cells as `[row, col]` pairs, or `null` if the placement
+ * cannot legally sit on the board (column off the edge, or no room to enter).
+ *
+ * This is the geometry the ghost-piece UI overlays before a placement is locked
+ * (#10) and the optimal line animates (#12); `applyPlacement` shares it.
  */
-export function applyPlacement(grid: Grid, piece: Piece, placement: Placement): Grid {
+export function restingCells(
+  grid: Grid,
+  piece: Piece,
+  placement: Placement,
+): Array<[number, number]> | null {
   const { rotation, col } = placement;
 
   // The resting drop is the largest `drop` for which the piece still fits.
@@ -112,12 +119,24 @@ export function applyPlacement(grid: Grid, piece: Piece, placement: Placement): 
     if (fits(grid, piece, rotation, col, drop)) resting = drop;
     else if (resting >= 0) break; // first collision after a valid rest: stop.
   }
-  if (resting < 0) {
-    throw new Error(`illegal placement: ${piece} rot ${rotation} col ${col}`);
+  if (resting < 0) return null;
+  return placedCells(piece, rotation, col, resting);
+}
+
+/**
+ * Apply a placement: drop `piece` (in `placement.rotation`) into `placement.col`
+ * until it rests on the stack or floor, lock it, then clear any full rows. Returns
+ * a NEW grid; `grid` is not mutated. Throws if the placement cannot legally sit on
+ * the board (column off the edge, or no room to enter).
+ */
+export function applyPlacement(grid: Grid, piece: Piece, placement: Placement): Grid {
+  const cells = restingCells(grid, piece, placement);
+  if (!cells) {
+    throw new Error(`illegal placement: ${piece} rot ${placement.rotation} col ${placement.col}`);
   }
 
   const next = cloneBoard(grid);
-  for (const [r, c] of placedCells(piece, rotation, col, resting)) {
+  for (const [r, c] of cells) {
     next[r][c] = 1;
   }
   return clearFullRows(next);
