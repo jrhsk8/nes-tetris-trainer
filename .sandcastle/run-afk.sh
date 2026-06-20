@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # AFK runner for sandcastle.
 #
-# Loops `npm run sandcastle` until the agent emits the COMPLETE signal, with
-# crash resilience: relaunches on transient crashes (up to a consecutive-failure
-# cap and a hard launch ceiling), and relaunches on a clean exit that hit
-# maxIterations without finishing the backlog.
+# Loops `npm run sandcastle` until the backlog is drained, with crash resilience.
+# Stop detection: a clean launch (rc=0) that produced NO new commits means
+# sandcastle found nothing it could complete — backlog drained or all remaining
+# issues blocked. (The agent's COMPLETE promise is written to a separate
+# per-worker log, not this wrapper's stdout, so we detect "done" by lack of
+# commit progress rather than by grepping for the promise string.)
 #
 # Result flow: leaves all work on WSL `main` (sandcastle auto-merges via
 # merge-to-head). It does NOT push — review/push manually when back.
@@ -18,7 +20,6 @@ cd "$REPO" || { echo "repo not found: $REPO" >&2; exit 1; }
 
 MAX_RESTARTS="${MAX_RESTARTS:-6}"
 MAX_CONSEC_FAIL="${MAX_CONSEC_FAIL:-3}"
-COMPLETE_STR='<promise>COMPLETE</promise>'
 
 RUN_TS="$(date +%Y%m%d-%H%M%S)"
 LOG_DIR="$REPO/.sandcastle/logs"
@@ -26,6 +27,22 @@ mkdir -p "$LOG_DIR"
 SUMMARY="$LOG_DIR/afk-$RUN_TS.summary.log"
 
 log() { echo "[afk $(date +%H:%M:%S)] $*" | tee -a "$SUMMARY"; }
+
+# Best-effort count of open GitHub issues, for final status labelling only.
+# Returns -1 if it can't determine (no token/network) — never blocks the run.
+open_issue_count() {
+  local tok slug
+  tok=$(grep -E '^GH_TOKEN=' "$REPO/.sandcastle/.env" 2>/dev/null | head -1 | cut -d= -f2-)
+  slug=$(git -C "$REPO" config --get remote.origin.url 2>/dev/null | sed -E 's#.*github.com[:/]##; s#\.git$##')
+  [ -n "$tok" ] && [ -n "$slug" ] || { echo -1; return; }
+  curl -s -H "Authorization: token $tok" \
+    "https://api.github.com/repos/$slug/issues?state=open&per_page=100" 2>/dev/null \
+    | python3 -c 'import sys,json
+try:
+    d=json.load(sys.stdin); print(len([i for i in d if "pull_request" not in i]))
+except Exception:
+    print(-1)' 2>/dev/null || echo -1
+}
 
 launches=0
 consec_fail=0
@@ -37,35 +54,43 @@ log "HEAD before: $(git -C "$REPO" log --oneline -1)"
 while (( launches < MAX_RESTARTS )); do
   launches=$((launches+1))
 
-  # Prune worktrees orphaned by a previous crashed launch (safe: only removes
-  # entries whose directory is already gone). Skip on the first launch.
+  # Prune worktrees orphaned by a previous crashed launch (safe). Skip first.
   if (( launches > 1 )); then
     git -C "$REPO" worktree prune 2>>"$SUMMARY" || true
   fi
 
   RLOG="$LOG_DIR/afk-$RUN_TS.launch-$launches.log"
+  head_before=$(git -C "$REPO" rev-parse HEAD)
   log "launch #$launches -> $RLOG"
 
   npm run sandcastle 2>&1 | tee "$RLOG"
   rc=${PIPESTATUS[0]}
 
-  if grep -qF "$COMPLETE_STR" "$RLOG"; then
-    log "launch #$launches: COMPLETE signal seen (rc=$rc). Backlog drained."
-    status="COMPLETE"
-    break
-  fi
+  head_after=$(git -C "$REPO" rev-parse HEAD)
+  new_commits=$(git -C "$REPO" rev-list --count "${head_before}..${head_after}" 2>/dev/null || echo 0)
 
   if (( rc == 0 )); then
-    log "launch #$launches: clean exit (rc=0) without COMPLETE — likely hit maxIterations. Relaunching to continue."
+    if (( new_commits == 0 )); then
+      open=$(open_issue_count)
+      if [ "$open" = "0" ]; then
+        status="COMPLETE"
+        log "launch #$launches: clean exit, 0 new commits, 0 open issues — backlog drained."
+      else
+        status="NO_PROGRESS"
+        log "launch #$launches: clean exit, 0 new commits, ${open} issue(s) still open (likely blocked) — stopping."
+      fi
+      break
+    fi
+    log "launch #$launches: clean exit, ${new_commits} new commit(s) — relaunching to continue the backlog."
     consec_fail=0
     continue
   fi
 
   consec_fail=$((consec_fail+1))
-  log "launch #$launches: FAILED rc=$rc (consecutive failures: $consec_fail/$MAX_CONSEC_FAIL)"
+  log "launch #$launches: FAILED rc=$rc, ${new_commits} new commit(s) (consecutive failures: $consec_fail/$MAX_CONSEC_FAIL)"
   if (( consec_fail >= MAX_CONSEC_FAIL )); then
-    log "Too many consecutive failures. Aborting."
     status="ABORTED_FAILURES"
+    log "Too many consecutive failures. Aborting."
     break
   fi
   log "backing off 10s before relaunch..."
@@ -81,6 +106,8 @@ log "Recent commits (work is on WSL main, UNPUSHED):"
 git -C "$REPO" log --oneline -10 | tee -a "$SUMMARY"
 log "Summary: $SUMMARY"
 
-# Exit non-zero unless we drained the backlog cleanly, so callers/schedulers
-# can detect an unhealthy run.
-[[ "$status" == "COMPLETE" ]] && exit 0 || exit 1
+# COMPLETE and NO_PROGRESS both mean "nothing actionable left" → success.
+case "$status" in
+  COMPLETE|NO_PROGRESS) exit 0 ;;
+  *) exit 1 ;;
+esac
