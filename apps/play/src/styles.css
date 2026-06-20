@@ -514,8 +514,36 @@ input:focus-visible {
   max-width: 100%;
 }
 
+/* ---- Replay animation (#25) -------------------------------------------- */
+
+/* Line-clear flash: the cleared rows blink white before they collapse. */
+.line-flash-cell {
+  background: var(--nes-white, #fcfcfc);
+  animation: line-flash 0.26s steps(2, jump-none) 2;
+}
+
+@keyframes line-flash {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   button {
     transition: none;
+  }
+
+  /* Belt-and-braces: the JS already snaps to the settled board, but make sure
+   * no replay transform/flash animates if one is ever rendered. */
+  .falling-piece {
+    transition: none !important;
+  }
+
+  .line-flash-cell {
+    animation: none;
   }
 }

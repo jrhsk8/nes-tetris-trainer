@@ -1,11 +1,16 @@
 /**
- * Feedback view (#12, #22) — the teaching payoff (docs/PRD-v1.md "Feedback").
+ * Feedback view (#12, #22, #25) — the teaching payoff (docs/PRD-v1.md
+ * "Feedback").
  *
- * After an attempt it animates the stored optimal two-ply line on the board and
- * shows geometric metric deltas (holes, bumpiness, height) of the player's
- * result versus the optimal result. The optimal-side metrics are precomputed at
- * generation and passed in; the player-side metrics are computed here,
- * client-side, via @trainer/core (#3). No engine call is made.
+ * After an attempt it replays the stored optimal two-ply line as a falling
+ * animation (#25): each piece spawns at the top, slides into its column and
+ * drops to rest on a GPU transform overlay, then locks into the stack; a line
+ * clear flashes and collapses. With `prefers-reduced-motion` it snaps straight
+ * to the settled board. Alongside it shows geometric metric deltas (holes,
+ * bumpiness, height) of the player's result versus the optimal result — the
+ * optimal-side metrics are precomputed at generation; the player-side metrics
+ * are computed here, client-side, via @trainer/core (#3). No engine call is
+ * made.
  *
  * Laid out for the flanking dashboard (#22): the component uses `display:
  * contents` so its two regions — the animating board and the result panel
@@ -24,7 +29,9 @@ import {
   type Piece,
   type Placement,
 } from '@trainer/core';
-import { Board, type Cell } from '../board/Board.js';
+import { Board } from '../board/Board.js';
+import { PIECE_GROUP, blockBackground } from '../board/nes.js';
+import { buildReplay, finalBoard, type Keyframe, type ReplayOverlay } from './replay.js';
 
 /** A player rating change to surface alongside the outcome. */
 export interface RatingChange {
@@ -44,7 +51,7 @@ export interface FeedbackProps {
   optimalMetrics: BoardMetrics;
   /** The placements the player actually made (one or two). */
   userLine: readonly Placement[];
-  /** Milliseconds between animation steps. */
+  /** Milliseconds per animation step (also the falling-piece transition time). */
   stepMs?: number;
   /** Whether the player solved the puzzle (shows the outcome heading). */
   solved?: boolean;
@@ -54,22 +61,76 @@ export interface FeedbackProps {
   onNext?: () => void;
 }
 
-interface Frame {
-  grid: Grid;
-  highlight: Cell[];
-  /** The piece that landed in this frame (drives the highlight colour). */
-  piece: Piece | undefined;
+/** True if the user has asked for reduced motion (read once, at mount). */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }
 
-/** Cells filled in `next` but not in `prev` (the piece that just landed). */
-function newlyFilled(prev: Grid, next: Grid): Cell[] {
-  const cells: Cell[] = [];
-  for (let r = 0; r < next.length; r++) {
-    for (let c = 0; c < next[r].length; c++) {
-      if (next[r][c] && !prev[r][c]) cells.push([r, c]);
-    }
-  }
-  return cells;
+/** The falling piece, drawn on a board-sized overlay that the transform moves. */
+function FallingPiece({ overlay, durationMs }: { overlay: ReplayOverlay; durationMs: number }) {
+  const background = blockBackground(PIECE_GROUP[overlay.piece]);
+  return (
+    <div
+      data-testid="falling-piece"
+      className="falling-piece"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(10, 1fr)',
+        gridTemplateRows: 'repeat(20, 1fr)',
+        transform: overlay.transform,
+        transition: `transform ${durationMs}ms cubic-bezier(0.35, 0.1, 0.3, 1)`,
+        willChange: 'transform',
+        pointerEvents: 'none',
+      }}
+    >
+      {overlay.cells.map(([r, c]) => (
+        <div
+          key={`${r}-${c}`}
+          data-testid="falling-cell"
+          style={{
+            gridRow: r + 1,
+            gridColumn: c + 1,
+            backgroundImage: background,
+            backgroundSize: '100% 100%',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** The flash drawn over rows about to be cleared. */
+function LineFlash({ rows }: { rows: readonly number[] }) {
+  return (
+    <div
+      data-testid="line-flash"
+      className="line-flash"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(10, 1fr)',
+        gridTemplateRows: 'repeat(20, 1fr)',
+        pointerEvents: 'none',
+      }}
+    >
+      {rows.flatMap((r) =>
+        Array.from({ length: 10 }, (_, c) => (
+          <div
+            key={`${r}-${c}`}
+            className="line-flash-cell"
+            style={{ gridRow: r + 1, gridColumn: c + 1 }}
+          />
+        )),
+      )}
+    </div>
+  );
 }
 
 /** Board after applying the placements the player made (1 or 2). */
@@ -97,20 +158,21 @@ export function Feedback({
   optimalLine,
   optimalMetrics,
   userLine,
-  stepMs = 900,
+  stepMs = 320,
   solved,
   ratingChange,
   onNext,
 }: FeedbackProps) {
-  const frames = useMemo<Frame[]>(() => {
-    const board1 = applyPlacement(board0, piece1, optimalLine[0]);
-    const board2 = applyPlacement(board1, piece2, optimalLine[1]);
-    return [
-      { grid: board0, highlight: [], piece: undefined },
-      { grid: board1, highlight: newlyFilled(board0, board1), piece: piece1 },
-      { grid: board2, highlight: newlyFilled(board1, board2), piece: piece2 },
-    ];
-  }, [board0, piece1, piece2, optimalLine]);
+  const [reduced] = useState(prefersReducedMotion);
+
+  const timeline = useMemo<Keyframe[]>(() => {
+    const keyframes = buildReplay(board0, piece1, piece2, optimalLine);
+    // Reduced motion: jump straight to the settled board, no falling/flash.
+    if (reduced) {
+      return [{ grid: finalBoard(board0, piece1, piece2, optimalLine), label: 'Optimal line' }];
+    }
+    return keyframes;
+  }, [board0, piece1, piece2, optimalLine, reduced]);
 
   const userMetrics = useMemo(
     () => boardMetrics(applyUserLine(board0, piece1, piece2, userLine)),
@@ -119,25 +181,40 @@ export function Feedback({
 
   const [step, setStep] = useState(0);
 
+  // Restart the replay whenever the timeline changes (a new puzzle/attempt).
+  useEffect(() => setStep(0), [timeline]);
+
   useEffect(() => {
-    if (step >= frames.length - 1) return;
+    if (step >= timeline.length - 1) return;
     const timer = setTimeout(() => setStep((s) => s + 1), stepMs);
     return () => clearTimeout(timer);
-  }, [step, frames.length, stepMs]);
+  }, [step, timeline.length, stepMs]);
+
+  const frame = timeline[Math.min(step, timeline.length - 1)];
 
   return (
     <div className="feedback">
       <div className="play-center feedback-board" data-testid="board-center">
         <p className="play-instruction">The optimal line:</p>
         <Board
-          grid={frames[step].grid}
-          highlightCells={frames[step].highlight}
-          highlightPiece={frames[step].piece}
+          grid={frame.grid}
+          overlay={
+            <>
+              {frame.overlay ? (
+                <FallingPiece
+                  key={`falling-${frame.overlayKey}`}
+                  overlay={frame.overlay}
+                  durationMs={stepMs}
+                />
+              ) : null}
+              {frame.flashRows ? <LineFlash rows={frame.flashRows} /> : null}
+            </>
+          }
         />
         <p data-testid="feedback-step">
-          Step {step + 1} of {frames.length}
+          {frame.label} · {Math.min(step + 1, timeline.length)}/{timeline.length}
         </p>
-        <button type="button" onClick={() => setStep(0)} disabled={step === 0}>
+        <button type="button" onClick={() => setStep(0)}>
           Replay
         </button>
       </div>

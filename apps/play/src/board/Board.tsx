@@ -10,6 +10,7 @@
  * tracked in the binary `Grid` — falls back to the white block group.
  */
 
+import type { ReactNode } from 'react';
 import { COLS, type Grid, type Piece } from '@trainer/core';
 import { PIECE_GROUP, blockBackground, type ColorGroup } from './nes.js';
 
@@ -27,6 +28,12 @@ export interface BoardProps {
   ghostPiece?: Piece;
   /** Colour the highlight cells as this piece (defaults to the white group). */
   highlightPiece?: Piece;
+  /**
+   * An absolutely-positioned layer drawn over the grid, exactly covering the
+   * cell area (the replay falling piece / line-clear flash, #25). It is the
+   * caller's job to make its content `position: absolute; inset: 0`.
+   */
+  overlay?: ReactNode;
 }
 
 const keyOf = (r: number, c: number) => `${r}-${c}`;
@@ -39,6 +46,7 @@ export function Board({
   highlightCells = [],
   ghostPiece,
   highlightPiece,
+  overlay,
 }: BoardProps) {
   const ghost = new Set(ghostCells.map(([r, c]) => keyOf(r, c)));
   const highlight = new Set(highlightCells.map(([r, c]) => keyOf(r, c)));
@@ -69,6 +77,8 @@ export function Board({
           // viewport height, no fixed pixel cap. Falls back to a sane width if
           // the stylesheet is absent (e.g. unit tests).
           width: 'var(--board-width, min(86vw, 320px))',
+          // Anchors the optional replay overlay (#25) to the cell area.
+          position: 'relative',
         }}
       >
         {grid.map((row, r) =>
@@ -108,6 +118,7 @@ export function Board({
             );
           }),
         )}
+        {overlay}
       </div>
     </div>
   );
