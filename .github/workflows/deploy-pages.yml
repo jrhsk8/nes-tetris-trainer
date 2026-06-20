@@ -36,6 +36,10 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # Dev-only open access (#20, TEMPORARY): the site is still in development,
+          # so visitors skip sign-in and play as a throwaway dev user. Remove this
+          # line (and src/auth/devBypass.ts) when login should be required again.
+          VITE_AUTH_BYPASS: '1'
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/play/dist
