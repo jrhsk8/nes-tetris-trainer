@@ -14,6 +14,8 @@ import type {
   NewPuzzle,
   Puzzle,
   PuzzleRow,
+  UserPrefs,
+  UserPrefsRow,
   UserRating,
   UserRatingRow,
 } from './types.js';
@@ -80,6 +82,10 @@ function rowToAttempt(row: AttemptRow): Attempt {
   };
 }
 
+function rowToUserPrefs(row: UserPrefsRow): UserPrefs {
+  return { userId: row.user_id, bindings: row.bindings };
+}
+
 /** The data-access surface shared by the play app and the generator. */
 export interface DataAccess {
   getPuzzle(id: string): Promise<Puzzle | null>;
@@ -91,6 +97,8 @@ export interface DataAccess {
   upsertUserRating(rating: UserRating): Promise<UserRating>;
   insertAttempt(attempt: NewAttempt): Promise<Attempt>;
   getUserAttempts(userId: string): Promise<Attempt[]>;
+  getUserPrefs(userId: string): Promise<UserPrefs | null>;
+  upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs>;
 }
 
 function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
@@ -207,6 +215,33 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return (data as AttemptRow[]).map(rowToAttempt);
   }
 
+  async function getUserPrefs(userId: string): Promise<UserPrefs | null> {
+    const { data, error } = await client
+      .from('user_prefs')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw new Error(`getUserPrefs failed: ${error.message}`);
+    return data ? rowToUserPrefs(data as UserPrefsRow) : null;
+  }
+
+  async function upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs> {
+    const { data, error } = await client
+      .from('user_prefs')
+      .upsert(
+        {
+          user_id: prefs.userId,
+          bindings: prefs.bindings,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+      .select('*')
+      .single();
+    if (error) throw new Error(`upsertUserPrefs failed: ${error.message}`);
+    return rowToUserPrefs(data as UserPrefsRow);
+  }
+
   return {
     getPuzzle,
     getRandomPuzzle,
@@ -217,5 +252,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     upsertUserRating,
     insertAttempt,
     getUserAttempts,
+    getUserPrefs,
+    upsertUserPrefs,
   };
 }

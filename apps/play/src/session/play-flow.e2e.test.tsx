@@ -31,7 +31,7 @@ afterAll(async () => {
 async function place(user: ReturnType<typeof userEvent.setup>, target: Placement) {
   const input = () => screen.getByLabelText('placement input');
   for (let i = 0; i < 8 && Number(input().getAttribute('data-rotation')) !== target.rotation; i++) {
-    await user.click(screen.getByRole('button', { name: 'Rotate' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate clockwise' }));
   }
   for (let i = 0; i < 20 && Number(input().getAttribute('data-col')) !== target.col; i++) {
     const current = Number(input().getAttribute('data-col'));

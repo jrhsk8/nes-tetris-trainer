@@ -62,6 +62,15 @@ export interface Attempt {
   createdAt: string;
 }
 
+/**
+ * A user's persisted preferences (#24). `bindings` is an action→key map; the
+ * data layer keeps it as an opaque string map so the app owns the action set.
+ */
+export interface UserPrefs {
+  userId: string;
+  bindings: Record<string, string>;
+}
+
 /** The fields needed to record an attempt. */
 export interface NewAttempt {
   userId: string;
@@ -103,4 +112,10 @@ export interface AttemptRow {
   solved: boolean;
   rating_after: number | null;
   created_at: string;
+}
+
+export interface UserPrefsRow {
+  user_id: string;
+  bindings: Record<string, string>;
+  updated_at: string;
 }

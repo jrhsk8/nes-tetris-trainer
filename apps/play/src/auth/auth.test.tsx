@@ -118,6 +118,12 @@ describe('Account', () => {
       async insertAttempt() {
         throw new Error('not used');
       },
+      async getUserPrefs() {
+        return null;
+      },
+      async upsertUserPrefs(p: { userId: string; bindings: Record<string, string> }) {
+        return p;
+      },
     };
 
     render(<Account db={db} user={{ id: 'u1', email: 'me@example.com' }} auth={auth} />);

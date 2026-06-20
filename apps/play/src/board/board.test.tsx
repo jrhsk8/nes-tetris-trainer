@@ -72,7 +72,7 @@ describe('PlacementInput', () => {
     const afterMove = ghostKeys();
     expect(afterMove).not.toEqual(before); // the ghost actually moved
 
-    await user.click(screen.getByRole('button', { name: 'Rotate' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate clockwise' }));
     const shownAtConfirm = ghostKeys();
 
     await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
@@ -98,5 +98,29 @@ describe('PlacementInput', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const emitted = onConfirm.mock.calls[0][0];
     expect(keysOf(restingCells(board, 'L', emitted)!)).toEqual(ghostKeys());
+  });
+
+  it('rotates clockwise with x and counter-clockwise with z (inverses)', async () => {
+    const user = userEvent.setup();
+    render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
+    const input = screen.getByLabelText('placement input');
+    await user.click(input);
+
+    const start = input.getAttribute('data-rotation');
+    await user.keyboard('x'); // CW
+    expect(input.getAttribute('data-rotation')).not.toBe(start);
+    await user.keyboard('z'); // CCW undoes it
+    expect(input.getAttribute('data-rotation')).toBe(start);
+  });
+
+  it('honors a custom binding (Space confirms)', async () => {
+    const user = userEvent.setup();
+    const board = emptyBoard();
+    const onConfirm = vi.fn<(p: Placement) => void>();
+    render(<PlacementInput board={board} piece="L" onConfirm={onConfirm} />);
+
+    await user.click(screen.getByLabelText('placement input'));
+    await user.keyboard('[Space]');
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DataAccess, Puzzle } from '@trainer/data';
 import { PuzzleSession } from './PuzzleSession.js';
 import { PlayScreen } from './PlayScreen.js';
+import { type KeyBindings } from '../board/keybindings.js';
 
 /** The persistence the loader + session need. */
 export type PlayDb = Pick<
@@ -22,9 +23,11 @@ export interface PuzzlePlayProps {
   onAdvance?: () => void;
   /** Content for the play screen's left rail (the rating panel). */
   leftFlank?: ReactNode;
+  /** Player key bindings, threaded to the placement input. */
+  bindings?: KeyBindings;
 }
 
-export function PuzzlePlay({ db, userId, onAdvance, leftFlank }: PuzzlePlayProps) {
+export function PuzzlePlay({ db, userId, onAdvance, leftFlank, bindings }: PuzzlePlayProps) {
   // undefined = loading, null = empty bank, Puzzle = ready.
   const [puzzle, setPuzzle] = useState<Puzzle | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +81,7 @@ export function PuzzlePlay({ db, userId, onAdvance, leftFlank }: PuzzlePlayProps
       db={db}
       onNext={() => void load()}
       leftFlank={leftFlank}
+      bindings={bindings}
     />
   );
 }

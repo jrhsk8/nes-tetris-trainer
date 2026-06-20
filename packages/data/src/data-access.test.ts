@@ -24,6 +24,7 @@ afterAll(async () => {
   }
   for (const id of createdUserIds) {
     await client.from('user_ratings').delete().eq('user_id', id);
+    await client.from('user_prefs').delete().eq('user_id', id);
   }
 });
 
@@ -107,5 +108,28 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     const attempts = await db!.getUserAttempts(userId);
     expect(attempts).toHaveLength(1);
     expect(attempts[0].id).toBe(attempt.id);
+  });
+
+  it('round-trips user prefs (key bindings) via upsert and read', async () => {
+    const userId = crypto.randomUUID();
+    createdUserIds.push(userId);
+
+    expect(await db!.getUserPrefs(userId)).toBeNull();
+
+    const saved = await db!.upsertUserPrefs({
+      userId,
+      bindings: { 'move-left': 'ArrowLeft', 'rotate-cw': 'k' },
+    });
+    expect(saved.bindings['rotate-cw']).toBe('k');
+
+    const reread = await db!.getUserPrefs(userId);
+    expect(reread).toEqual(saved);
+
+    // Upsert again to confirm it updates rather than duplicating.
+    const updated = await db!.upsertUserPrefs({
+      userId,
+      bindings: { 'rotate-cw': 'j' },
+    });
+    expect(updated.bindings['rotate-cw']).toBe('j');
   });
 });

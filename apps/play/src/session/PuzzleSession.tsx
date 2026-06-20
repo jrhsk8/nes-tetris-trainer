@@ -27,6 +27,7 @@ import type { DataAccess, Glicko, Puzzle } from '@trainer/data';
 import { applyAttempt, seedRating, updateRatings } from '@trainer/rating';
 import { PlacementInput } from '../board/PlacementInput.js';
 import { NextPieceBox } from '../board/NextPieceBox.js';
+import { DEFAULT_BINDINGS, type KeyBindings } from '../board/keybindings.js';
 import { Feedback } from '../feedback/index.js';
 import { PlayScreen } from './PlayScreen.js';
 
@@ -42,6 +43,8 @@ export interface PuzzleSessionProps {
   onNext?: () => void;
   /** Content for the left rail (the rating panel). */
   leftFlank?: ReactNode;
+  /** Player key bindings (defaults to {@link DEFAULT_BINDINGS}). */
+  bindings?: KeyBindings;
 }
 
 interface RatingChange {
@@ -58,7 +61,14 @@ interface SessionResult {
 
 type Phase = 'place1' | 'place2' | 'grading' | 'done';
 
-export function PuzzleSession({ puzzle, userId, db, onNext, leftFlank }: PuzzleSessionProps) {
+export function PuzzleSession({
+  puzzle,
+  userId,
+  db,
+  onNext,
+  leftFlank,
+  bindings = DEFAULT_BINDINGS,
+}: PuzzleSessionProps) {
   const board0 = useMemo(() => decodeBoard(puzzle.board), [puzzle.board]);
   const [phase, setPhase] = useState<Phase>('place1');
   const [placement1, setPlacement1] = useState<Placement | null>(null);
@@ -129,7 +139,12 @@ export function PuzzleSession({ puzzle, userId, db, onNext, leftFlank }: PuzzleS
           <p className="play-instruction">
             Place the <strong>{puzzle.piece1}</strong>.
           </p>
-          <PlacementInput board={board0} piece={puzzle.piece1} onConfirm={onConfirm1} />
+          <PlacementInput
+            board={board0}
+            piece={puzzle.piece1}
+            onConfirm={onConfirm1}
+            bindings={bindings}
+          />
         </div>
         <aside className="flank flank-right" aria-label="next piece">
           <NextPieceBox piece={puzzle.piece2} />
@@ -145,7 +160,12 @@ export function PuzzleSession({ puzzle, userId, db, onNext, leftFlank }: PuzzleS
           <p className="play-instruction">
             Place the <strong>{puzzle.piece2}</strong>. <em>(no next piece)</em>
           </p>
-          <PlacementInput board={board1} piece={puzzle.piece2} onConfirm={onConfirm2} />
+          <PlacementInput
+            board={board1}
+            piece={puzzle.piece2}
+            onConfirm={onConfirm2}
+            bindings={bindings}
+          />
         </div>
         <aside className="flank flank-right" aria-label="next piece">
           <NextPieceBox piece={null} />

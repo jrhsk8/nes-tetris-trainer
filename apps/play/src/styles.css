@@ -482,6 +482,41 @@ input:focus-visible {
   color: var(--nes-red);
 }
 
+/* ---- Controls panel (#24) ---------------------------------------------- */
+
+.controls-hint {
+  color: var(--ink-dim);
+  margin: 0 0 10px;
+}
+
+.controls-conflict {
+  color: var(--nes-red);
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+
+.controls-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.controls-table td {
+  padding: 6px 8px;
+}
+
+.controls-table td:last-child {
+  text-align: right;
+}
+
+.controls-table button {
+  min-width: 7ch;
+  font-family: var(--font-pixel);
+}
+
+.control-listening {
+  outline: 2px solid var(--nes-gold);
+}
+
 [data-testid='outcome'] {
   color: var(--nes-gold);
 }

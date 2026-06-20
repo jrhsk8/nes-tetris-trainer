@@ -37,6 +37,12 @@ function emptyDb(): AccountDb {
     async insertAttempt() {
       throw new Error('not used');
     },
+    async getUserPrefs() {
+      return null;
+    },
+    async upsertUserPrefs(p) {
+      return p;
+    },
   };
 }
 

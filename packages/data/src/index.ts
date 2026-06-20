@@ -18,7 +18,9 @@ export type {
   UserRating,
   Attempt,
   NewAttempt,
+  UserPrefs,
   PuzzleRow,
   UserRatingRow,
   AttemptRow,
+  UserPrefsRow,
 } from './types.js';
