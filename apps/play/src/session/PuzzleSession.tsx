@@ -15,14 +15,13 @@ import {
   applyPlacement,
   decodeBoard,
   gradeAttempt,
-  type Grid,
   type Line,
   type Placement,
 } from '@trainer/core';
 import type { DataAccess, Glicko, Puzzle } from '@trainer/data';
 import { applyAttempt, seedRating, updateRatings } from '@trainer/rating';
-import { Board } from '../board/Board.js';
 import { PlacementInput } from '../board/PlacementInput.js';
+import { Feedback } from '../feedback/index.js';
 
 /** The persistence the session needs (rating read/write + attempt insert). */
 export type SessionDb = Pick<DataAccess, 'getUserRating' | 'upsertUserRating' | 'insertAttempt'>;
@@ -45,15 +44,10 @@ interface RatingChange {
 interface SessionResult {
   solved: boolean;
   rating: RatingChange;
+  userLine: readonly Placement[];
 }
 
 type Phase = 'place1' | 'place2' | 'grading' | 'done';
-
-/** The board after both optimal placements — the line the player is graded against. */
-function optimalResultBoard(board0: Grid, puzzle: Puzzle): Grid {
-  const board1 = applyPlacement(board0, puzzle.piece1, puzzle.optimalLine[0]);
-  return applyPlacement(board1, puzzle.piece2, puzzle.optimalLine[1]);
-}
 
 export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps) {
   const board0 = useMemo(() => decodeBoard(puzzle.board), [puzzle.board]);
@@ -89,7 +83,7 @@ export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps
           delta: update.user.rating - seedRating().rating,
         };
       }
-      setResult({ solved, rating });
+      setResult({ solved, rating, userLine });
       setPhase('done');
     },
     [db, userId, puzzle.glicko, puzzle.id],
@@ -155,8 +149,14 @@ export function PuzzleSession({ puzzle, userId, db, onNext }: PuzzleSessionProps
         Rating: {Math.round(before.rating)} → {Math.round(after.rating)} ({delta >= 0 ? '+' : ''}
         {Math.round(delta)})
       </p>
-      <p>The optimal result (the line is animated in the feedback view):</p>
-      <Board grid={optimalResultBoard(board0, puzzle)} />
+      <Feedback
+        board0={board0}
+        piece1={puzzle.piece1}
+        piece2={puzzle.piece2}
+        optimalLine={puzzle.optimalLine}
+        optimalMetrics={puzzle.optimalMetrics}
+        userLine={result!.userLine}
+      />
       {onNext ? (
         <button type="button" onClick={onNext}>
           Next puzzle
