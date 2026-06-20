@@ -19,8 +19,10 @@ export function App() {
 
   return (
     <main>
-      <h1>NES Tetris Stacking Trainer</h1>
-      <p>Train stacking judgment — where to put each piece, independent of speed.</p>
+      <header className="app-header">
+        <h1>NES Tetris Stacking Trainer</h1>
+        <p>Train stacking judgment — where to put each piece, independent of speed.</p>
+      </header>
       {services ? (
         <Authenticated db={services.db} auth={services.auth} />
       ) : (
