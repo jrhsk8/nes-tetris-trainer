@@ -28,8 +28,12 @@ treat the issues that need them as blocked.
 
 ## Run scope (this run)
 
-- Attempt all open issues.
-- **Issue #15 (full v1 bank + deploy): generate and commit the full v1 puzzle bank and make tests pass, but DO NOT run the deploy/hosting step.** When the bank is generated, comment on #15 explaining the bank is complete and that deploy is intentionally deferred for manual review, then close #15. Do not attempt to deploy or provision hosting.
+This is the **2026-06-20 UX-overhaul batch**. Work **Phase 1 only — issues #21 through #26** (client-only changes; no bank regeneration).
+
+- Respect the `Blocked by #N` line at the top of an issue body: do not start a blocked issue until its blocker is closed. In practice that means **#22 must be closed before #23, #24, #25, or #26**. #21 has no dependencies — it is the natural first issue.
+- **DO NOT work #27, #28, or #29.** #27 regenerates and *replaces the live production puzzle bank* — it is destructive and outward-facing (mints new puzzle IDs, orphans every existing user attempt, applies a DDL migration, drives StackRabbit hard) and is intentionally held back for a supervised manual pass. #28 and #29 consume #27's new data and are blocked by it.
+  - For each of #27, #28, #29: if it does not already have a deferral comment (check the issue's `comments` in the list above), add one short comment that it is deferred to a supervised pass; otherwise skip it silently. **Never start, commit, or close #27/#28/#29.**
+- Treat #27/#28/#29 as out of scope when deciding you are done: once #21–#26 are all closed, every remaining open issue is out-of-scope or blocked, so output the completion signal.
 
 # Task
 
