@@ -123,6 +123,8 @@ export function PlacementInput({ board, piece, onConfirm, label }: PlacementInpu
       onKeyDown={onKeyDown}
       tabIndex={0}
       aria-label="placement input"
+      data-rotation={rotation}
+      data-col={col}
     >
       {label ? <p className="placement-label">{label}</p> : null}
       <Board grid={board} ghostCells={ghostCells} />

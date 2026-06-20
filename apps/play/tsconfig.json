@@ -8,6 +8,10 @@
     "outDir": "./dist-types",
     "noEmit": false
   },
-  "references": [{ "path": "../../packages/core" }],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/data" },
+    { "path": "../../packages/rating" }
+  ],
   "include": ["src/**/*", "vite.config.ts"]
 }

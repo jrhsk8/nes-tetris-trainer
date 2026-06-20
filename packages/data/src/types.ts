@@ -7,6 +7,7 @@
 import type { Line } from '@trainer/core';
 import type { BoardMetrics } from '@trainer/core';
 import type { Piece } from '@trainer/core';
+import type { Placement } from '@trainer/core';
 
 /** Glicko-2 rating triple carried by both players and puzzles. */
 export interface Glicko {
@@ -46,12 +47,15 @@ export interface UserRating extends Glicko {
   userId: string;
 }
 
-/** A recorded attempt. */
+/**
+ * A recorded attempt. `userLine` holds the placements the player actually made:
+ * two on a completed puzzle, or one when a wrong first move ended it early.
+ */
 export interface Attempt {
   id: string;
   userId: string;
   puzzleId: string;
-  userLine: Line;
+  userLine: readonly Placement[];
   solved: boolean;
   createdAt: string;
 }
@@ -60,7 +64,7 @@ export interface Attempt {
 export interface NewAttempt {
   userId: string;
   puzzleId: string;
-  userLine: Line;
+  userLine: readonly Placement[];
   solved: boolean;
 }
 
@@ -91,7 +95,7 @@ export interface AttemptRow {
   id: string;
   user_id: string;
   puzzle_id: string;
-  user_line: Line;
+  user_line: readonly Placement[];
   solved: boolean;
   created_at: string;
 }
