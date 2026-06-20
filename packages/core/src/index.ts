@@ -6,8 +6,8 @@
  * (#5). The rating glue (#6) re-exports from here when it lands.
  */
 
-export { PIECES, isPiece, ORIENTATIONS } from './pieces.js';
-export type { Piece, Orientation } from './pieces.js';
+export { PIECES, isPiece, ORIENTATIONS, PIECE_GROUP } from './pieces.js';
+export type { Piece, Orientation, ColorGroup } from './pieces.js';
 
 export {
   ROWS,
@@ -19,8 +19,13 @@ export {
   applyPlacement,
   restingCells,
   clearFullRows,
+  emptyColorGrid,
+  cloneColorGrid,
+  encodeColors,
+  decodeColors,
+  applyPlacementColored,
 } from './board.js';
-export type { Grid, Placement } from './board.js';
+export type { Grid, Placement, ColorGrid } from './board.js';
 
 export { columnHeights, aggregateHeight, bumpiness, holes, boardMetrics } from './metrics.js';
 export type { BoardMetrics } from './metrics.js';

@@ -59,6 +59,9 @@ function rowToPuzzle(row: PuzzleRow): Puzzle {
     optimalLine: row.optimal_line,
     optimalMetrics: row.optimal_metrics,
     glicko: { rating: row.rating, deviation: row.deviation, volatility: row.volatility },
+    colors: row.colors ?? '',
+    firstValues: row.first_values ?? [],
+    secondValues: row.second_values ?? [],
   };
 }
 
@@ -94,6 +97,8 @@ export interface DataAccess {
   countPuzzles(): Promise<number>;
   insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle>;
   insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]>;
+  /** Delete every puzzle (and, by cascade, every attempt). Used by a bank regen. */
+  deleteAllPuzzles(): Promise<number>;
   getUserRating(userId: string): Promise<UserRating | null>;
   upsertUserRating(rating: UserRating): Promise<UserRating>;
   insertAttempt(attempt: NewAttempt): Promise<Attempt>;
@@ -114,6 +119,9 @@ function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
   if (puzzle.glicko?.rating !== undefined) row.rating = puzzle.glicko.rating;
   if (puzzle.glicko?.deviation !== undefined) row.deviation = puzzle.glicko.deviation;
   if (puzzle.glicko?.volatility !== undefined) row.volatility = puzzle.glicko.volatility;
+  if (puzzle.colors !== undefined) row.colors = puzzle.colors;
+  if (puzzle.firstValues !== undefined) row.first_values = puzzle.firstValues;
+  if (puzzle.secondValues !== undefined) row.second_values = puzzle.secondValues;
   return row;
 }
 
@@ -160,6 +168,19 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
   async function insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle> {
     const [inserted] = await insertPuzzles([puzzle]);
     return inserted;
+  }
+
+  async function deleteAllPuzzles(): Promise<number> {
+    // Delete every row; attempts cascade-delete via their FK. The
+    // `not is null` predicate matches all rows (id is never null) and
+    // satisfies supabase-js's requirement that a delete carry a filter.
+    const { data, error } = await client
+      .from('puzzles')
+      .delete()
+      .not('id', 'is', null)
+      .select('id');
+    if (error) throw new Error(`deleteAllPuzzles failed: ${error.message}`);
+    return (data ?? []).length;
   }
 
   async function getUserRating(userId: string): Promise<UserRating | null> {
@@ -263,6 +284,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     countPuzzles,
     insertPuzzle,
     insertPuzzles,
+    deleteAllPuzzles,
     getUserRating,
     upsertUserRating,
     insertAttempt,

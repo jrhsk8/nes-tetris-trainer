@@ -19,8 +19,21 @@ create table if not exists public.puzzles (
   rating double precision not null default 1500,
   deviation double precision not null default 350,
   volatility double precision not null default 0.06,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- 200-char colour grid parallel to `board` (#28): '0' empty, '1'/'2'/'3' NES
+  -- colour group. The optional value tables drive the solutions chart (#29):
+  -- `first_values` = every legal piece-1 placement + engine value (optimal
+  -- follow-up); `second_values` = piece-2 placements after the optimal first
+  -- move. All three are added additively so legacy rows stay valid.
+  colors text,
+  first_values jsonb,
+  second_values jsonb
 );
+
+-- Additive backfill for banks created before the 2026-06-20 colour/value regen.
+alter table public.puzzles add column if not exists colors text;
+alter table public.puzzles add column if not exists first_values jsonb;
+alter table public.puzzles add column if not exists second_values jsonb;
 
 -- Per-user Glicko-2 rating (one row per user).
 create table if not exists public.user_ratings (

@@ -24,6 +24,9 @@ function recordingDb() {
         id: `id-${i}`,
         ...p,
         glicko: { rating: 1500, deviation: 350, volatility: 0.06 },
+        colors: p.colors ?? '',
+        firstValues: p.firstValues ?? [],
+        secondValues: p.secondValues ?? [],
       }));
     },
   };

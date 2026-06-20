@@ -36,12 +36,21 @@ const sampleLine: Line = [
 describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
   it('round-trips a puzzle: insert then read back by id', async () => {
     const board = encodeBoard(emptyBoard());
+    const colors = '1'.repeat(200);
+    const firstValues = [
+      { rotation: 0, col: 0, value: 12.5 },
+      { rotation: 1, col: 3, value: 9.1 },
+    ];
+    const secondValues = [{ rotation: 0, col: 4, value: 7.2 }];
     const inserted = await db!.insertPuzzle({
       board,
       piece1: 'T',
       piece2: 'L',
       optimalLine: sampleLine,
       optimalMetrics: boardMetrics(emptyBoard()),
+      colors,
+      firstValues,
+      secondValues,
     });
     createdPuzzleIds.push(inserted.id);
 
@@ -53,6 +62,10 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(fetched!.piece1).toBe('T');
     expect(fetched!.optimalLine).toEqual(sampleLine);
     expect(fetched!.optimalMetrics.holes).toBe(0);
+    // The colour grid and value tables (#27) round-trip intact.
+    expect(fetched!.colors).toBe(colors);
+    expect(fetched!.firstValues).toEqual(firstValues);
+    expect(fetched!.secondValues).toEqual(secondValues);
   });
 
   it('selects a random puzzle from the bank', async () => {

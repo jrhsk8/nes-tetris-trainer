@@ -17,10 +17,11 @@ interface CliArgs {
   count: number;
   max: number;
   threshold?: number;
+  replace: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { count: 20, max: 2000 };
+  const args: CliArgs = { count: 20, max: 2000, replace: false };
   for (let i = 0; i < argv.length; i++) {
     const value = argv[i + 1];
     switch (argv[i]) {
@@ -35,6 +36,11 @@ function parseArgs(argv: string[]): CliArgs {
       case '--threshold':
         args.threshold = Number.parseFloat(value);
         i++;
+        break;
+      case '--replace':
+        // Replace the whole bank (delete existing puzzles + their attempts)
+        // before inserting the freshly generated set.
+        args.replace = true;
         break;
     }
   }
@@ -59,12 +65,16 @@ async function main(): Promise<void> {
   const db = createDataAccess(createSupabaseClient(supabaseUrl, serviceKey));
   const source = new SelfPlayBoardSource(engine);
 
-  console.log(`Generating up to ${args.count} puzzles (max ${args.max} candidates)...`);
+  console.log(
+    `Generating up to ${args.count} puzzles (max ${args.max} candidates)` +
+      `${args.replace ? ', replacing the existing bank' : ''}...`,
+  );
   const result = await generateBank(
     { source, engine, db },
     {
       targetCount: args.count,
       maxCandidates: args.max,
+      replace: args.replace,
       config: args.threshold !== undefined ? { unambiguityThreshold: args.threshold } : undefined,
       onProgress: (message) => console.log(`  ${message}`),
     },

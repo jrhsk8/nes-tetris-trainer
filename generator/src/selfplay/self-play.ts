@@ -17,14 +17,20 @@ import {
   PIECES,
   COLS,
   ORIENTATIONS,
+  PIECE_GROUP,
   applyPlacement,
+  applyPlacementColored,
   cloneBoard,
+  cloneColorGrid,
   emptyBoard,
+  emptyColorGrid,
+  type ColorGrid,
   type Grid,
   type Piece,
   type Placement,
 } from '@trainer/core';
 import type { MoveQuery, EngineMove } from '../engine/client.js';
+import { toPlacement } from '../pipeline/placement.js';
 import type { BoardSource, Candidate } from './board-source.js';
 
 /** The slice of the engine client self-play needs (a best-move oracle). */
@@ -110,6 +116,7 @@ export class SelfPlayBoardSource implements BoardSource {
     const sequence: Piece[] = Array.from({ length: depth + 2 }, () => this.randomPiece());
 
     let board = emptyBoard();
+    let colors: ColorGrid = emptyColorGrid();
     const lines = 0;
 
     for (let i = 0; i < depth; i++) {
@@ -117,7 +124,11 @@ export class SelfPlayBoardSource implements BoardSource {
       const next = sequence[i + 1];
       const useEngine = this.rng() >= noiseRate;
 
-      let nextBoard: Grid | null = null;
+      // Determine the placement to apply in OUR coordinates, so the colour
+      // grid (#28) can be tracked alongside the binary board. The engine's
+      // result board is reconciled back to a (rotation, col) via toPlacement;
+      // if it is not representable we fall back to a random legal move.
+      let placement: Placement | null = null;
       if (useEngine) {
         const move = await this.engine.getBestMove({
           board,
@@ -127,18 +138,21 @@ export class SelfPlayBoardSource implements BoardSource {
           lines,
           inputFrameTimeline,
         });
-        nextBoard = move ? move.board : null;
+        if (move) placement = toPlacement(board, current, move.board);
       }
-      if (!nextBoard) {
-        const random = this.randomLegalMove(board, current);
-        if (!random) break; // topped out — snapshot what we have
-        nextBoard = applyPlacement(board, current, random);
+      if (!placement) {
+        placement = this.randomLegalMove(board, current);
+        if (!placement) break; // topped out — snapshot what we have
       }
-      board = nextBoard;
+
+      const applied = applyPlacementColored(board, colors, current, placement, PIECE_GROUP[current]);
+      board = applied.board;
+      colors = applied.colors;
     }
 
     return {
       board: cloneBoard(board),
+      colors: cloneColorGrid(colors),
       currentPiece: sequence[sequence.length - 2],
       nextPiece: sequence[sequence.length - 1],
       level,

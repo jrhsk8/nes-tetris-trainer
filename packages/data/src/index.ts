@@ -14,6 +14,7 @@ export type { DataAccess } from './data-access.js';
 export type {
   Glicko,
   Puzzle,
+  PlacementValue,
   NewPuzzle,
   UserRating,
   Attempt,

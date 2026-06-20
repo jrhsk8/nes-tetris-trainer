@@ -5,7 +5,7 @@
  * result-board metrics without an engine round-trip). Issue #3.
  */
 
-import type { Piece } from './pieces.js';
+import type { ColorGroup, Piece } from './pieces.js';
 import { ORIENTATIONS } from './pieces.js';
 
 /** Number of rows on an NES Tetris board. */
@@ -148,4 +148,102 @@ export function clearFullRows(grid: Grid): Grid {
   const cleared = ROWS - kept.length;
   const top = Array.from({ length: cleared }, () => new Array<number>(COLS).fill(0));
   return top.concat(kept);
+}
+
+/**
+ * A parallel colour grid: `grid[row][col]` is `0` (empty) or a {@link ColorGroup}
+ * (`1`..`3`). It mirrors the binary {@link Grid} cell-for-cell — the same cells
+ * are filled — but records which NES colour group filled each cell (#28). The
+ * binary grid stays colour-blind; metrics, checker, and placement never read
+ * this. Only the offline generator (to store a puzzle's colours) and the play
+ * app's renderer use it.
+ */
+export type ColorGrid = number[][];
+
+/** An empty `ROWS`×`COLS` colour grid (all cells `0`). */
+export function emptyColorGrid(): ColorGrid {
+  return Array.from({ length: ROWS }, () => new Array<number>(COLS).fill(0));
+}
+
+/** A deep copy of `grid`. */
+export function cloneColorGrid(grid: ColorGrid): ColorGrid {
+  return grid.map((row) => row.slice());
+}
+
+/**
+ * Encode a colour grid into the 200-char string the puzzle bank stores: `'0'`
+ * empty, `'1'`/`'2'`/`'3'` the NES colour group. Row-major from the top, the
+ * same orientation as {@link encodeBoard}.
+ */
+export function encodeColors(grid: ColorGrid): string {
+  let out = '';
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      out += String(grid[row][col] || 0);
+    }
+  }
+  return out;
+}
+
+/**
+ * Decode a 200-char colour string into a colour grid (the inverse of
+ * {@link encodeColors}). `'0'` is empty; `'1'`/`'2'`/`'3'` are colour groups.
+ */
+export function decodeColors(encoded: string): ColorGrid {
+  if (encoded.length !== ROWS * COLS) {
+    throw new Error(`colour string must be ${ROWS * COLS} chars, got ${encoded.length}`);
+  }
+  const grid = emptyColorGrid();
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      grid[row][col] = Number(encoded[row * COLS + col]) || 0;
+    }
+  }
+  return grid;
+}
+
+/**
+ * Apply a placement to a board AND its parallel colour grid in lock-step:
+ * drop `piece` into `placement.col`, lock it (filling the new cells with
+ * `group` in the colour grid), then clear any full rows from BOTH grids
+ * identically. Returns NEW grids; the inputs are not mutated. Throws on an
+ * illegal placement, exactly like {@link applyPlacement} — and the returned
+ * `board` is identical to `applyPlacement(board, piece, placement)`, so the
+ * colour grid never diverges from the binary one.
+ */
+export function applyPlacementColored(
+  board: Grid,
+  colors: ColorGrid,
+  piece: Piece,
+  placement: Placement,
+  group: ColorGroup,
+): { board: Grid; colors: ColorGrid } {
+  const cells = restingCells(board, piece, placement);
+  if (!cells) {
+    throw new Error(`illegal placement: ${piece} rot ${placement.rotation} col ${placement.col}`);
+  }
+
+  const lockedBoard = cloneBoard(board);
+  const lockedColors = cloneColorGrid(colors);
+  for (const [r, c] of cells) {
+    lockedBoard[r][c] = 1;
+    lockedColors[r][c] = group;
+  }
+
+  // Clear full rows from both grids using the same kept-row mask, so the colour
+  // grid tracks line clears exactly as the binary grid does.
+  const nextBoard: Grid = [];
+  const nextColors: ColorGrid = [];
+  for (let row = 0; row < ROWS; row++) {
+    if (lockedBoard[row].some((cell) => !cell)) {
+      nextBoard.push(lockedBoard[row]);
+      nextColors.push(lockedColors[row]);
+    }
+  }
+  const cleared = ROWS - nextBoard.length;
+  for (let i = 0; i < cleared; i++) {
+    nextBoard.unshift(new Array<number>(COLS).fill(0));
+    nextColors.unshift(new Array<number>(COLS).fill(0));
+  }
+  return { board: nextBoard, colors: nextColors };
 }
