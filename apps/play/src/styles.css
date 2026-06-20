@@ -284,10 +284,29 @@ section[aria-label='controls'] {
 }
 
 .next-box-piece {
-  font-family: var(--font-pixel);
-  font-size: 28px;
-  color: var(--nes-white);
   margin: 0;
+  display: flex;
+  justify-content: center;
+}
+
+/* Fixed-size NES blocks (--next-cell) so every piece draws at the same scale,
+ * regardless of how wide its bounding box is. */
+.next-piece-grid {
+  --next-cell: 22px;
+  gap: 0;
+}
+
+/* Visually hidden but kept in the accessibility tree / DOM text. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .next-box-empty {
