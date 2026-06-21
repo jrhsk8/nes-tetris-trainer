@@ -15,6 +15,7 @@ afterEach(() => cleanup());
 function fakeAuth(overrides: Partial<AuthApi> = {}): AuthApi {
   return {
     currentUser: vi.fn(async () => null),
+    ensureAnonymousSession: vi.fn(async () => null),
     onChange: vi.fn(() => () => {}),
     signInWithEmail: vi.fn(async () => {}),
     signUpWithEmail: vi.fn(async () => {}),
@@ -79,11 +80,11 @@ describe('RatingHistory', () => {
 });
 
 describe('useAuth', () => {
-  it('seeds from the current session and updates on change', async () => {
-    const user: AuthUser = { id: 'u1', email: 'a@b.com' };
+  it('seeds from the anonymous session it establishes and updates on change', async () => {
+    const user: AuthUser = { id: 'u1', email: null };
     let emit: (u: AuthUser | null) => void = () => {};
     const auth = fakeAuth({
-      currentUser: vi.fn(async () => user),
+      ensureAnonymousSession: vi.fn(async () => user),
       onChange: vi.fn((cb) => {
         emit = cb;
         return () => {};
@@ -92,6 +93,7 @@ describe('useAuth', () => {
 
     const { result } = renderHook(() => useAuth(auth));
     await waitFor(() => expect(result.current).toEqual(user));
+    expect(auth.ensureAnonymousSession).toHaveBeenCalled();
 
     emit(null);
     await waitFor(() => expect(result.current).toBeNull());

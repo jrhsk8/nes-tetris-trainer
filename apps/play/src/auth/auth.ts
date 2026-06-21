@@ -19,6 +19,15 @@ export interface AuthUser {
 export interface AuthApi {
   /** The currently signed-in user, or null. */
   currentUser(): Promise<AuthUser | null>;
+  /**
+   * Establish an ANONYMOUS session if none exists, so `auth.uid()` is real and
+   * RLS passes for every visitor (#39) — fixing the "rating never changes" bug,
+   * where the all-zeros dev-bypass user could not satisfy the per-user insert
+   * policies. Returns the existing user when already signed in, the new
+   * anonymous user otherwise, or `null` when no session could be established
+   * (e.g. anonymous sign-ins are disabled on the Supabase project).
+   */
+  ensureAnonymousSession(): Promise<AuthUser | null>;
   /** Subscribe to sign-in/out; returns an unsubscribe function. */
   onChange(callback: (user: AuthUser | null) => void): () => void;
   signInWithEmail(email: string, password: string): Promise<void>;
@@ -37,6 +46,19 @@ export function createAuth(client: SupabaseClient): AuthApi {
     async currentUser() {
       const { data } = await client.auth.getUser();
       return toAuthUser(data.user);
+    },
+
+    async ensureAnonymousSession() {
+      const { data } = await client.auth.getUser();
+      if (data.user) return toAuthUser(data.user);
+      const { data: anon, error } = await client.auth.signInAnonymously();
+      if (error) {
+        // Anonymous sign-ins are disabled or unavailable; play falls back to the
+        // sign-in screen rather than crashing. Surfaced for diagnosis.
+        console.warn(`anonymous sign-in unavailable: ${error.message}`);
+        return null;
+      }
+      return toAuthUser(anon.user);
     },
 
     onChange(callback) {

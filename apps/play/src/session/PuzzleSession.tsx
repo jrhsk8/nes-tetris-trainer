@@ -116,9 +116,12 @@ export function PuzzleSession({
           ratingAfter: applied.after.rating,
         });
         rating = { before: applied.before, after: applied.after, delta: applied.delta };
-      } catch {
-        // Persistence unavailable (e.g. before auth/RLS lands in #13): still
-        // show the computed rating change so the loop stays playable.
+      } catch (err) {
+        // A real persistence failure (e.g. anonymous sign-ins disabled so RLS
+        // drops the write, #39) used to be silently swallowed here, hiding the
+        // "rating never changes" bug. Surface it for diagnosis, then still show
+        // the computed rating change so the loop stays playable.
+        console.error('attempt/rating persistence failed:', err);
         const update = updateRatings(seedRating(), puzzle.glicko, solved);
         rating = {
           before: seedRating(),
