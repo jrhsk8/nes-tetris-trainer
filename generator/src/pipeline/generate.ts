@@ -9,17 +9,58 @@
  * via the data-access layer (#2).
  */
 
-import { boardMetrics, encodeBoard, type Line } from '@trainer/core';
-import type { DataAccess, NewPuzzle, Puzzle } from '@trainer/data';
+import {
+  applyPlacement,
+  boardMetrics,
+  encodeBoard,
+  encodeColors,
+  type Grid,
+  type Line,
+  type Piece,
+} from '@trainer/core';
+import type { DataAccess, NewPuzzle, PlacementValue, Puzzle } from '@trainer/data';
 import { isHzInvariant, isUnambiguous, type ComparableMove } from '../quality/filters.js';
-import type { EngineMove, MoveQuery, ScoredMove } from '../engine/client.js';
+import type { EngineMove, MoveQuery, RateMoveResult, ScoredMove } from '../engine/client.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
+import { enumerateLegalMoves } from '../selfplay/self-play.js';
 import { toPlacement } from './placement.js';
 
-/** The engine surface the pipeline needs (best move + ranked moves). */
+/** The engine surface the pipeline needs (best move, ranked moves, move rating). */
 export interface GeneratorEngine {
   getBestMove(query: MoveQuery): Promise<EngineMove | null>;
   getTopMoves(query: MoveQuery): Promise<ScoredMove[]>;
+  rateMove(query: MoveQuery, playerBoardAfter: Grid): Promise<RateMoveResult>;
+}
+
+/**
+ * The value table for one ply (#29): every legal placement of `piece` on
+ * `board`, paired with the engine's value for it. Each placement is applied in
+ * OUR coordinates and scored with `rate-move`, so the resulting (rotation, col)
+ * keys match the player's placements exactly. `query` carries the piece context
+ * (current piece, optional lookahead, level/lines/timeline).
+ */
+async function computeValueTable(
+  engine: GeneratorEngine,
+  query: MoveQuery,
+  board: Grid,
+  piece: Piece,
+): Promise<PlacementValue[]> {
+  const table: PlacementValue[] = [];
+  for (const placement of enumerateLegalMoves(board, piece)) {
+    const after = applyPlacement(board, piece, placement);
+    let value: number;
+    try {
+      value = (await engine.rateMove(query, after)).playerValue;
+    } catch {
+      // The engine can't value every geometrically-legal placement: a far
+      // column may be unreachable under the query's input timeline, so
+      // `rate-move` reports "player move not found". Such a placement is not a
+      // fair alternative — skip it rather than abort the whole table.
+      continue;
+    }
+    table.push({ rotation: placement.rotation, col: placement.col, value });
+  }
+  return table;
 }
 
 /** Tuning for the quality gates. */
@@ -121,6 +162,13 @@ export async function assemblePuzzle(
     return { ok: false, reason: 'ply2-speed-variant' };
   }
 
+  // Value tables for the solutions chart (#29): every legal placement of each
+  // piece with its engine value. Ply 1 is scored with the lookahead (optimal
+  // follow-up); ply 2 is scored on the post-optimal-move board with no
+  // lookahead — mirroring how the two plies are graded.
+  const firstValues = await computeValueTable(engine, ply1(slow), board, currentPiece);
+  const secondValues = await computeValueTable(engine, ply2(slow), board1, nextPiece);
+
   const optimalLine: Line = [placement1, placement2];
   return {
     ok: true,
@@ -130,6 +178,9 @@ export async function assemblePuzzle(
       piece2: nextPiece,
       optimalLine,
       optimalMetrics: boardMetrics(board2),
+      colors: encodeColors(candidate.colors),
+      firstValues,
+      secondValues,
     },
   };
 }
@@ -138,7 +189,7 @@ export async function assemblePuzzle(
 export interface GenerateBankDeps {
   source: BoardSource;
   engine: GeneratorEngine;
-  db: Pick<DataAccess, 'insertPuzzles'>;
+  db: Pick<DataAccess, 'insertPuzzles'> & Partial<Pick<DataAccess, 'deleteAllPuzzles'>>;
 }
 
 /** Options controlling a bank-generation run. */
@@ -149,6 +200,13 @@ export interface GenerateBankOptions {
   maxCandidates: number;
   /** Quality-gate tuning; defaults to {@link DEFAULT_GENERATION_CONFIG}. */
   config?: Partial<GenerationConfig>;
+  /**
+   * Replace the whole bank instead of appending: once all survivors are
+   * assembled (and only then, to keep the empty-bank window minimal), delete
+   * every existing puzzle — cascading its attempts — before inserting the new
+   * set. Requires `deps.db.deleteAllPuzzles`.
+   */
+  replace?: boolean;
   /** Optional progress callback (one line per event). */
   onProgress?: (message: string) => void;
 }
@@ -193,6 +251,14 @@ export async function generateBank(
     } else {
       rejections[result.reason] = (rejections[result.reason] ?? 0) + 1;
     }
+  }
+
+  if (options.replace) {
+    if (!deps.db.deleteAllPuzzles) {
+      throw new Error('replace requested but deps.db.deleteAllPuzzles is unavailable');
+    }
+    const removed = await deps.db.deleteAllPuzzles();
+    onProgress(`replaced: deleted ${removed} existing puzzles (attempts cascade)`);
   }
 
   const stored = await deps.db.insertPuzzles(survivors);

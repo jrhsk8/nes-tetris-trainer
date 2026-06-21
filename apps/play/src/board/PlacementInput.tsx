@@ -14,11 +14,13 @@ import {
   COLS,
   ORIENTATIONS,
   restingCells,
+  type ColorGrid,
   type Grid,
   type Piece,
   type Placement,
 } from '@trainer/core';
 import { Board } from './Board.js';
+import { DEFAULT_BINDINGS, resolveAction, type KeyBindings } from './keybindings.js';
 
 /** Columns at which `piece` (in `rotation`) can legally rest on `board`. */
 function legalColumns(board: Grid, piece: Piece, rotation: number): number[] {
@@ -37,18 +39,29 @@ function nearest(target: number, options: number[]): number {
 export interface PlacementInputProps {
   /** The board the piece is placed on. */
   board: Grid;
+  /** Optional colour grid parallel to `board` for the existing stack (#28). */
+  colorGrid?: ColorGrid;
   /** The piece being placed. */
   piece: Piece;
   /** Called with the chosen resting placement when the player confirms. */
   onConfirm: (placement: Placement) => void;
   /** Optional instruction shown above the controls. */
   label?: string;
+  /** Key bindings for the actions (defaults to {@link DEFAULT_BINDINGS}). */
+  bindings?: KeyBindings;
 }
 
 /** A reasonable starting column: the legal column nearest the spawn column. */
 const SPAWN_COLUMN = 3;
 
-export function PlacementInput({ board, piece, onConfirm, label }: PlacementInputProps) {
+export function PlacementInput({
+  board,
+  colorGrid,
+  piece,
+  onConfirm,
+  label,
+  bindings = DEFAULT_BINDINGS,
+}: PlacementInputProps) {
   const rotationCount = ORIENTATIONS[piece].length;
   const [rotation, setRotation] = useState(0);
   const [col, setCol] = useState(() => {
@@ -76,45 +89,54 @@ export function PlacementInput({ board, piece, onConfirm, label }: PlacementInpu
     });
   }, [columns]);
 
-  const rotate = useCallback(() => {
-    if (rotationCount < 2) return;
-    const nextRotation = (rotation + 1) % rotationCount;
-    const nextColumns = legalColumns(board, piece, nextRotation);
-    setRotation(nextRotation);
-    // Keep the column if still legal, else snap to the nearest legal column.
-    setCol((current) =>
-      nextColumns.includes(current)
-        ? current
-        : nextColumns.length
-          ? nearest(current, nextColumns)
-          : current,
-    );
-  }, [board, piece, rotation, rotationCount]);
+  // Rotate by `delta` orientation steps (+1 = clockwise, -1 = counter-clockwise),
+  // keeping the column legal (snap to nearest if the new rotation forbids it).
+  const rotateBy = useCallback(
+    (delta: number) => {
+      if (rotationCount < 2) return;
+      const nextRotation = (rotation + delta + rotationCount) % rotationCount;
+      const nextColumns = legalColumns(board, piece, nextRotation);
+      setRotation(nextRotation);
+      setCol((current) =>
+        nextColumns.includes(current)
+          ? current
+          : nextColumns.length
+            ? nearest(current, nextColumns)
+            : current,
+      );
+    },
+    [board, piece, rotation, rotationCount],
+  );
+
+  const rotateCw = useCallback(() => rotateBy(1), [rotateBy]);
+  const rotateCcw = useCallback(() => rotateBy(-1), [rotateBy]);
 
   const confirm = useCallback(() => onConfirm({ rotation, col }), [onConfirm, rotation, col]);
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      switch (event.key) {
-        case 'ArrowLeft':
-          event.preventDefault();
+      const action = resolveAction(bindings, event.key);
+      if (!action) return;
+      event.preventDefault();
+      switch (action) {
+        case 'move-left':
           moveLeft();
           break;
-        case 'ArrowRight':
-          event.preventDefault();
+        case 'move-right':
           moveRight();
           break;
-        case 'ArrowUp':
-          event.preventDefault();
-          rotate();
+        case 'rotate-cw':
+          rotateCw();
           break;
-        case 'Enter':
-          event.preventDefault();
+        case 'rotate-ccw':
+          rotateCcw();
+          break;
+        case 'confirm':
           confirm();
           break;
       }
     },
-    [moveLeft, moveRight, rotate, confirm],
+    [bindings, moveLeft, moveRight, rotateCw, rotateCcw, confirm],
   );
 
   return (
@@ -127,13 +149,26 @@ export function PlacementInput({ board, piece, onConfirm, label }: PlacementInpu
       data-col={col}
     >
       {label ? <p className="placement-label">{label}</p> : null}
-      <Board grid={board} ghostCells={ghostCells} ghostPiece={piece} />
+      <Board grid={board} colorGrid={colorGrid} ghostCells={ghostCells} ghostPiece={piece} />
       <div className="placement-controls" role="group" aria-label="placement controls">
         <button type="button" onClick={moveLeft} aria-label="Move left">
           ◀
         </button>
-        <button type="button" onClick={rotate} aria-label="Rotate" disabled={rotationCount < 2}>
-          ⟳
+        <button
+          type="button"
+          onClick={rotateCcw}
+          aria-label="Rotate counter-clockwise"
+          disabled={rotationCount < 2}
+        >
+          ↺
+        </button>
+        <button
+          type="button"
+          onClick={rotateCw}
+          aria-label="Rotate clockwise"
+          disabled={rotationCount < 2}
+        >
+          ↻
         </button>
         <button type="button" onClick={moveRight} aria-label="Move right">
           ▶

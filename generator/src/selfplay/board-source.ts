@@ -7,7 +7,7 @@
  * boards are anticipated later behind this same interface.
  */
 
-import type { Grid, Piece } from '@trainer/core';
+import type { ColorGrid, Grid, Piece } from '@trainer/core';
 
 /**
  * A candidate position to turn into a puzzle: a mid-game board plus the two
@@ -17,6 +17,11 @@ import type { Grid, Piece } from '@trainer/core';
 export interface Candidate {
   /** The mid-game board snapshot. */
   board: Grid;
+  /**
+   * The colour grid parallel to `board` (#28): which NES colour group filled
+   * each cell, propagated through the playout's line clears.
+   */
+  colors: ColorGrid;
   /** The piece to place first (the puzzle's current piece). */
   currentPiece: Piece;
   /** The piece shown as next (the second ply's piece). */

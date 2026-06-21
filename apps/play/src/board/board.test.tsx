@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { emptyBoard, restingCells, type Grid, type Placement } from '@trainer/core';
+import { emptyBoard, emptyColorGrid, restingCells, type Grid, type Placement } from '@trainer/core';
 import { Board } from './Board.js';
 import { PlacementInput } from './PlacementInput.js';
 
@@ -51,6 +51,28 @@ describe('Board', () => {
     const ghost = screen.getByTestId('cell-18-4');
     expect(decodeURIComponent(ghost.style.backgroundImage)).toContain('#d82800');
   });
+
+  it('colours filled cells by their colour group from the colour grid (#28)', () => {
+    const grid: Grid = emptyBoard();
+    const colorGrid = emptyColorGrid();
+    grid[19][0] = 1;
+    colorGrid[19][0] = 2; // Z/L group → $16 red
+    grid[19][1] = 1;
+    colorGrid[19][1] = 3; // J/S group → $12 blue
+    grid[19][2] = 1; // no colour-grid entry → white fallback
+
+    render(<Board grid={grid} colorGrid={colorGrid} />);
+
+    expect(decodeURIComponent(screen.getByTestId('cell-19-0').style.backgroundImage)).toContain(
+      '#d82800',
+    );
+    const blueCell = decodeURIComponent(screen.getByTestId('cell-19-1').style.backgroundImage);
+    expect(blueCell).toContain('#0058f8');
+    expect(blueCell).not.toContain('#d82800');
+    // A filled cell with no colour-grid group falls back to the white sprite.
+    const whiteCell = decodeURIComponent(screen.getByTestId('cell-19-2').style.backgroundImage);
+    expect(whiteCell).not.toContain('#d82800');
+  });
 });
 
 describe('PlacementInput', () => {
@@ -72,7 +94,7 @@ describe('PlacementInput', () => {
     const afterMove = ghostKeys();
     expect(afterMove).not.toEqual(before); // the ghost actually moved
 
-    await user.click(screen.getByRole('button', { name: 'Rotate' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate clockwise' }));
     const shownAtConfirm = ghostKeys();
 
     await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
@@ -98,5 +120,29 @@ describe('PlacementInput', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const emitted = onConfirm.mock.calls[0][0];
     expect(keysOf(restingCells(board, 'L', emitted)!)).toEqual(ghostKeys());
+  });
+
+  it('rotates clockwise with x and counter-clockwise with z (inverses)', async () => {
+    const user = userEvent.setup();
+    render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
+    const input = screen.getByLabelText('placement input');
+    await user.click(input);
+
+    const start = input.getAttribute('data-rotation');
+    await user.keyboard('x'); // CW
+    expect(input.getAttribute('data-rotation')).not.toBe(start);
+    await user.keyboard('z'); // CCW undoes it
+    expect(input.getAttribute('data-rotation')).toBe(start);
+  });
+
+  it('honors a custom binding (Space confirms)', async () => {
+    const user = userEvent.setup();
+    const board = emptyBoard();
+    const onConfirm = vi.fn<(p: Placement) => void>();
+    render(<PlacementInput board={board} piece="L" onConfirm={onConfirm} />);
+
+    await user.click(screen.getByLabelText('placement input'));
+    await user.keyboard('[Space]');
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,11 +9,14 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isPiece, type Piece } from '@trainer/core';
 import type {
   Attempt,
+  AttemptHistoryEntry,
   AttemptRow,
   NewAttempt,
   NewPuzzle,
   Puzzle,
   PuzzleRow,
+  UserPrefs,
+  UserPrefsRow,
   UserRating,
   UserRatingRow,
 } from './types.js';
@@ -56,6 +59,9 @@ function rowToPuzzle(row: PuzzleRow): Puzzle {
     optimalLine: row.optimal_line,
     optimalMetrics: row.optimal_metrics,
     glicko: { rating: row.rating, deviation: row.deviation, volatility: row.volatility },
+    colors: row.colors ?? '',
+    firstValues: row.first_values ?? [],
+    secondValues: row.second_values ?? [],
   };
 }
 
@@ -80,6 +86,10 @@ function rowToAttempt(row: AttemptRow): Attempt {
   };
 }
 
+function rowToUserPrefs(row: UserPrefsRow): UserPrefs {
+  return { userId: row.user_id, bindings: row.bindings };
+}
+
 /** The data-access surface shared by the play app and the generator. */
 export interface DataAccess {
   getPuzzle(id: string): Promise<Puzzle | null>;
@@ -87,10 +97,15 @@ export interface DataAccess {
   countPuzzles(): Promise<number>;
   insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle>;
   insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]>;
+  /** Delete every puzzle (and, by cascade, every attempt). Used by a bank regen. */
+  deleteAllPuzzles(): Promise<number>;
   getUserRating(userId: string): Promise<UserRating | null>;
   upsertUserRating(rating: UserRating): Promise<UserRating>;
   insertAttempt(attempt: NewAttempt): Promise<Attempt>;
   getUserAttempts(userId: string): Promise<Attempt[]>;
+  getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]>;
+  getUserPrefs(userId: string): Promise<UserPrefs | null>;
+  upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs>;
 }
 
 function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
@@ -104,6 +119,9 @@ function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
   if (puzzle.glicko?.rating !== undefined) row.rating = puzzle.glicko.rating;
   if (puzzle.glicko?.deviation !== undefined) row.deviation = puzzle.glicko.deviation;
   if (puzzle.glicko?.volatility !== undefined) row.volatility = puzzle.glicko.volatility;
+  if (puzzle.colors !== undefined) row.colors = puzzle.colors;
+  if (puzzle.firstValues !== undefined) row.first_values = puzzle.firstValues;
+  if (puzzle.secondValues !== undefined) row.second_values = puzzle.secondValues;
   return row;
 }
 
@@ -150,6 +168,19 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
   async function insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle> {
     const [inserted] = await insertPuzzles([puzzle]);
     return inserted;
+  }
+
+  async function deleteAllPuzzles(): Promise<number> {
+    // Delete every row; attempts cascade-delete via their FK. The
+    // `not is null` predicate matches all rows (id is never null) and
+    // satisfies supabase-js's requirement that a delete carry a filter.
+    const { data, error } = await client
+      .from('puzzles')
+      .delete()
+      .not('id', 'is', null)
+      .select('id');
+    if (error) throw new Error(`deleteAllPuzzles failed: ${error.message}`);
+    return (data ?? []).length;
   }
 
   async function getUserRating(userId: string): Promise<UserRating | null> {
@@ -207,15 +238,59 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return (data as AttemptRow[]).map(rowToAttempt);
   }
 
+  async function getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]> {
+    // Join each attempt to its puzzle's rating (difficulty). The puzzle is
+    // null for an orphaned attempt (its puzzle was removed by a bank regen).
+    const { data, error } = await client
+      .from('attempts')
+      .select('*, puzzles(rating)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(`getUserAttemptHistory failed: ${error.message}`);
+    const rows = (data ?? []) as (AttemptRow & { puzzles: { rating: number } | null })[];
+    return rows.map((row) => ({ ...rowToAttempt(row), difficulty: row.puzzles?.rating ?? null }));
+  }
+
+  async function getUserPrefs(userId: string): Promise<UserPrefs | null> {
+    const { data, error } = await client
+      .from('user_prefs')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) throw new Error(`getUserPrefs failed: ${error.message}`);
+    return data ? rowToUserPrefs(data as UserPrefsRow) : null;
+  }
+
+  async function upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs> {
+    const { data, error } = await client
+      .from('user_prefs')
+      .upsert(
+        {
+          user_id: prefs.userId,
+          bindings: prefs.bindings,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
+      .select('*')
+      .single();
+    if (error) throw new Error(`upsertUserPrefs failed: ${error.message}`);
+    return rowToUserPrefs(data as UserPrefsRow);
+  }
+
   return {
     getPuzzle,
     getRandomPuzzle,
     countPuzzles,
     insertPuzzle,
     insertPuzzles,
+    deleteAllPuzzles,
     getUserRating,
     upsertUserRating,
     insertAttempt,
     getUserAttempts,
+    getUserAttemptHistory,
+    getUserPrefs,
+    upsertUserPrefs,
   };
 }

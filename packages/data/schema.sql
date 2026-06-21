@@ -19,8 +19,21 @@ create table if not exists public.puzzles (
   rating double precision not null default 1500,
   deviation double precision not null default 350,
   volatility double precision not null default 0.06,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- 200-char colour grid parallel to `board` (#28): '0' empty, '1'/'2'/'3' NES
+  -- colour group. The optional value tables drive the solutions chart (#29):
+  -- `first_values` = every legal piece-1 placement + engine value (optimal
+  -- follow-up); `second_values` = piece-2 placements after the optimal first
+  -- move. All three are added additively so legacy rows stay valid.
+  colors text,
+  first_values jsonb,
+  second_values jsonb
 );
+
+-- Additive backfill for banks created before the 2026-06-20 colour/value regen.
+alter table public.puzzles add column if not exists colors text;
+alter table public.puzzles add column if not exists first_values jsonb;
+alter table public.puzzles add column if not exists second_values jsonb;
 
 -- Per-user Glicko-2 rating (one row per user).
 create table if not exists public.user_ratings (
@@ -50,6 +63,14 @@ alter table public.attempts add column if not exists rating_after double precisi
 create index if not exists attempts_user_id_idx on public.attempts (user_id);
 create index if not exists attempts_puzzle_id_idx on public.attempts (puzzle_id);
 
+-- Per-user preferences (one row per user): rebindable key bindings, synced
+-- across devices like the rating (#24). `bindings` is an action→key JSON map.
+create table if not exists public.user_prefs (
+  user_id uuid primary key,
+  bindings jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 -- Row-level security. Puzzles are public, read-only content; writes go through
 -- the service role (the offline generator), which bypasses RLS. The per-user
 -- tables let an authenticated user read and write only their OWN rows (#13);
@@ -57,6 +78,7 @@ create index if not exists attempts_puzzle_id_idx on public.attempts (puzzle_id)
 alter table public.puzzles enable row level security;
 alter table public.user_ratings enable row level security;
 alter table public.attempts enable row level security;
+alter table public.user_prefs enable row level security;
 
 drop policy if exists puzzles_public_read on public.puzzles;
 create policy puzzles_public_read on public.puzzles
@@ -83,3 +105,16 @@ create policy attempts_select_own on public.attempts
 drop policy if exists attempts_insert_own on public.attempts;
 create policy attempts_insert_own on public.attempts
   for insert with check (auth.uid() = user_id);
+
+-- A user owns their preferences (read + insert + update; no delete).
+drop policy if exists user_prefs_select_own on public.user_prefs;
+create policy user_prefs_select_own on public.user_prefs
+  for select using (auth.uid() = user_id);
+
+drop policy if exists user_prefs_insert_own on public.user_prefs;
+create policy user_prefs_insert_own on public.user_prefs
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists user_prefs_update_own on public.user_prefs;
+create policy user_prefs_update_own on public.user_prefs
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);

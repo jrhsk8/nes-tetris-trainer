@@ -2,14 +2,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import {
-  applyPlacement,
-  boardMetrics,
-  emptyBoard,
-  type BoardMetrics,
-  type Grid,
-  type Line,
-} from '@trainer/core';
+import { applyPlacement, emptyBoard, type Grid, type Line } from '@trainer/core';
+import type { PlacementValue } from '@trainer/data';
 import { Feedback } from './Feedback.js';
 
 afterEach(() => cleanup());
@@ -19,104 +13,188 @@ const optimalLine: Line = [
   { rotation: 0, col: 6 },
 ];
 
+// Sample value tables: the optimal placement is the highest-valued entry.
+const firstValues: PlacementValue[] = [
+  { rotation: optimalLine[0].rotation, col: optimalLine[0].col, value: 30 },
+  { rotation: 0, col: 0, value: 20 },
+  { rotation: 0, col: 9, value: 10 },
+];
+const secondValues: PlacementValue[] = [
+  { rotation: optimalLine[1].rotation, col: optimalLine[1].col, value: 25 },
+  { rotation: 0, col: 1, value: 12 },
+];
+
 function filledCount(): number {
   return document.querySelectorAll('[data-state="filled"]').length;
 }
 
-describe('Feedback metric deltas', () => {
-  it('computes the player-side metrics client-side and shows deltas vs optimal', () => {
-    const board0 = emptyBoard();
-    const userLine: Line = [
-      { rotation: 0, col: 0 },
-      { rotation: 0, col: 2 },
-    ];
-    // Expected player metrics are exactly boardMetrics of the player's result.
-    const userResult = applyPlacement(applyPlacement(board0, 'O', userLine[0]), 'O', userLine[1]);
-    const expected = boardMetrics(userResult);
-
-    // A deliberately different "optimal" so the deltas are non-trivial.
-    const optimalMetrics: BoardMetrics = {
-      columnHeights: new Array(10).fill(0),
-      aggregateHeight: 0,
-      bumpiness: 0,
-      holes: 0,
-    };
-
+describe('Feedback solutions chart (#29)', () => {
+  it('replaces the old geometric-metrics table with per-piece solution charts', () => {
     render(
       <Feedback
-        board0={board0}
-        piece1="O"
-        piece2="O"
-        optimalLine={optimalLine}
-        optimalMetrics={optimalMetrics}
-        userLine={userLine}
-      />,
-    );
-
-    expect(screen.getByTestId('metric-holes')).toHaveTextContent(String(expected.holes));
-    expect(screen.getByTestId('metric-aggregateHeight')).toHaveTextContent(
-      String(expected.aggregateHeight),
-    );
-    // Delta = player - optimal; here optimal is all-zero, so delta equals player.
-    expect(screen.getByTestId('delta-aggregateHeight')).toHaveTextContent(
-      `+${expected.aggregateHeight}`,
-    );
-  });
-
-  it('shows zero deltas when the player played the optimal line', () => {
-    const board0 = emptyBoard();
-    const board2 = applyPlacement(applyPlacement(board0, 'T', optimalLine[0]), 'L', optimalLine[1]);
-    render(
-      <Feedback
-        board0={board0}
+        board0={emptyBoard()}
         piece1="T"
         piece2="L"
         optimalLine={optimalLine}
-        optimalMetrics={boardMetrics(board2)}
-        userLine={optimalLine}
+        firstValues={firstValues}
+        secondValues={secondValues}
+        userLine={[
+          { rotation: 0, col: 0 }, // a non-optimal first move (value 20 → 2nd of 3)
+        ]}
       />,
     );
-    expect(screen.getByTestId('delta-holes')).toHaveTextContent('0');
-    expect(screen.getByTestId('delta-bumpiness')).toHaveTextContent('0');
-    expect(screen.getByTestId('delta-aggregateHeight')).toHaveTextContent('0');
+
+    // The old metrics table is gone.
+    expect(screen.queryByTestId('metric-holes')).toBeNull();
+    expect(document.querySelector('.metric-deltas')).toBeNull();
+
+    // The piece-1 distribution is always shown, with the player's rank.
+    const charts = screen.getAllByTestId('solutions-chart');
+    expect(charts).toHaveLength(1); // piece-2 omitted: the player never reached it
+    expect(screen.getByTestId('strip-rank')).toHaveTextContent('2nd of 3');
+    expect(screen.getAllByTestId('strip-dot')).toHaveLength(firstValues.length);
+  });
+
+  it('shows the piece-2 distribution once the player reached placement 2', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        optimalLine={optimalLine}
+        firstValues={firstValues}
+        secondValues={secondValues}
+        userLine={optimalLine} // both moves optimal → both charts, both rank 1st
+      />,
+    );
+
+    const charts = screen.getAllByTestId('solutions-chart');
+    expect(charts).toHaveLength(2);
+    const ranks = screen.getAllByTestId('strip-rank');
+    expect(ranks[0]).toHaveTextContent('1st of 3');
+    expect(ranks[1]).toHaveTextContent('1st of 2');
   });
 });
 
-describe('Feedback animation of the optimal line', () => {
-  it('steps through the two-ply line, growing the stack each step', () => {
+/** Run the whole replay timeline to its end under fake timers. */
+function runReplay(stepMs: number): void {
+  // Generous bound: far more steps than any two-ply replay produces.
+  for (let i = 0; i < 12; i++) {
+    act(() => void vi.advanceTimersByTime(stepMs));
+  }
+}
+
+describe('Feedback replay animation of the optimal line', () => {
+  it('drops a falling piece, then locks it into the stack and finishes settled', () => {
     vi.useFakeTimers();
     try {
       const board0: Grid = emptyBoard();
-      const board2 = applyPlacement(
-        applyPlacement(board0, 'T', optimalLine[0]),
-        'L',
-        optimalLine[1],
-      );
       render(
         <Feedback
           board0={board0}
           piece1="T"
           piece2="L"
           optimalLine={optimalLine}
-          optimalMetrics={boardMetrics(board2)}
+          firstValues={firstValues}
+          secondValues={secondValues}
           userLine={optimalLine}
-          stepMs={100}
+          stepMs={50}
         />,
       );
 
-      expect(screen.getByTestId('feedback-step')).toHaveTextContent('Step 1 of 3');
+      // First frame: piece 1 is a falling overlay (4 cells), stack still empty.
+      expect(screen.getByTestId('falling-piece')).toBeInTheDocument();
+      expect(screen.getAllByTestId('falling-cell')).toHaveLength(4);
       const empty = filledCount();
 
-      act(() => void vi.advanceTimersByTime(100));
-      expect(screen.getByTestId('feedback-step')).toHaveTextContent('Step 2 of 3');
-      const afterPly1 = filledCount();
-      expect(afterPly1).toBeGreaterThan(empty);
+      // The falling overlay moves via a CSS transform (GPU motion).
+      expect(screen.getByTestId('falling-piece').style.transform).not.toBe('');
 
-      act(() => void vi.advanceTimersByTime(100));
-      expect(screen.getByTestId('feedback-step')).toHaveTextContent('Step 3 of 3');
-      expect(filledCount()).toBeGreaterThan(afterPly1);
+      runReplay(50);
+
+      // Settled: both pieces are part of the static stack; nothing still falling.
+      expect(screen.queryByTestId('falling-piece')).toBeNull();
+      expect(filledCount()).toBeGreaterThan(empty);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it('flashes and collapses when the optimal line clears a row', () => {
+    vi.useFakeTimers();
+    try {
+      // A board one O-piece away from completing the bottom two rows: columns
+      // 0..7 filled on rows 18-19, leaving the 2x2 well at columns 8-9.
+      const board0: Grid = emptyBoard();
+      for (let c = 0; c < 8; c++) {
+        board0[18][c] = 1;
+        board0[19][c] = 1;
+      }
+      const line: Line = [
+        { rotation: 0, col: 8 },
+        { rotation: 0, col: 0 },
+      ];
+      render(
+        <Feedback
+          board0={board0}
+          piece1="O"
+          piece2="O"
+          optimalLine={line}
+          firstValues={firstValues}
+          secondValues={secondValues}
+          userLine={line}
+          stepMs={50}
+        />,
+      );
+
+      // Step until the flash frame appears.
+      let sawFlash = false;
+      for (let i = 0; i < 12 && !sawFlash; i++) {
+        if (screen.queryByTestId('line-flash')) sawFlash = true;
+        else act(() => void vi.advanceTimersByTime(50));
+      }
+      expect(sawFlash).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('snaps to the settled board with reduced motion (no falling piece)', () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('reduce'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      onchange: null,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      const board0: Grid = emptyBoard();
+      render(
+        <Feedback
+          board0={board0}
+          piece1="T"
+          piece2="L"
+          optimalLine={optimalLine}
+          firstValues={firstValues}
+          secondValues={secondValues}
+          userLine={optimalLine}
+        />,
+      );
+      // No animation: the board is already fully settled and nothing falls.
+      expect(screen.queryByTestId('falling-piece')).toBeNull();
+      const settled = applyPlacement(
+        applyPlacement(board0, 'T', optimalLine[0]),
+        'L',
+        optimalLine[1],
+      );
+      const expectedFilled = settled.flat().filter(Boolean).length;
+      expect(filledCount()).toBe(expectedFilled);
+    } finally {
+      window.matchMedia = original;
     }
   });
 });

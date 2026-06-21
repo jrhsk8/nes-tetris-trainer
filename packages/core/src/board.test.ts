@@ -9,6 +9,10 @@ import {
   restingCells,
   clearFullRows,
   columnHeights,
+  emptyColorGrid,
+  encodeColors,
+  decodeColors,
+  applyPlacementColored,
 } from './index.js';
 
 describe('board encoding', () => {
@@ -136,5 +140,66 @@ describe('clearFullRows', () => {
     expect(out[19][0]).toBe(1); // shifted down into the cleared row
     expect(out[19][1]).toBe(0);
     expect(out.flat().reduce((a, b) => a + b, 0)).toBe(1);
+  });
+});
+
+describe('colour grid', () => {
+  it('round-trips through encode/decode', () => {
+    const grid = emptyColorGrid();
+    grid[19][0] = 1;
+    grid[19][1] = 2;
+    grid[18][9] = 3;
+    const encoded = encodeColors(grid);
+    expect(encoded).toHaveLength(ROWS * COLS);
+    expect(decodeColors(encoded)).toEqual(grid);
+  });
+
+  it('fills locked cells with the piece colour group', () => {
+    const { board, colors } = applyPlacementColored(
+      emptyBoard(),
+      emptyColorGrid(),
+      'O', // group 1
+      { rotation: 0, col: 0 },
+      1,
+    );
+    // O rests on the floor occupying rows 18-19, cols 0-1.
+    for (const [r, c] of [
+      [18, 0],
+      [18, 1],
+      [19, 0],
+      [19, 1],
+    ] as const) {
+      expect(board[r][c]).toBe(1);
+      expect(colors[r][c]).toBe(1);
+    }
+    expect(colors[17][0]).toBe(0);
+  });
+
+  it('propagates colours through a line clear, in lock-step with the binary grid', () => {
+    const board = emptyBoard();
+    const colors = emptyColorGrid();
+    // Bottom row filled (group 2) except the rightmost column.
+    for (let col = 0; col < COLS - 1; col++) {
+      board[19][col] = 1;
+      colors[19][col] = 2;
+    }
+    // A lone block (group 3) one row up, in the leftmost column.
+    board[18][0] = 1;
+    colors[18][0] = 3;
+
+    // A vertical I (group 1) dropped into the last column completes row 19.
+    const placement = { rotation: 1, col: COLS - 1 };
+    const result = applyPlacementColored(board, colors, 'I', placement, 1);
+
+    // The binary board matches the colour-blind applyPlacement exactly.
+    expect(result.board).toEqual(applyPlacement(board, 'I', placement));
+
+    // Row 19 cleared; the group-3 block and the I's surviving cells dropped down.
+    expect(result.colors[19][0]).toBe(3); // lone block shifted to the floor
+    expect(result.colors[19][COLS - 1]).toBe(1); // bottom of the I
+    expect(result.colors[18][COLS - 1]).toBe(1);
+    expect(result.colors[17][COLS - 1]).toBe(1);
+    // The cleared group-2 row is gone.
+    expect(result.colors[19][1]).toBe(0);
   });
 });

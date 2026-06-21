@@ -12,9 +12,19 @@ describe('Site design (#19)', () => {
     expect(css).toMatch(/#fcfcfc/i); // NES white
   });
 
-  it('commits to the retro aesthetic: pixel font + CRT scanlines', () => {
+  it('commits to the retro aesthetic: pixel font + hard offset shadows', () => {
     expect(css).toMatch(/Press Start 2P/i);
-    expect(css).toMatch(/scanline|repeating-linear-gradient/i);
+    // Chunky 8-bit chrome: hard offset shadows on panels (no soft blur radius).
+    expect(css).toMatch(/--shadow-hard:\s*4px 4px 0/i);
+  });
+
+  it('has no full-viewport CRT overlay (scroll-jank fix, #21)', () => {
+    // The expensive compositing layer is gone: no blend mode, no huge blurred
+    // full-screen inset shadow, no body grid texture.
+    expect(css).not.toMatch(/mix-blend-mode/i);
+    expect(css).not.toMatch(/box-shadow:\s*inset[^;]*\b\d{2,}px/i);
+    expect(css).not.toMatch(/body::after/i);
+    expect(css).not.toMatch(/background-size:\s*32px 32px/i);
   });
 
   it('avoids the telltale generic-AI UI patterns', () => {
@@ -30,5 +40,30 @@ describe('Site design (#19)', () => {
   it('is actually wired into the app', () => {
     const main = readFileSync(fileURLToPath(new URL('./main.tsx', import.meta.url)), 'utf8');
     expect(main).toMatch(/styles\.css/);
+  });
+});
+
+describe('Flanking dashboard layout (#22)', () => {
+  it('lays the play screen out as a three-column flank grid', () => {
+    expect(css).toMatch(/\.play-screen\s*\{[^}]*display:\s*grid/i);
+    // Three columns: rating rail | board | next/result rail.
+    expect(css).toMatch(/\.play-screen\s*\{[^}]*grid-template-columns:[^;]*minmax/i);
+  });
+
+  it('collapses to a single column on a narrow viewport', () => {
+    expect(css).toMatch(/@media[^{]*max-width:\s*900px/i);
+  });
+
+  it('clips every panel so content cannot spill past its border', () => {
+    expect(css).toMatch(/overflow:\s*hidden/i);
+    expect(css).toMatch(/max-width:\s*100%/i);
+  });
+
+  it('sizes the board as a viewport-height hero with no fixed 280px cap', () => {
+    const board = readFileSync(fileURLToPath(new URL('./board/Board.tsx', import.meta.url)), 'utf8');
+    // The old hard 280px width cap is gone.
+    expect(board).not.toMatch(/280px/);
+    // The board hero scales with the viewport height.
+    expect(css).toMatch(/--board-width:\s*min\([^)]*vh/i);
   });
 });

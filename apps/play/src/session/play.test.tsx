@@ -22,6 +22,9 @@ function samplePuzzle(): Puzzle {
     optimalLine: line,
     optimalMetrics: boardMetrics(board2),
     glicko: { rating: 1500, deviation: 350, volatility: 0.06 },
+    colors: '',
+    firstValues: [],
+    secondValues: [],
   };
 }
 

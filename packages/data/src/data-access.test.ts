@@ -24,6 +24,7 @@ afterAll(async () => {
   }
   for (const id of createdUserIds) {
     await client.from('user_ratings').delete().eq('user_id', id);
+    await client.from('user_prefs').delete().eq('user_id', id);
   }
 });
 
@@ -35,12 +36,21 @@ const sampleLine: Line = [
 describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
   it('round-trips a puzzle: insert then read back by id', async () => {
     const board = encodeBoard(emptyBoard());
+    const colors = '1'.repeat(200);
+    const firstValues = [
+      { rotation: 0, col: 0, value: 12.5 },
+      { rotation: 1, col: 3, value: 9.1 },
+    ];
+    const secondValues = [{ rotation: 0, col: 4, value: 7.2 }];
     const inserted = await db!.insertPuzzle({
       board,
       piece1: 'T',
       piece2: 'L',
       optimalLine: sampleLine,
       optimalMetrics: boardMetrics(emptyBoard()),
+      colors,
+      firstValues,
+      secondValues,
     });
     createdPuzzleIds.push(inserted.id);
 
@@ -52,6 +62,10 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(fetched!.piece1).toBe('T');
     expect(fetched!.optimalLine).toEqual(sampleLine);
     expect(fetched!.optimalMetrics.holes).toBe(0);
+    // The colour grid and value tables (#27) round-trip intact.
+    expect(fetched!.colors).toBe(colors);
+    expect(fetched!.firstValues).toEqual(firstValues);
+    expect(fetched!.secondValues).toEqual(secondValues);
   });
 
   it('selects a random puzzle from the bank', async () => {
@@ -107,5 +121,49 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     const attempts = await db!.getUserAttempts(userId);
     expect(attempts).toHaveLength(1);
     expect(attempts[0].id).toBe(attempt.id);
+  });
+
+  it('reads attempt history joined with the puzzle difficulty', async () => {
+    const puzzle = await db!.insertPuzzle({
+      board: encodeBoard(emptyBoard()),
+      piece1: 'I',
+      piece2: 'O',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+      glicko: { rating: 1623 },
+    });
+    createdPuzzleIds.push(puzzle.id);
+
+    const userId = crypto.randomUUID();
+    await db!.insertAttempt({ userId, puzzleId: puzzle.id, userLine: sampleLine, solved: false });
+
+    const history = await db!.getUserAttemptHistory(userId);
+    expect(history).toHaveLength(1);
+    expect(history[0].puzzleId).toBe(puzzle.id);
+    expect(history[0].difficulty).toBe(1623);
+    expect(history[0].solved).toBe(false);
+  });
+
+  it('round-trips user prefs (key bindings) via upsert and read', async () => {
+    const userId = crypto.randomUUID();
+    createdUserIds.push(userId);
+
+    expect(await db!.getUserPrefs(userId)).toBeNull();
+
+    const saved = await db!.upsertUserPrefs({
+      userId,
+      bindings: { 'move-left': 'ArrowLeft', 'rotate-cw': 'k' },
+    });
+    expect(saved.bindings['rotate-cw']).toBe('k');
+
+    const reread = await db!.getUserPrefs(userId);
+    expect(reread).toEqual(saved);
+
+    // Upsert again to confirm it updates rather than duplicating.
+    const updated = await db!.upsertUserPrefs({
+      userId,
+      bindings: { 'rotate-cw': 'j' },
+    });
+    expect(updated.bindings['rotate-cw']).toBe('j');
   });
 });

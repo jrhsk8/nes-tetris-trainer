@@ -14,11 +14,15 @@ export type { DataAccess } from './data-access.js';
 export type {
   Glicko,
   Puzzle,
+  PlacementValue,
   NewPuzzle,
   UserRating,
   Attempt,
   NewAttempt,
+  AttemptHistoryEntry,
+  UserPrefs,
   PuzzleRow,
   UserRatingRow,
   AttemptRow,
+  UserPrefsRow,
 } from './types.js';

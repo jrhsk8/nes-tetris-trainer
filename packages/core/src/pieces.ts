@@ -15,6 +15,25 @@ export function isPiece(value: unknown): value is Piece {
   return typeof value === 'string' && (PIECES as readonly string[]).includes(value);
 }
 
+/**
+ * NES colour group a tetromino draws with: `1` = white (T, O, I); `2` = Z, L;
+ * `3` = J, S. Taken from the Tetris (NES) disassembly `orientationTable`. This
+ * is piece metadata, not board state — the binary `Grid` stays colour-blind;
+ * only the parallel colour grid (see the board model) reads it.
+ */
+export type ColorGroup = 1 | 2 | 3;
+
+/** Which NES colour group each tetromino belongs to. */
+export const PIECE_GROUP: Record<Piece, ColorGroup> = {
+  T: 1,
+  O: 1,
+  I: 1,
+  Z: 2,
+  L: 2,
+  J: 3,
+  S: 3,
+};
+
 /** A single oriented shape: the `[row, col]` cells of its (normalized) bounding box. */
 export type Orientation = ReadonlyArray<readonly [number, number]>;
 
