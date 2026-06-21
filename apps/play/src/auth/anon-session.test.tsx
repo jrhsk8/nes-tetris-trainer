@@ -126,15 +126,15 @@ const anonKey = process.env.SUPABASE_ANON_KEY ?? process.env.SUPABASE_PUBLISHABL
 const liveConfigured = Boolean(url && anonKey);
 
 describe.skipIf(!liveConfigured)('Anonymous auth + persistence (live Supabase, #39)', () => {
-  it('persists a rating under an anon session and reads it back on a fresh client', async () => {
+  it('persists a rating under an anon session and reads it back after a simulated reload', async () => {
+    // First "page load": establish a real anonymous session and persist a rating.
     const first = createClient(url!, anonKey!, { auth: { persistSession: false } });
     const { data, error } = await first.auth.signInAnonymously();
-    if (error) {
-      // Anonymous sign-ins still disabled — acceptance cannot run; leave #39 open.
-      console.warn(`SKIP live anon acceptance: ${error.message}`);
-      return;
-    }
+    // Anonymous sign-ins are ENABLED on the project, so this acceptance must
+    // genuinely run — a disabled-provider error is a hard failure, not a skip.
+    expect(error).toBeNull();
     const userId = data.user!.id;
+    const session = data.session!;
 
     const upsert = await first
       .from('user_ratings')
@@ -144,17 +144,31 @@ describe.skipIf(!liveConfigured)('Anonymous auth + persistence (live Supabase, #
     expect(upsert.error).toBeNull();
     expect(upsert.data!.rating).toBe(1542);
 
-    // Re-read with the same authenticated client to confirm RLS lets the owner
-    // see the row (the "rating actually persists" check).
-    const read = await first
+    // Second "page load": a brand-new client restores the persisted session
+    // (exactly what the browser does from storage on reload) and reads the row
+    // back as the same anonymous user — proving the rating survives reloads.
+    const reloaded = createClient(url!, anonKey!, { auth: { persistSession: false } });
+    const restored = await reloaded.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+    expect(restored.error).toBeNull();
+    expect(restored.data.user!.id).toBe(userId);
+
+    const read = await reloaded
       .from('user_ratings')
       .select('rating')
       .eq('user_id', userId)
       .maybeSingle();
     expect(read.data!.rating).toBe(1542);
 
-    // Clean up via the same session (RLS allows owning user to delete? attempts
-    // policies have no delete; leave the row — it is an anonymous throwaway).
+    // Clean up the throwaway anonymous user and its row (service role).
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
+    if (serviceKey) {
+      const admin = createClient(url!, serviceKey, { auth: { persistSession: false } });
+      await admin.from('user_ratings').delete().eq('user_id', userId);
+      await admin.auth.admin.deleteUser(userId);
+    }
     await first.auth.signOut();
   });
 });
