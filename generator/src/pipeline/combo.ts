@@ -21,6 +21,7 @@ import {
   applyRestingPlacement,
   enumerateResting,
   boardKey,
+  boardMetrics,
   CORRECT_SCORE_THRESHOLD,
   type Grid,
   type Piece,
@@ -165,15 +166,142 @@ export function normalizedScores(combos: readonly ScoredCombo[]): number[] {
 export function normalizeCombos(combos: readonly ScoredCombo[], topK: number): ComboTable {
   if (combos.length === 0) return { entries: [], total: 0 };
   const scores = normalizedScores(combos);
-  const entries: ComboEntry[] = combos.slice(0, topK).map((c, i) => ({
-    rot1: c.p1.rotation,
-    col1: c.p1.col,
-    rot2: c.p2.rotation,
-    col2: c.p2.col,
-    score: scores[i],
-    boardKey: c.boardKey,
-  }));
+  // The stored list is in dominance-respecting rank order (#50), which can place
+  // a cleaner-but-lower-value combo above a higher-value one; clamp so the
+  // displayed scores stay non-increasing with rank (rank-1 always 100).
+  let ceiling = Number.POSITIVE_INFINITY;
+  const entries: ComboEntry[] = combos.slice(0, topK).map((c, i) => {
+    const score = Math.min(scores[i], ceiling);
+    ceiling = score;
+    return {
+      rot1: c.p1.rotation,
+      col1: c.p1.col,
+      rot2: c.p2.rotation,
+      col2: c.p2.col,
+      score,
+      boardKey: c.boardKey,
+    };
+  });
   return { entries, total: combos.length };
+}
+
+/**
+ * Cleanliness of a combo's resulting board (#50): holes and the tallest column.
+ * All combos on one puzzle share `board0`, so these are directly comparable
+ * across a puzzle's combos (the inherited holes/height cancel) — a board0-
+ * independent measure of which combo leaves the cleaner stack.
+ */
+export interface ComboCleanliness {
+  holes: number;
+  maxHeight: number;
+}
+
+/** Holes + tallest column of a combo's resulting board. */
+export function comboCleanliness(combo: ScoredCombo): ComboCleanliness {
+  const m = boardMetrics(combo.board2);
+  return { holes: m.holes, maxHeight: m.columnHeights.length ? Math.max(...m.columnHeights) : 0 };
+}
+
+/**
+ * Holes-dominance on cleanliness (#50): `a` strictly out-cleans `b` when it has
+ * strictly FEWER holes and is no taller. Buried holes (unlike a couple of extra
+ * rows of height, which the engine eval legitimately trades for board shape) are
+ * almost never a justified "optimal", so a board that is strictly holier AND no
+ * shorter must never outrank a cleaner one — the value-sanity invariant.
+ */
+export function holesDominate(a: ComboCleanliness, b: ComboCleanliness): boolean {
+  return a.holes < b.holes && a.maxHeight <= b.maxHeight;
+}
+
+/**
+ * Rank swept combos by a **dominance-respecting** order (#50): a topological
+ * sort of the {@link holesDominate} partial order (cleaner-on-holes first),
+ * tie-broken by raw engine value. Guarantees the value-sanity invariant — a board
+ * with strictly more holes AND no-lower height can never be placed above a
+ * cleaner one — while otherwise preserving the engine's value ranking (which
+ * captures board shape beyond raw height). In the common case (no holes
+ * conflicts) this is exactly the value order.
+ */
+export function rankCombosBySanity(combos: readonly ScoredCombo[]): ScoredCombo[] {
+  const n = combos.length;
+  if (n <= 1) return [...combos];
+  const clean = combos.map(comboCleanliness);
+  // Kahn's algorithm over the domination DAG: domCount[i] = remaining dominators
+  // of i; place a node only once all its dominators are placed.
+  const domCount = new Array<number>(n).fill(0);
+  const dominates: number[][] = Array.from({ length: n }, () => []);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      if (i !== j && holesDominate(clean[j], clean[i])) {
+        domCount[i]++;
+        dominates[j].push(i);
+      }
+    }
+  }
+  const placed = new Array<boolean>(n).fill(false);
+  const order: number[] = [];
+  for (let k = 0; k < n; k++) {
+    let pick = -1;
+    for (let i = 0; i < n; i++) {
+      if (placed[i] || domCount[i] > 0) continue;
+      if (pick === -1 || combos[i].value > combos[pick].value) pick = i;
+    }
+    placed[pick] = true;
+    order.push(pick);
+    for (const i of dominates[pick]) if (!placed[i]) domCount[i]--;
+  }
+  return order.map((i) => combos[i]);
+}
+
+/** Tuning for the rank-1 outcome-quality gate (#50). */
+export interface Rank1QualityConfig {
+  /** Reject when a no-taller alternative has at least this many FEWER holes. */
+  holeMargin: number;
+  /** A rank-1 column at least this tall is a candidate "tower". */
+  towerMinHeight: number;
+  /** ...and is rejected if a swept alternative is at least this much shorter. */
+  towerHeightMargin: number;
+}
+
+export const DEFAULT_RANK1_QUALITY: Rank1QualityConfig = {
+  holeMargin: 3,
+  towerMinHeight: 12,
+  towerHeightMargin: 4,
+};
+
+/**
+ * The outcome-quality gate (#50): why a candidate's rank-1 (value-best) combo is
+ * an EGREGIOUSLY bad "optimal" relative to what the sweep itself found, or `null`
+ * when it is acceptable. Both checks are board0-independent (every combo shares
+ * board0), and both target the real bug — a degenerate tower/holey board crowned
+ * #1 — without rejecting the legitimate majority where the engine trades a couple
+ * of rows of height for better board shape:
+ *
+ *  - `rank1-holey` — a no-taller swept alternative has ≥ `holeMargin` FEWER holes.
+ *    The stored optimal needlessly buries holes a cleaner line avoids.
+ *  - `rank1-tower` — rank-1 is a tall tower (≥ `towerMinHeight`) when a swept
+ *    alternative is materially shorter (≥ `towerHeightMargin`).
+ *
+ * StackRabbit's eval-only value occasionally crowns such a board #1; this gate
+ * rejects the whole puzzle rather than bank a bad "optimal".
+ */
+export function rank1QualityReason(
+  best: ScoredCombo,
+  combos: readonly ScoredCombo[],
+  config: Rank1QualityConfig = DEFAULT_RANK1_QUALITY,
+): string | null {
+  const cb = comboCleanliness(best);
+  const others = combos.filter((c) => c !== best).map(comboCleanliness);
+  if (others.some((c) => c.maxHeight <= cb.maxHeight && cb.holes - c.holes >= config.holeMargin)) {
+    return 'rank1-holey';
+  }
+  if (
+    cb.maxHeight >= config.towerMinHeight &&
+    others.some((c) => c.maxHeight <= cb.maxHeight - config.towerHeightMargin)
+  ) {
+    return 'rank1-tower';
+  }
+  return null;
 }
 
 /**

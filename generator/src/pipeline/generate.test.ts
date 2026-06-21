@@ -4,6 +4,7 @@ import {
   emptyBoard,
   emptyColorGrid,
   encodeBoard,
+  holes,
   isPiece,
   type Grid,
   type Piece,
@@ -56,6 +57,48 @@ function comboEngine(opts: { health?: number } = {}): GeneratorEngine {
       return { playerValue: v, bestValue: 0 };
     },
   };
+}
+
+/**
+ * A fake engine that REWARDS buried holes (`rateMove` returns the resulting
+ * board's hole count). The holiest resulting board scores highest, so the
+ * engine's value-best combo buries holes a cleaner swept alternative avoids —
+ * the #50 holey-optimal bug shape.
+ */
+function holeyEngine(): GeneratorEngine {
+  return {
+    async getBestMove(query: MoveQuery): Promise<EngineMove | null> {
+      return {
+        rotation: 0,
+        x: 0,
+        y: 0,
+        board: applyPlacement(query.board, query.currentPiece, { rotation: 0, col: 0 }),
+        totalValue: 100,
+      };
+    },
+    async rateMove(_query: MoveQuery, after: Grid): Promise<RateMoveResult> {
+      return { playerValue: holes(after), bestValue: 0 };
+    },
+  };
+}
+
+/**
+ * A candidate with a deep one-wide well (col 5, depth 4) under a flat height-4
+ * surface. An I piece dropped vertically fills the well cleanly; an I laid across
+ * the top buries the well as 4 holes — so a hole-rewarding engine's value-best is
+ * egregiously holey while a clean alternative exists.
+ */
+function wellCandidate(): Candidate {
+  const board: Grid = emptyBoard();
+  for (let r = 16; r < 20; r++) for (let c = 0; c < 10; c++) if (c !== 5) board[r][c] = 1;
+  return { ...sampleCandidate(), currentPiece: 'I', nextPiece: 'I', board };
+}
+
+/** A candidate whose start board is near-topout tall (passes holes/bumpiness). */
+function tallCandidate(): Candidate {
+  const board: Grid = emptyBoard();
+  for (let r = 20 - 14; r < 20; r++) for (let c = 0; c < 9; c++) board[r][c] = 1; // 14 tall, no holes
+  return { ...sampleCandidate(), board };
 }
 
 /** A db double that records inserts and returns them as if stored. */
@@ -166,6 +209,18 @@ describe('assemblePuzzle combo pipeline (#40)', () => {
     const result = await assemblePuzzle(comboEngine(), holeyCandidate());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('geometry-prefilter');
+  });
+
+  it('rejects a candidate whose best swept combo buries holes a cleaner line avoids (#50)', async () => {
+    const result = await assemblePuzzle(holeyEngine(), wellCandidate());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('rank1-holey');
+  });
+
+  it('rejects a near-topout start board via the re-tightened floor (#50)', async () => {
+    const result = await assemblePuzzle(comboEngine(), tallCandidate());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('start-too-tall');
   });
 });
 

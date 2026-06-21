@@ -29,6 +29,8 @@ import {
   isReachablePlacement,
   normalizeCombos,
   normalizedScores,
+  rank1QualityReason,
+  rankCombosBySanity,
   sweepCombos,
   type ComboContext,
 } from './combo.js';
@@ -59,6 +61,13 @@ export interface GenerationConfig {
   /** Geometric pre-filter: drop candidates bumpier than this. */
   maxBumpiness: number;
   /**
+   * Re-tightened board-health floor (#50): reject a candidate whose tallest
+   * START column exceeds this. Tall / near-topped-out board0s are what let
+   * StackRabbit's eval-only value crown a degenerate tower/holey board as #1, so
+   * they are rejected before the sweep rather than gated after.
+   */
+  maxStartHeight: number;
+  /**
    * Input timeline used to value combos. Permissive enough to value the
    * intended placements; tuck/spin capability is granted (not gated) in v2, so
    * combos the engine cannot reach under this timeline are simply skipped.
@@ -81,6 +90,9 @@ export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
   // Holes ≤ 4 / bumpiness ≤ 32 keeps starting boards visibly clean.
   maxHoles: 4,
   maxBumpiness: 32,
+  // Re-tightened (#50): reject near-topout starts (well is 20 tall). 12 leaves
+  // ample build room while excluding the tall boards that produce bad rank-1s.
+  maxStartHeight: 12,
   // Slow-tap timeline, proven against the live engine for hard-drop placements.
   // Tuck valuation against the live engine is the E smoke-test de-risk item; this
   // is configurable so a more permissive timeline can be tuned in there.
@@ -113,6 +125,13 @@ export async function assemblePuzzle(
     return { ok: false, reason: 'geometry-prefilter' };
   }
 
+  // 1b. Re-tightened board-health floor (#50): reject near-topout starts that
+  //     lead StackRabbit to crown degenerate tower/holey boards as the optimal.
+  const startHeights = boardMetrics(board).columnHeights;
+  if (Math.max(...startHeights) > config.maxStartHeight) {
+    return { ok: false, reason: 'start-too-tall' };
+  }
+
   // 2. Relaxed board-health (fairness) floor (engine, piece-independent).
   const health = await boardHealth(engine, board, level, lines, config.valuationTimeline);
   if (health < config.healthFloor) return { ok: false, reason: 'board-health-floor' };
@@ -123,7 +142,18 @@ export async function assemblePuzzle(
   const combos = await sweepCombos(engine, ctx, config.valuationTimeline);
   if (combos.length === 0) return { ok: false, reason: 'no-rateable-combos' };
 
-  const best = combos[0];
+  // 3b. Outcome-quality gate (#50): reject the puzzle when the engine's value-best
+  //     combo is a needlessly holey/tall "optimal" — Pareto-dominated by, or a
+  //     tower beside, a strictly cleaner swept alternative. (Checked against the
+  //     engine's value-best, before the dominance-respecting re-rank below.)
+  const qualityReason = rank1QualityReason(combos[0], combos);
+  if (qualityReason) return { ok: false, reason: qualityReason };
+
+  // Dominance-respecting rank order (#50): the stored "optimal" must never be a
+  // strictly-worse board than a cleaner alternative. Past the gate, rank-1 equals
+  // the engine's value-best (it is Pareto-clean), so the optimal is unchanged.
+  const ranked = rankCombosBySanity(combos);
+  const best = ranked[0];
 
   // 4. Narrowed Hz-invariance: the stored optimal must be a genuinely reachable
   //    resting placement (tuck capability granted, not gated — #40). Both pieces
@@ -136,10 +166,10 @@ export async function assemblePuzzle(
   if (!reachable) return { ok: false, reason: 'optimal-unreachable' };
 
   // 5. Normalize to 0–100, derive difficulty + seed rating, and build the table.
-  const scores = normalizedScores(combos);
+  const scores = normalizedScores(ranked);
   const difficulty = difficultyFromScores(scores);
   const seed = seedRatingFor(difficulty);
-  const table = normalizeCombos(combos, config.topK);
+  const table = normalizeCombos(ranked, config.topK);
   const optimalLine: Line = [
     { rotation: best.p1.rotation, col: best.p1.col },
     { rotation: best.p2.rotation, col: best.p2.col },

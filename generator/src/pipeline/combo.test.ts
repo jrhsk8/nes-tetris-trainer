@@ -8,9 +8,12 @@ import {
 } from '@trainer/core';
 import {
   boardHealth,
+  comboCleanliness,
   isReachablePlacement,
   normalizeCombos,
   normalizedScores,
+  rank1QualityReason,
+  rankCombosBySanity,
   sweepCombos,
   type ComboContext,
   type ComboEngine,
@@ -152,6 +155,86 @@ describe('sweepCombos (#40)', () => {
     expect(best.p1).toMatchObject({ rotation: 1, col: 4, row: 16 });
     // It is genuinely reachable (the narrowed-Hz guard).
     expect(isReachablePlacement(board, 'I', best.p1)).toBe(true);
+  });
+});
+
+/**
+ * A board whose column 0 has the given `maxHeight` (its topmost cell at the
+ * matching row) and exactly `holeCount` covered holes beneath it. Lets a test
+ * dial in a combo's resulting-board cleanliness independent of engine value.
+ */
+function cleanlinessBoard(maxHeight: number, holeCount: number): Grid {
+  const board = emptyBoard();
+  for (let r = 20 - maxHeight; r < 20; r++) board[r][0] = 1; // solid column, 0 holes
+  // Carve holes from the floor up; the topmost cell stays filled (covers them).
+  let carved = 0;
+  for (let r = 19; r > 20 - maxHeight && carved < holeCount; r--, carved++) board[r][0] = 0;
+  return board;
+}
+
+const sanityCombo = (value: number, maxHeight: number, holeCount: number, key: string): ScoredCombo => ({
+  p1: { rotation: 0, row: 18, col: 0 },
+  p2: { rotation: 0, row: 18, col: 1 },
+  value,
+  board2: cleanlinessBoard(maxHeight, holeCount),
+  boardKey: key,
+});
+
+describe('combo cleanliness (#50)', () => {
+  it('reports holes and tallest column of a combo board', () => {
+    expect(comboCleanliness(sanityCombo(0, 6, 2, 'a'))).toEqual({ holes: 2, maxHeight: 6 });
+  });
+});
+
+describe('rankCombosBySanity (#50 value-sanity invariant)', () => {
+  it('never ranks a strictly more holey AND no-shorter board above a cleaner one', () => {
+    // A: the engine's value-best, but tall and holey. B: cleaner (fewer holes,
+    // no taller), lower value — must be ranked above A despite the lower value.
+    const a = sanityCombo(100, 13, 5, 'a');
+    const b = sanityCombo(50, 13, 0, 'b');
+    const ranked = rankCombosBySanity([a, b]);
+    expect(ranked[0]).toBe(b);
+    expect(ranked[1]).toBe(a);
+  });
+
+  it('preserves engine value order when no board is strictly holier-and-taller', () => {
+    // A height-6 board ranked above a flatter height-4 board: equal holes, so the
+    // engine's value order (its shape judgement) is trusted, not overridden.
+    const hi = sanityCombo(100, 6, 0, 'hi');
+    const lo = sanityCombo(40, 4, 0, 'lo');
+    expect(rankCombosBySanity([lo, hi])).toEqual([hi, lo]);
+    // Shorter-but-holier vs taller-but-cleaner are incomparable → value order.
+    const a = sanityCombo(100, 6, 0, 'a');
+    const b = sanityCombo(40, 4, 2, 'b');
+    expect(rankCombosBySanity([b, a])).toEqual([a, b]);
+  });
+});
+
+describe('rank1QualityReason (#50 outcome-quality gate)', () => {
+  it('rejects a rank-1 board that buries holes a no-taller alternative avoids', () => {
+    const best = sanityCombo(100, 8, 5, 'best');
+    const cleaner = sanityCombo(50, 8, 0, 'clean');
+    expect(rank1QualityReason(best, [best, cleaner])).toBe('rank1-holey');
+  });
+
+  it('rejects a needless tower when a materially shorter alternative exists', () => {
+    const tower = sanityCombo(100, 12, 0, 'tower');
+    const shorter = sanityCombo(50, 4, 2, 'short');
+    expect(rank1QualityReason(tower, [tower, shorter])).toBe('rank1-tower');
+  });
+
+  it('does NOT reject a mild height difference (engine shape judgement trusted)', () => {
+    // rank-1 leaves a height-4 board; a height-2 alternative exists. This is the
+    // common, legitimate case — not an egregious tower or holey optimal.
+    const best = sanityCombo(100, 4, 0, 'best');
+    const flatter = sanityCombo(50, 2, 0, 'flat');
+    expect(rank1QualityReason(best, [best, flatter])).toBeNull();
+  });
+
+  it('passes a clean, non-holey, non-tower rank-1', () => {
+    const best = sanityCombo(100, 5, 0, 'best');
+    const worse = sanityCombo(40, 8, 1, 'worse');
+    expect(rank1QualityReason(best, [best, worse])).toBeNull();
   });
 });
 
