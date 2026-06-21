@@ -27,6 +27,16 @@ export {
 } from './board.js';
 export type { Grid, Placement, ColorGrid, Line } from './board.js';
 
+export {
+  pieceCells,
+  fitsAt,
+  isResting,
+  applyRestingPlacement,
+  enumerateResting,
+  boardKey,
+} from './placement.js';
+export type { RestingPlacement } from './placement.js';
+
 export { columnHeights, aggregateHeight, bumpiness, holes, boardMetrics } from './metrics.js';
 export type { BoardMetrics } from './metrics.js';
 

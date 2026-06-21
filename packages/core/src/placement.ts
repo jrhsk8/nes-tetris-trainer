@@ -1,0 +1,178 @@
+/**
+ * Collision-aware reachability and resting placements (#37, v2 overhaul issue A).
+ *
+ * The hard-drop-only {@link Placement} (`{ rotation, col }`) in `board.ts` can
+ * only describe a piece dropped straight down a column. v2 grades by where a
+ * piece *rests* — including **tucks** (slid under an overhang) and **spins**
+ * (rotated into a pocket) — so we need a richer placement that pins an exact
+ * resting position, plus a way to enumerate every position the player could
+ * legally manoeuvre a piece into.
+ *
+ * {@link enumerateResting} does that with a BFS over the four player inputs
+ * (left, right, rotate, soft-drop) from the spawn row. The enumerated set is a
+ * **superset** of every placement free-positioning input (#43) can produce —
+ * the binding invariant for outcome-matching, so a legal tuck is never rejected
+ * as "unknown combo".
+ *
+ * {@link boardKey} is the **canonical outcome key**: the locked-cell set after a
+ * placement, as the 200-char binary string. Matching by this key (#42) is
+ * path-independent and rotation-numbering-independent — two encodings that land
+ * the same cells grade identically.
+ *
+ * Pure: no engine, network, or DOM. The binary {@link Grid} stays colour-blind.
+ */
+
+import {
+  ROWS,
+  COLS,
+  cloneBoard,
+  clearFullRows,
+  encodeBoard,
+  type Grid,
+} from './board.js';
+import { ORIENTATIONS, type Piece } from './pieces.js';
+
+/**
+ * A resting placement that can express any collision-reachable position — a
+ * hard drop, a tuck, or a spin. Unlike the hard-drop-only {@link Placement} it
+ * pins the full board offset of the piece's (normalized) bounding box: its
+ * top-left corner sits at `(row, col)`. `rotation` indexes the piece's
+ * orientation table (canonical `0..len-1`).
+ */
+export interface RestingPlacement {
+  rotation: number;
+  row: number;
+  col: number;
+}
+
+/** Normalize a (possibly wrapping) rotation index to `0..len-1` for `piece`. */
+function normRotation(piece: Piece, rotation: number): number {
+  const len = ORIENTATIONS[piece].length;
+  return ((rotation % len) + len) % len;
+}
+
+/**
+ * The board cells `piece` occupies at `rotation` with its bounding box's
+ * top-left corner at `(row, col)`. Returns `[boardRow, boardCol]` pairs.
+ */
+export function pieceCells(
+  piece: Piece,
+  rotation: number,
+  row: number,
+  col: number,
+): Array<[number, number]> {
+  const orientations = ORIENTATIONS[piece];
+  const cells = orientations[normRotation(piece, rotation)];
+  return cells.map(([r, c]) => [r + row, c + col] as [number, number]);
+}
+
+/** True if every cell of the placement is on the board and on an empty square. */
+export function fitsAt(
+  grid: Grid,
+  piece: Piece,
+  rotation: number,
+  row: number,
+  col: number,
+): boolean {
+  for (const [r, c] of pieceCells(piece, rotation, row, col)) {
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS || grid[r][c]) return false;
+  }
+  return true;
+}
+
+/**
+ * True if the piece fits at `(rotation, row, col)` AND cannot move one row down
+ * — i.e. it rests on the stack or the floor. This is the lock condition.
+ */
+export function isResting(
+  grid: Grid,
+  piece: Piece,
+  rotation: number,
+  row: number,
+  col: number,
+): boolean {
+  return fitsAt(grid, piece, rotation, row, col) && !fitsAt(grid, piece, rotation, row + 1, col);
+}
+
+/**
+ * Lock a resting placement into the board (then clear any full rows) and return
+ * a NEW grid; `grid` is not mutated. Throws if the placement does not fit. Use
+ * {@link enumerateResting} to obtain legal placements; this is the generalized
+ * counterpart of {@link applyPlacement} for tuck/spin positions and reproduces
+ * it exactly for hard-drop placements.
+ */
+export function applyRestingPlacement(grid: Grid, piece: Piece, placement: RestingPlacement): Grid {
+  const { rotation, row, col } = placement;
+  if (!fitsAt(grid, piece, rotation, row, col)) {
+    throw new Error(`illegal placement: ${piece} rot ${rotation} row ${row} col ${col}`);
+  }
+  const next = cloneBoard(grid);
+  for (const [r, c] of pieceCells(piece, rotation, row, col)) {
+    next[r][c] = 1;
+  }
+  return clearFullRows(next);
+}
+
+/** A packed integer key for a `(rotation, row, col)` BFS state. */
+function stateKey(rotation: number, row: number, col: number): number {
+  return (rotation * ROWS + row) * COLS + col;
+}
+
+/**
+ * Every collision-reachable **resting** placement of `piece` on `grid`.
+ *
+ * A BFS over the player's four inputs — left, right, rotate (cw/ccw), and
+ * soft-drop — seeded from the spawn row (every rotation/column that fits at the
+ * top of the board, where pieces enter). A reached state is a resting placement
+ * when the piece can no longer move down. The result is a superset of every
+ * placement free-positioning input can reach (the binding invariant), so it
+ * includes plain hard drops as well as tucks and spins.
+ */
+export function enumerateResting(grid: Grid, piece: Piece): RestingPlacement[] {
+  const rotations = ORIENTATIONS[piece].length;
+  const seen = new Set<number>();
+  const queue: RestingPlacement[] = [];
+
+  const visit = (rotation: number, row: number, col: number): void => {
+    if (!fitsAt(grid, piece, rotation, row, col)) return;
+    const k = stateKey(rotation, row, col);
+    if (seen.has(k)) return;
+    seen.add(k);
+    queue.push({ rotation, row, col });
+  };
+
+  // Seed from the entry row: pieces appear at the top and are manoeuvred down.
+  for (let rotation = 0; rotation < rotations; rotation++) {
+    for (let col = 0; col < COLS; col++) {
+      visit(rotation, 0, col);
+    }
+  }
+
+  const resting: RestingPlacement[] = [];
+  for (let i = 0; i < queue.length; i++) {
+    const { rotation, row, col } = queue[i];
+    // Player moves: translate, rotate, soft-drop. `visit` enqueues legal states.
+    visit(rotation, row, col - 1);
+    visit(rotation, row, col + 1);
+    visit(rotation, row + 1, col);
+    if (rotations > 1) {
+      visit(normRotation(piece, rotation + 1), row, col);
+      visit(normRotation(piece, rotation - 1), row, col);
+    }
+    // Resting if it cannot fall further.
+    if (!fitsAt(grid, piece, rotation, row + 1, col)) {
+      resting.push({ rotation, row, col });
+    }
+  }
+  return resting;
+}
+
+/**
+ * The canonical **outcome key** for a (resulting) board: its locked-cell set as
+ * the 200-char binary string ({@link encodeBoard}). Matching by this key is
+ * path- and rotation-numbering-independent — two placements (or encodings) that
+ * land exactly the same cells share a key and so grade identically (#42).
+ */
+export function boardKey(grid: Grid): string {
+  return encodeBoard(grid);
+}
