@@ -11,6 +11,7 @@ import type {
   Attempt,
   AttemptHistoryEntry,
   AttemptRow,
+  Glicko,
   NewAttempt,
   NewPuzzle,
   Puzzle,
@@ -102,9 +103,17 @@ export interface DataAccess {
   insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]>;
   /** Delete every puzzle (and, by cascade, every attempt). Used by a bank regen. */
   deleteAllPuzzles(): Promise<number>;
+  /** Every puzzle's id + rating (the lean read the offline rating tally needs). */
+  getAllPuzzleRatings(): Promise<{ id: string; glicko: Glicko }[]>;
+  /** Overwrite one puzzle's Glicko rating (offline tally, #41). */
+  updatePuzzleRating(id: string, glicko: Glicko): Promise<void>;
   getUserRating(userId: string): Promise<UserRating | null>;
+  /** Every persisted player rating (opponents for the offline puzzle-rating tally). */
+  getAllUserRatings(): Promise<UserRating[]>;
   upsertUserRating(rating: UserRating): Promise<UserRating>;
   insertAttempt(attempt: NewAttempt): Promise<Attempt>;
+  /** Every recorded attempt across all players (the offline tally substrate). */
+  getAllAttempts(): Promise<Attempt[]>;
   getUserAttempts(userId: string): Promise<Attempt[]>;
   getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]>;
   getUserPrefs(userId: string): Promise<UserPrefs | null>;
@@ -189,6 +198,32 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return (data ?? []).length;
   }
 
+  async function getAllPuzzleRatings(): Promise<{ id: string; glicko: Glicko }[]> {
+    const { data, error } = await client
+      .from('puzzles')
+      .select('id, rating, deviation, volatility');
+    if (error) throw new Error(`getAllPuzzleRatings failed: ${error.message}`);
+    return (data ?? []).map((row) => {
+      const r = row as Pick<PuzzleRow, 'id' | 'rating' | 'deviation' | 'volatility'>;
+      return {
+        id: r.id,
+        glicko: { rating: r.rating, deviation: r.deviation, volatility: r.volatility },
+      };
+    });
+  }
+
+  async function updatePuzzleRating(id: string, glicko: Glicko): Promise<void> {
+    const { error } = await client
+      .from('puzzles')
+      .update({
+        rating: glicko.rating,
+        deviation: glicko.deviation,
+        volatility: glicko.volatility,
+      })
+      .eq('id', id);
+    if (error) throw new Error(`updatePuzzleRating failed: ${error.message}`);
+  }
+
   async function getUserRating(userId: string): Promise<UserRating | null> {
     const { data, error } = await client
       .from('user_ratings')
@@ -218,6 +253,12 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return rowToUserRating(data as UserRatingRow);
   }
 
+  async function getAllUserRatings(): Promise<UserRating[]> {
+    const { data, error } = await client.from('user_ratings').select('*');
+    if (error) throw new Error(`getAllUserRatings failed: ${error.message}`);
+    return (data as UserRatingRow[]).map(rowToUserRating);
+  }
+
   async function insertAttempt(attempt: NewAttempt): Promise<Attempt> {
     const { data, error } = await client
       .from('attempts')
@@ -232,6 +273,15 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
       .single();
     if (error) throw new Error(`insertAttempt failed: ${error.message}`);
     return rowToAttempt(data as AttemptRow);
+  }
+
+  async function getAllAttempts(): Promise<Attempt[]> {
+    const { data, error } = await client
+      .from('attempts')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(`getAllAttempts failed: ${error.message}`);
+    return (data as AttemptRow[]).map(rowToAttempt);
   }
 
   async function getUserAttempts(userId: string): Promise<Attempt[]> {
@@ -291,9 +341,13 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     insertPuzzle,
     insertPuzzles,
     deleteAllPuzzles,
+    getAllPuzzleRatings,
+    updatePuzzleRating,
     getUserRating,
+    getAllUserRatings,
     upsertUserRating,
     insertAttempt,
+    getAllAttempts,
     getUserAttempts,
     getUserAttemptHistory,
     getUserPrefs,

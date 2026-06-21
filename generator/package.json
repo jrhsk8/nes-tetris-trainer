@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/main.ts",
+    "tally": "tsx src/tally.ts",
     "typecheck": "tsc --build"
   },
   "dependencies": {
     "@trainer/core": "*",
-    "@trainer/data": "*"
+    "@trainer/data": "*",
+    "@trainer/rating": "*"
   }
 }

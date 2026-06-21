@@ -8,6 +8,10 @@
     "lib": ["ES2022"],
     "types": ["node"]
   },
-  "references": [{ "path": "../packages/core" }, { "path": "../packages/data" }],
+  "references": [
+    { "path": "../packages/core" },
+    { "path": "../packages/data" },
+    { "path": "../packages/rating" }
+  ],
   "include": ["src/**/*"]
 }

@@ -5,3 +5,5 @@
 
 export { updateRatings, applyAttempt, seedRating, GLICKO_TAU } from './glicko.js';
 export type { RatingUpdate, AttemptRatingResult } from './glicko.js';
+export { ratePeriod, tallyPuzzleRatings } from './tally.js';
+export type { RatingPeriodMatch, TallyAttempt } from './tally.js';

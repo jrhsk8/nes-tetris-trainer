@@ -23,3 +23,4 @@ export {
 } from './combo.js';
 export { difficultyFromScores, seedRatingFor, EASY_SEED, HARD_SEED, type Difficulty } from './difficulty.js';
 export { boardHamming, isNearDuplicate, type BankKey } from './dedup.js';
+export { tallyBankRatings, type TallyDeps, type TallyResult } from './tally.js';
