@@ -12,7 +12,7 @@ The puzzle unit: a board plus the current piece and the next piece. The player p
 
 ### Two-piece combo
 
-A specific pair of placements `(placement₁, placement₂)` — the player's full answer to a puzzle. Its value is StackRabbit's evaluation of the board after **both** pieces are placed. A puzzle's universe of answers is the cross-product of every legal first placement × every legal second placement on the board that first placement produces.
+A specific pair of placements `(placement₁, placement₂)` — the player's full answer to a puzzle. Its value is StackRabbit's evaluation of the board after **both** pieces are placed. A puzzle's universe of answers is the cross-product of every **collision-reachable resting placement** (hard-drop, [tuck, or spin](#tuck--spin)) for the first piece × every reachable resting placement for the second on the board that first placement produces. (Pre-2026-06-21 the universe was hard-drops only.)
 
 ### Optimal line
 
@@ -24,7 +24,7 @@ A [two-piece combo](#two-piece-combo)'s value field-normalized to **0–100** ac
 
 ### Combo-threshold grading
 
-v2 grading (replaces the v1 [exact-match checker](#exact-match-checker)). The player always places both pieces; the attempt is scored by its [combo score](#combo-score). An attempt is **Correct** iff its combo scores **≥ 95** (within 5% of the best combo), else **Incorrect**. There is no first-move short-circuit — a weak first move simply caps the combo's score. Drives the [verdict](#verdict) and the binary solved/failed signal for [co-rating](#co-rating).
+v2 grading (replaces the v1 [exact-match checker](#exact-match-checker)). The player always places both pieces; the attempt is scored by its [combo score](#combo-score). An attempt is **Correct** iff its combo scores **≥ 95** (within 5% of the best combo), else **Incorrect**. There is no first-move short-circuit — a weak first move simply caps the combo's score. An attempt matches a stored combo by its **resulting board** (the locked cells after both pieces) — outcome, not `(rotation, col)` or input path — so a [tuck, spin](#tuck--spin), or any rotation-encoding that lands the same cells counts as the same answer. (This is the actual fix for the "identical to #1 but graded wrong" report: the v1 short-circuit failed the puzzle on a first move that merely differed from the engine's setup move.) Drives the [verdict](#verdict) and the binary solved/failed signal for [co-rating](#co-rating).
 
 ### Exact-match checker
 
@@ -36,7 +36,7 @@ The prominent **Correct / Incorrect** banner shown after an attempt (alongside t
 
 ### Combo table
 
-The per-puzzle store of the **top-K (K ≈ 30) ranked two-piece combos** — each combo's placements and [combo score](#combo-score), plus the total count of ranked combos. Generation evaluates the full cross-product to rank and normalize, but persists only the top-K, so rows stay small and the play app needs no live engine. Replaces the v1 [value tables](#value-table).
+The per-puzzle store of the **top-K (K ≈ 30) ranked two-piece combos** — each combo's placements, its [combo score](#combo-score), and a canonical **resulting-board key** (the locked cells, used for [outcome matching](#combo-threshold-grading)), plus the total count of ranked combos. Generation evaluates the full cross-product — now spanning [tuck/spin](#tuck--spin) placements — to rank and normalize, but persists only the top-K, so rows stay small and the play app needs no live engine. Replaces the v1 [value tables](#value-table).
 
 ### Value table
 
@@ -52,7 +52,15 @@ v1 feedback display, **superseded** by the [ranked combo list](#ranked-combo-lis
 
 ### Board-health floor
 
-A generation gate (R3) for cleaner *starting* boards: keep a candidate snapshot only if the **minimum best-move value across all 7 piece types** clears a moderate, tunable floor — a piece-independent proxy for "a board StackRabbit rates highly," since StackRabbit exposes no static board evaluation. A cheap [geometric](#geometric-metrics) pre-filter (holes/bumpiness) drops obvious garbage before the engine calls. Runs before the combo sweep.
+A generation gate (R3) for cleaner *starting* boards: keep a candidate snapshot only if the **minimum best-move value across all 7 piece types** clears a moderate, tunable floor — a piece-independent proxy for "a board StackRabbit rates highly," since StackRabbit exposes no static board evaluation. A cheap [geometric](#geometric-metrics) pre-filter (holes/bumpiness) drops obvious garbage before the engine calls. Runs before the combo sweep. (2026-06-21: **relaxed** to a fairness/garbage-only floor — the original high floor kept clean boards where many moves are fine, biasing the bank toward easy; [difficulty](#difficulty) shaping now does the rest.)
+
+### Difficulty
+
+A per-puzzle generation property (since 2026-06-21), computed from two combo-distribution signals and stored raw: **`acceptCount`** — the number of combos scoring ≥ 95 (the [combo-threshold](#combo-threshold-grading) bar; few acceptable answers = hard) — and **`margin`** — the score gap between the best combo and the best one *below* 95 (a large gap means the answer stands alone, hard to hit by luck). Combined into the puzzle's **seed rating** (harder → higher seed), which bootstraps [matchmaking](#matchmaking) immediately rather than waiting for crowd data. The bank is biased toward hard with an easy tail kept for new/low-rated players; per the player's own definition, an *easy* puzzle is one with "many acceptable highly-rated moves."
+
+### Deduplication
+
+A generation gate (since 2026-06-21): reject a candidate whose **`(piece1, piece2)` match and whose board is within a small Hamming distance** of any puzzle already accepted — checked against both the in-progress batch and the existing [bank](#the-bank). Catches *near-identical* look-alikes (different IDs, same-looking board), not just byte-identical duplicates. Complements the play-side [anti-repeat cooldown](#anti-repeat-cooldown): dedup keeps look-alikes out of the bank; the cooldown keeps the same puzzle from recurring too soon.
 
 ### Unambiguity gate (fairness gate)
 
@@ -60,11 +68,15 @@ v1 generation filter, **dropped** for combo grading on 2026-06-20. It kept a can
 
 ### Hz-invariance
 
-A generation filter: keep a candidate only if its **best combo** is identical across the full range of piece-movement speeds (slowest tap to fastest DAS). Makes a puzzle **movement/reaction agnostic** — its answer never depends on execution speed, only on stacking judgment. (Retargeted from "optimal move per ply" to "best combo" in the 2026-06-20 combo overhaul.)
+A generation filter: keep a candidate only if its **best combo** is identical across the full range of **left/right movement speeds** (slowest tap to fastest DAS). "Execution speed" here means **horizontal traverse speed only** — how far a piece can be moved left/right before it locks. [Tuck and spin](#tuck--spin) *capability* is **granted** (assumed always executable) and is explicitly **not** gated, so a tuck/spin can be the optimal answer. The puzzle is agnostic to horizontal movement speed — never to stacking judgment or tuck/spin skill. (2026-06-21: narrowed from "all piece-movement speeds" to left/right only, reinstating tucks as legal answers. 2026-06-20: retargeted from "optimal move per ply" to "best combo.")
 
 ### Slow-tap / fast-DAS
 
-The two extremes of piece-movement speed: slowest manual tapping vs. fastest DAS (Delayed Auto Shift — the auto-repeat when a direction is held). The endpoints checked for [Hz-invariance](#hz-invariance).
+The two extremes of **left/right** piece-movement speed: slowest manual tapping vs. fastest DAS (Delayed Auto Shift — the auto-repeat when a direction is held). The endpoints checked for [Hz-invariance](#hz-invariance). They bound horizontal traverse only; tuck/spin reachability is assumed (see [tuck / spin](#tuck--spin)).
+
+### Tuck / spin
+
+A resting placement reached by sliding a piece **under an overhang** (tuck) or **rotating it into a pocket** (spin) — one a straight hard-drop can't reach, so it rests *lower* than the drop column would allow. As of 2026-06-21 these are **first-class**: the generator enumerates them as combo candidates, StackRabbit values them, a tuck/spin can be the [optimal line](#optimal-line), and the [ghost](#ghost-placement) can place them. They are pure stacking judgment, not [execution](#hz-invariance) — the trainer grants the maneuver and grades only where the piece rests. *Binding invariant:* the generator's enumerated placement set must be a **superset** of what the play-app input can place, or [outcome matching](#combo-threshold-grading) would wrongly reject a legal tuck.
 
 ### Geometric metrics
 
@@ -80,15 +92,27 @@ The local NES Tetris AI engine that evaluates moves ([github.com/GregoryCannon/S
 
 ### Replay
 
-The post-attempt animation on the central board: a piece spawns at top-center, performs one eased rotate-and-slide during the upper part of the fall, then drops straight to rest (clip-checked, with a flash-and-collapse on a line clear; honors `prefers-reduced-motion`). Now **color-aware** (base = the puzzle's [color grid](#color-grid); each dropped piece paints its NES color group) and **parameterized by combo** — it can animate any combo selected in the [ranked combo list](#ranked-combo-list), not just the optimal line.
+The post-attempt animation on the central board: a piece spawns at top-center, performs one eased rotate-and-slide during the upper part of the fall, then drops straight to rest (clip-checked, with a flash-and-collapse on a line clear; honors `prefers-reduced-motion`). Now **color-aware** (base = the puzzle's [color grid](#color-grid); each dropped piece paints its NES color group) and **parameterized by combo** — it can animate any combo selected in the [ranked combo list](#ranked-combo-list), not just the optimal line. (2026-06-21: must now animate [tucks/spins](#tuck--spin) — slide under overhangs / rotate into pockets — since a combo's optimal need no longer be a straight drop; the "drop straight to rest" path is no longer a safe assumption.)
 
 ### Co-rating
 
-Both players and puzzles carry a Glicko-2 rating (rating + deviation + volatility). Solving a higher-rated puzzle raises yours; failing lowers it. "Solved" = the attempt's [combo score](#combo-score) ≥ 95. Puzzle ratings drift toward true difficulty as attempts accumulate.
+Both players and puzzles carry a Glicko-2 rating (rating + deviation + volatility). Solving a higher-rated puzzle raises yours; failing lowers it. "Solved" = the attempt's [combo score](#combo-score) ≥ 95. Puzzle ratings are **seeded from generated [difficulty](#difficulty)** (not flat) and drift toward true difficulty as attempts accumulate. Player ratings persist **live, client-side**, under an [anonymous session](#anonymous-session) (so RLS no longer silently drops the write); puzzle ratings are recomputed **offline in batches** from the attempts log, not written live.
+
+### Matchmaking
+
+Puzzle selection (since 2026-06-21, replacing uniform-random): draw the next puzzle at random from puzzles whose rating is within a **band around the player's rating** (auto-widening if too few), **excluding recently-seen** puzzles. One query delivers both "around my level with some variance" and the [anti-repeat cooldown](#anti-repeat-cooldown). Made meaningful by [difficulty](#difficulty)-seeded puzzle ratings — the PRD had deferred matchmaking precisely because flat seeds carried no signal.
+
+### Anti-repeat cooldown
+
+A play-side rule folded into [matchmaking](#matchmaking): a puzzle the player has attempted within a recent window is excluded from selection, so it can **return later but not soon**. Answers "I keep getting the same puzzles." Distinct from [deduplication](#deduplication), which is the generation-side guard against near-identical *different* puzzles.
+
+### Anonymous session
+
+Every visitor gets a real Supabase **anonymous** auth session on load, so `auth.uid()` is a genuine UUID that satisfies row-level security and rating writes persist — for dev/local play and the open-access live site alike. Replaces the all-zeros dev-bypass user whose writes RLS silently rejected. The session's rating is portable: linking email/Google/Discord later carries it over.
 
 ### Ghost placement
 
-The movable translucent preview of a piece that the player positions to a final resting placement, then confirms. Input is "pick a resting placement," not real-time play. (Not the standard hard-drop drop-shadow that "ghost" usually means in Tetris.)
+The movable translucent preview of a piece that the player positions to a final resting placement, then confirms. **Free-positioning** input — collision-aware left/right, rotate, and **soft-drop** — so the ghost can slide under overhangs and rotate into pockets (a [tuck or spin](#tuck--spin)), not just drop straight down. There is no timer, so input is still "pick a resting placement," not real-time play. (Not the standard hard-drop drop-shadow that "ghost" usually means in Tetris. 2026-06-21: was hard-drop / column-only, which couldn't express tucks.)
 
 ### Current piece / next piece
 
@@ -105,3 +129,7 @@ The NES-style bordered preview of the next piece, drawn as a real piece graphic 
 ### Color grid
 
 A per-cell color-group encoding stored alongside the binary board (a 200-char string: `'0'` empty, `'1'/'2'/'3'` = NES color group) so the existing stack renders in authentic NES colors. Kept separate from the binary `Grid` so metrics, the checker, and placement logic stay color-blind. Produced by color-tracking self-play during generation. Consumed by both the solving board and the (now color-aware) [replay](#replay), so the stack never reverts to white.
+
+### Screenshot submission
+
+A front-end affordance (new for 2026-06-21) letting players contribute puzzles, **screenshot-only to start**. Because solving requires [StackRabbit](#stackrabbit) — offline-only, never deployed — the browser merely **uploads the image to a submission queue**; the offline pipeline **OCRs the NES grid into board + pieces, solves, runs the gates / [dedup](#deduplication) / [difficulty](#difficulty), and banks or rejects** it. Submitted puzzles go live after the next generation run. A second implementation of the pluggable [board source](#self-play--board-source), alongside self-play.
