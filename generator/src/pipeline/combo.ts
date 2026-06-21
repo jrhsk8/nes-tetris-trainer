@@ -144,17 +144,39 @@ export async function sweepCombos(
 }
 
 /**
- * Field-normalize swept combos to a 0–100 score aligned to their (best-first)
- * order: best = 100, worst legal = 0. When every combo ties (or there is only
- * one) all score 100. Rounded to whole numbers for a clean ranked list.
+ * The raw StackRabbit eval gap (`bestValue − value`) at which a combo stops
+ * being graded correct (#47). Chosen from sampled real bank gaps (see
+ * `generator/src/gap-sample.ts` + docs/decisions.md 2026-06-21 #47): a clean but
+ * slightly bumpier line costs ~4–8 eval units (median 4.3, p75 8.4), while a move
+ * that buries a hole costs ~12–22 (p25 12.2, median 21.6). MARGIN = 8 admits
+ * "within a little bumpiness of the best" and rejects most hole-burying moves.
+ */
+export const CORRECT_GAP_MARGIN = 8;
+
+/**
+ * Display slope (eval units → points), pinned so `score ≥ CORRECT_SCORE_THRESHOLD`
+ * is exactly equivalent to `gap ≤ CORRECT_GAP_MARGIN`. With the 95 threshold and
+ * an 8-unit margin this is 5/8 = 0.625 points per eval unit.
+ */
+export const SCORE_SLOPE = (100 - CORRECT_SCORE_THRESHOLD) / CORRECT_GAP_MARGIN;
+
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(100, score));
+}
+
+/**
+ * Score swept combos by their **gap from the best** (#47), in raw StackRabbit
+ * eval units: `score = clamp(round(100 − k·(bestValue − value)), 0, 100)`. The
+ * best combo scores exactly 100; the worst-legal anchor is dropped entirely, so
+ * the SAME absolute gap yields the SAME score on every puzzle (cross-puzzle
+ * comparable) and a genuinely mediocre move no longer compresses into the 90s.
+ * `correct = score ≥ CORRECT_SCORE_THRESHOLD` is equivalent to `gap ≤
+ * CORRECT_GAP_MARGIN`. Ties (or a single combo) all score 100.
  */
 export function normalizedScores(combos: readonly ScoredCombo[]): number[] {
   if (combos.length === 0) return [];
-  const values = combos.map((c) => c.value);
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const span = max - min;
-  return combos.map((c) => (span === 0 ? 100 : Math.round(((c.value - min) / span) * 100)));
+  const best = Math.max(...combos.map((c) => c.value));
+  return combos.map((c) => clampScore(Math.round(100 - SCORE_SLOPE * (best - c.value))));
 }
 
 /**

@@ -30,14 +30,38 @@ const combo = (col1: number, col2: number, value: number, key: string): ScoredCo
   boardKey: key,
 });
 
-describe('normalizedScores / normalizeCombos (#40)', () => {
-  it('field-normalizes to 0–100 (best = 100, worst = 0) and ranks descending', () => {
+describe('normalizedScores / normalizeCombos — gap-from-best (#47)', () => {
+  it('anchors to gap from the best (rank-1 = 100), not the worst legal', () => {
+    // best = 10; gaps 0 / 5 / 10 → 100 / round(100−0.625·5) / round(100−0.625·10).
     const combos = [combo(0, 0, 10, 'a'), combo(1, 0, 5, 'b'), combo(2, 0, 0, 'c')];
-    expect(normalizedScores(combos)).toEqual([100, 50, 0]);
+    expect(normalizedScores(combos)).toEqual([100, 97, 94]);
     const table = normalizeCombos(combos, 30);
     expect(table.total).toBe(3);
-    expect(table.entries.map((e) => e.score)).toEqual([100, 50, 0]);
+    expect(table.entries.map((e) => e.score)).toEqual([100, 97, 94]);
     expect(table.entries[0]).toMatchObject({ rot1: 0, col1: 0, boardKey: 'a' });
+  });
+
+  it('grades the gap=MARGIN boundary correct and just past it incorrect', () => {
+    const atMargin = normalizedScores([combo(0, 0, 100, 'a'), combo(1, 0, 92, 'b')]); // gap 8
+    expect(atMargin[1]).toBe(95); // CORRECT_SCORE_THRESHOLD — still correct
+    const pastMargin = normalizedScores([combo(0, 0, 100, 'a'), combo(1, 0, 91, 'b')]); // gap 9
+    expect(pastMargin[1]).toBeLessThan(95); // ranked, shown, but incorrect
+  });
+
+  it('grades a move the OLD min-max scheme passed (≥95) as incorrect', () => {
+    // values 1000 / 980 / 0: old min-max gave the middle (980−0)/1000·100 = 98
+    // (correct). Gap-from-best is 20 → 100−0.625·20 = 87.5 → 88 (incorrect).
+    const scores = normalizedScores([combo(0, 0, 1000, 'a'), combo(1, 0, 980, 'b'), combo(2, 0, 0, 'c')]);
+    expect(scores[1]).toBe(88);
+    expect(scores[1]).toBeLessThan(95);
+  });
+
+  it('gives the same score for the same absolute gap across puzzles with different worst-legal tails', () => {
+    // Both have a rank-2 gap of 8, but wildly different worst-legal anchors.
+    const tight = normalizedScores([combo(0, 0, 50, 'a'), combo(1, 0, 42, 'b')]);
+    const wide = normalizedScores([combo(0, 0, 1000, 'a'), combo(1, 0, 992, 'b'), combo(2, 0, -500, 'c')]);
+    expect(tight[1]).toBe(95);
+    expect(wide[1]).toBe(95); // identical despite a far worse tail
   });
 
   it('keeps only the top-K but reports the full ranked total, each with a boardKey', () => {

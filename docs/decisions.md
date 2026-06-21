@@ -2,6 +2,15 @@
 
 Lightweight log of decisions not captured in [PRD-v1.md](PRD-v1.md) (the PRD owns product/architecture decisions; this owns tooling, repo, and doc choices). Newest first.
 
+### 2026-06-21 — Combo score re-anchored to gap-from-best (#47, post-v2 QA)
+
+Revises the 2026-06-20 "Combo-grading overhaul" **normalization + correctness anchor** (the two-piece model and `boardKey` outcome-matching are unchanged). The old score was a per-puzzle min-max normalization with the **worst legal combo** as the 0 anchor; that anchor is a deeply negative outlier (digging a hole / topping out — measured median worst-legal gap **~1084** eval units vs a rank-2 gap of **~4**), which stretched the bottom of the scale and compressed every reasonable move into the high 90s. A mediocre move scored ~96 and graded **correct**, and scores were not comparable across puzzles.
+
+- **Margin chosen from data, not guessed.** `generator/src/gap-sample.ts` re-ran the sweep on 24 real bank puzzles and reported raw rank-1→rank-N gaps; a follow-up measured the eval cost of one buried hole. Findings: a clean-but-bumpier alternative costs **~4–8** eval units (median 4.3, p75 8.4); a hole-burying move costs **~12–22** (p25 12.2, median 21.6). `MARGIN = 8` sits in the gap between them — admits "within a little bumpiness of the best," rejects most hole-burying moves.
+- **Gap-anchored display score (generator).** `score = clamp(round(100 − k·(bestValue − value)), 0, 100)`; the worst-legal `min` is dropped. `k = (100 − THRESHOLD)/MARGIN = 5/8 = 0.625`, pinned so the same absolute gap scores identically on every puzzle.
+- **Correctness (core, unchanged surface).** `CORRECT_SCORE_THRESHOLD` stays 95; with the gap-anchored score, `correct = score ≥ 95` is now exactly equivalent to `gap ≤ MARGIN (8)`. `ComboResult` and `gradeCombo` (a `boardKey` lookup) are unchanged. A move the old min-max scored ≥ 95 but that is ≥ MARGIN below best now grades **incorrect** (e.g. a 20-unit gap: old ≈ 98 → new 88).
+- **Bank regen** recomputes only `combos[].score` (and the difficulty signals derived from them); `boardKey`s and placements are unchanged. Backed up first; deploy stays manual. (Side effect: gap-anchored scores yield smaller `acceptCount`s, so seed ratings skew a little harder — acceptable; the difficulty mapping is tunable separately.)
+
 ### 2026-06-21 — Rank-1 outcome-quality gate (#50, post-v2 QA)
 
 A player reported a tower/holey "optimal" ranked #1 over a cleaner line; a bank-wide audit confirmed StackRabbit's eval-only `rate-move` value occasionally crowns a degenerate board #1 on a minority of puzzles. Fixes, in the offline generator (`generator/src/pipeline/combo.ts`, `generate.ts`):

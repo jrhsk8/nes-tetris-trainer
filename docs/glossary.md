@@ -20,7 +20,7 @@ The best (rank-1) [two-piece combo](#two-piece-combo) for a puzzle — the highe
 
 ### Combo score
 
-A [two-piece combo](#two-piece-combo)'s value field-normalized to **0–100** across the puzzle's evaluated combos (best = 100, worst legal = 0), computed at generation. It is the number shown beside each combo in feedback and the basis for grading. Combos too bad to rank (beyond the stored top-K) are off-scale.
+A [two-piece combo](#two-piece-combo)'s **gap from the best combo**, in raw StackRabbit eval units, mapped to **0–100** as `score = clamp(100 − k·(bestValue − value))` with `k = 0.625` (since 2026-06-21, #47). The best (rank-1) combo scores 100; the same absolute gap yields the same score on every puzzle (cross-puzzle comparable). This **replaces** the earlier min-max normalization (best = 100, *worst legal* = 0), whose worst-legal anchor — a deeply negative digging/topping-out outlier — compressed every reasonable move into the high 90s, so a genuinely mediocre answer scored ~96 and graded correct. **Correct = score ≥ 95**, now equivalent to being within an **8-unit eval gap** of the best (`MARGIN`, chosen from sampled real gaps: a little bumpiness ≈ 4–8 units, burying a hole ≈ 12–22). It is the number shown beside each combo in feedback. Combos too bad to rank (beyond the stored top-K) are off-scale.
 
 ### Combo-threshold grading
 
