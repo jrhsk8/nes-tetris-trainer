@@ -1,19 +1,24 @@
 /**
- * Ghost-piece input (#10) — lets the player move and rotate a ghost of `piece`
- * to a final resting placement and confirm it. There is no real-time play and
- * no reachability model: the player picks a resting column + rotation, the
- * ghost shows exactly where it would land, and confirming emits that placement.
+ * Free-positioning ghost input (#10, #43) — the player manoeuvres a ghost of
+ * `piece` to any collision-reachable resting position and confirms it. Unlike
+ * the old column-only ghost this can express **tucks and spins**: there is no
+ * timer, but the four real inputs (left, right, rotate, soft-drop) are
+ * collision-aware, so the player can soft-drop into an open well and slide the
+ * piece UNDER an overhang before locking.
  *
- * Because the ghost is drawn with `restingCells(board, piece, placement)` and
- * the same `placement` is emitted, the emitted placement always matches what is
- * shown.
+ * The piece has a floating position `(rotation, row, col)`; the ghost is drawn
+ * where it would currently land (the floating position dropped straight to
+ * rest), and confirming emits exactly that resting placement (carrying its
+ * `row`, so a tuck is pinned and not re-dropped onto the ledge). What you see is
+ * what you get.
  */
 
 import { useCallback, useMemo, useState } from 'react';
 import {
   COLS,
   ORIENTATIONS,
-  restingCells,
+  fitsAt,
+  pieceCells,
   type ColorGrid,
   type Grid,
   type Piece,
@@ -22,18 +27,21 @@ import {
 import { Board } from './Board.js';
 import { DEFAULT_BINDINGS, resolveAction, type KeyBindings } from './keybindings.js';
 
-/** Columns at which `piece` (in `rotation`) can legally rest on `board`. */
-function legalColumns(board: Grid, piece: Piece, rotation: number): number[] {
-  const cols: number[] = [];
-  for (let col = 0; col < COLS; col++) {
-    if (restingCells(board, piece, { rotation, col })) cols.push(col);
-  }
-  return cols;
+/** The row a piece at `(rotation, col)` settles to if dropped straight from `row`. */
+function settleRow(board: Grid, piece: Piece, rotation: number, row: number, col: number): number {
+  let r = row;
+  while (fitsAt(board, piece, rotation, r + 1, col)) r++;
+  return r;
 }
 
-/** The value in `options` closest to `target` (options assumed non-empty). */
-function nearest(target: number, options: number[]): number {
-  return options.reduce((best, c) => (Math.abs(c - target) < Math.abs(best - target) ? c : best));
+/** A starting column near the spawn where `piece` fits at the top of the board. */
+function spawnColumn(board: Grid, piece: Piece): number {
+  for (let d = 0; d < COLS; d++) {
+    for (const col of d === 0 ? [SPAWN_COLUMN] : [SPAWN_COLUMN - d, SPAWN_COLUMN + d]) {
+      if (col >= 0 && col < COLS && fitsAt(board, piece, 0, 0, col)) return col;
+    }
+  }
+  return 0;
 }
 
 export interface PlacementInputProps {
@@ -51,7 +59,7 @@ export interface PlacementInputProps {
   bindings?: KeyBindings;
 }
 
-/** A reasonable starting column: the legal column nearest the spawn column. */
+/** A reasonable starting column: near the NES spawn column. */
 const SPAWN_COLUMN = 3;
 
 export function PlacementInput({
@@ -64,54 +72,50 @@ export function PlacementInput({
 }: PlacementInputProps) {
   const rotationCount = ORIENTATIONS[piece].length;
   const [rotation, setRotation] = useState(0);
-  const [col, setCol] = useState(() => {
-    const cols = legalColumns(board, piece, 0);
-    return cols.length ? nearest(SPAWN_COLUMN, cols) : 0;
-  });
+  const [col, setCol] = useState(() => spawnColumn(board, piece));
+  const [row, setRow] = useState(0);
 
-  const columns = useMemo(() => legalColumns(board, piece, rotation), [board, piece, rotation]);
+  // Where the piece would land from its current floating position — what the
+  // ghost shows and what `confirm` emits (the displayed rest, pinned by `row`).
+  const restRow = useMemo(
+    () => settleRow(board, piece, rotation, row, col),
+    [board, piece, rotation, row, col],
+  );
   const ghostCells = useMemo(
-    () => restingCells(board, piece, { rotation, col }) ?? [],
-    [board, piece, rotation, col],
+    () => pieceCells(piece, rotation, restRow, col),
+    [piece, rotation, restRow, col],
   );
 
   const moveLeft = useCallback(() => {
-    setCol((current) => {
-      const index = columns.indexOf(current);
-      return index > 0 ? columns[index - 1] : current;
-    });
-  }, [columns]);
+    setCol((c) => (fitsAt(board, piece, rotation, row, c - 1) ? c - 1 : c));
+  }, [board, piece, rotation, row]);
 
   const moveRight = useCallback(() => {
-    setCol((current) => {
-      const index = columns.indexOf(current);
-      return index >= 0 && index < columns.length - 1 ? columns[index + 1] : current;
-    });
-  }, [columns]);
+    setCol((c) => (fitsAt(board, piece, rotation, row, c + 1) ? c + 1 : c));
+  }, [board, piece, rotation, row]);
+
+  const softDrop = useCallback(() => {
+    setRow((r) => (fitsAt(board, piece, rotation, r + 1, col) ? r + 1 : r));
+  }, [board, piece, rotation, col]);
 
   // Rotate by `delta` orientation steps (+1 = clockwise, -1 = counter-clockwise),
-  // keeping the column legal (snap to nearest if the new rotation forbids it).
+  // in place — only if the rotated piece still fits at the current position.
   const rotateBy = useCallback(
     (delta: number) => {
       if (rotationCount < 2) return;
-      const nextRotation = (rotation + delta + rotationCount) % rotationCount;
-      const nextColumns = legalColumns(board, piece, nextRotation);
-      setRotation(nextRotation);
-      setCol((current) =>
-        nextColumns.includes(current)
-          ? current
-          : nextColumns.length
-            ? nearest(current, nextColumns)
-            : current,
-      );
+      const next = (rotation + delta + rotationCount) % rotationCount;
+      if (fitsAt(board, piece, next, row, col)) setRotation(next);
     },
-    [board, piece, rotation, rotationCount],
+    [board, piece, rotation, row, col, rotationCount],
   );
 
   const rotateCw = useCallback(() => rotateBy(1), [rotateBy]);
   const rotateCcw = useCallback(() => rotateBy(-1), [rotateBy]);
 
-  const confirm = useCallback(() => onConfirm({ rotation, col }), [onConfirm, rotation, col]);
+  const confirm = useCallback(
+    () => onConfirm({ rotation, col, row: restRow }),
+    [onConfirm, rotation, col, restRow],
+  );
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -131,12 +135,15 @@ export function PlacementInput({
         case 'rotate-ccw':
           rotateCcw();
           break;
+        case 'soft-drop':
+          softDrop();
+          break;
         case 'confirm':
           confirm();
           break;
       }
     },
-    [bindings, moveLeft, moveRight, rotateCw, rotateCcw, confirm],
+    [bindings, moveLeft, moveRight, rotateCw, rotateCcw, softDrop, confirm],
   );
 
   return (
@@ -147,6 +154,7 @@ export function PlacementInput({
       aria-label="placement input"
       data-rotation={rotation}
       data-col={col}
+      data-row={row}
     >
       {label ? <p className="placement-label">{label}</p> : null}
       <Board grid={board} colorGrid={colorGrid} ghostCells={ghostCells} ghostPiece={piece} />
@@ -172,6 +180,14 @@ export function PlacementInput({
         </button>
         <button type="button" onClick={moveRight} aria-label="Move right">
           ▶
+        </button>
+        <button
+          type="button"
+          onClick={softDrop}
+          aria-label="Soft drop"
+          disabled={!fitsAt(board, piece, rotation, row + 1, col)}
+        >
+          ▼
         </button>
         <button type="button" onClick={confirm} aria-label="Confirm placement">
           Confirm

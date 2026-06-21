@@ -16,6 +16,7 @@ import {
   applyPlacement,
   applyPlacementColored,
   cloneColorGrid,
+  fitsAt,
   restingCells,
   type ColorGrid,
   type Grid,
@@ -58,7 +59,7 @@ export interface Keyframe {
 /** The column the piece visually spawns over (NES top-centre). */
 const SPAWN_COL = 3;
 
-/** The spawn / mid-slide / rest transforms for a piece resting at `cells`. */
+/** The spawn / mid-slide / rest transforms for a straight (hard-drop) descent. */
 function transforms(cells: readonly Cell[]): { spawn: string; align: string; rest: string } {
   const top = Math.min(...cells.map(([r]) => r));
   const left = Math.min(...cells.map(([, c]) => c));
@@ -72,6 +73,71 @@ function transforms(cells: readonly Cell[]): { spawn: string; align: string; res
     // Rest: identity — the cells already sit at their final positions.
     rest: 'translate(0%, 0%)',
   };
+}
+
+/**
+ * A horizontal offset (in columns) for an open chute the piece can fall down
+ * and then slide out of into its resting cells WITHOUT passing through the
+ * stack — used to route a tuck around the overhang it rests under. Returns `0`
+ * when the piece simply drops straight in (the common, non-tuck case): a hard
+ * drop always has a clear chute above its column, so this is `0` for it.
+ *
+ * Searches offsets nearest-first; an offset works when (a) the piece has a
+ * clear vertical chute from the top down to its rest row in the shifted column
+ * and (b) it can slide horizontally from there into the rest column at the rest
+ * row without hitting a filled cell.
+ */
+function tuckOffset(
+  grid: Grid,
+  piece: Piece,
+  rotation: number,
+  restTop: number,
+  restLeft: number,
+): number {
+  const order = [0];
+  for (let d = 1; d < COLS; d++) order.push(-d, d);
+  for (const h of order) {
+    const chuteCol = restLeft + h;
+    if (chuteCol < 0 || chuteCol >= COLS) continue;
+    let clear = true;
+    for (let r = 0; r <= restTop && clear; r++) {
+      if (!fitsAt(grid, piece, rotation, r, chuteCol)) clear = false;
+    }
+    if (!clear) continue;
+    // Slide horizontally at the rest row from the chute column into place.
+    const step = h > 0 ? -1 : 1;
+    for (let c = chuteCol; c !== restLeft && clear; c += step) {
+      if (!fitsAt(grid, piece, rotation, restTop, c)) clear = false;
+    }
+    if (clear && fitsAt(grid, piece, rotation, restTop, restLeft)) return h;
+  }
+  return 0;
+}
+
+/**
+ * The ordered overlay transforms that animate `rest` from spawn to its settled
+ * position on `grid`. A straight drop uses the spawn → align → rest slide; a
+ * tuck (no clear straight chute) instead falls down an open chute then slides
+ * sideways under the overhang, so it never clips through the stack.
+ */
+function replayPath(grid: Grid, piece: Piece, rotation: number, rest: readonly Cell[]): string[] {
+  const restTop = Math.min(...rest.map(([r]) => r));
+  const restLeft = Math.min(...rest.map(([, c]) => c));
+  const h = tuckOffset(grid, piece, rotation, restTop, restLeft);
+  if (h === 0) {
+    const t = transforms(rest);
+    return [t.spawn, t.align, t.rest];
+  }
+  const dxPct = h * (100 / COLS);
+  const upPct = restTop * (100 / ROWS);
+  return [
+    // Spawn over the open chute, lifted to the top of the well.
+    `translate(${dxPct}%, ${-upPct}%)`,
+    // Fall straight down the chute to the rest row (still offset sideways).
+    `translate(${dxPct}%, 0%)`,
+    // Slide sideways under the overhang into the resting cells.
+    'translate(0%, 0%)',
+  ];
 }
 
 /** The indices of fully-filled rows in `grid` (the rows a clear will remove). */
@@ -130,30 +196,18 @@ export function buildReplay(
       ? applyPlacementColored(current, currentColors, piece, placement, group).colors
       : undefined;
     const cleared = fullRows(preClear);
-    const t = transforms(rest);
+    const path = replayPath(current, piece, placement.rotation, rest);
     const label = `Piece ${i + 1} of 2`;
 
-    keyframes.push({
-      grid: current,
-      colorGrid: currentColors,
-      overlay: { cells: rest, piece, transform: t.spawn },
-      overlayKey: i,
-      label,
-    });
-    keyframes.push({
-      grid: current,
-      colorGrid: currentColors,
-      overlay: { cells: rest, piece, transform: t.align },
-      overlayKey: i,
-      label,
-    });
-    keyframes.push({
-      grid: current,
-      colorGrid: currentColors,
-      overlay: { cells: rest, piece, transform: t.rest },
-      overlayKey: i,
-      label,
-    });
+    for (const transform of path) {
+      keyframes.push({
+        grid: current,
+        colorGrid: currentColors,
+        overlay: { cells: rest, piece, transform },
+        overlayKey: i,
+        label,
+      });
+    }
 
     if (cleared.length) {
       keyframes.push({

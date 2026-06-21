@@ -13,7 +13,13 @@
  */
 
 /** A rebindable placement action. */
-export type Action = 'move-left' | 'move-right' | 'rotate-cw' | 'rotate-ccw' | 'confirm';
+export type Action =
+  | 'move-left'
+  | 'move-right'
+  | 'rotate-cw'
+  | 'rotate-ccw'
+  | 'soft-drop'
+  | 'confirm';
 
 /** The actions in display order, with human labels for the Controls panel. */
 export const ACTIONS: ReadonlyArray<{ action: Action; label: string }> = [
@@ -21,18 +27,20 @@ export const ACTIONS: ReadonlyArray<{ action: Action; label: string }> = [
   { action: 'move-right', label: 'Move right' },
   { action: 'rotate-ccw', label: 'Rotate counter-clockwise' },
   { action: 'rotate-cw', label: 'Rotate clockwise' },
+  { action: 'soft-drop', label: 'Soft drop' },
   { action: 'confirm', label: 'Confirm placement' },
 ];
 
 /** A primary key per action (the value is a normalized `KeyboardEvent.key`). */
 export type KeyBindings = Record<Action, string>;
 
-/** The out-of-the-box bindings: arrows move, z/x rotate CCW/CW, Enter confirms. */
+/** The out-of-the-box bindings: arrows move, z/x rotate CCW/CW, ↓ soft-drops, Enter confirms. */
 export const DEFAULT_BINDINGS: KeyBindings = {
   'move-left': 'ArrowLeft',
   'move-right': 'ArrowRight',
   'rotate-ccw': 'z',
   'rotate-cw': 'x',
+  'soft-drop': 'ArrowDown',
   confirm: 'Enter',
 };
 

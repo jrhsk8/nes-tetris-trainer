@@ -27,6 +27,13 @@ export interface Placement {
   rotation: number;
   /** Board column of the placed piece's left-most cell (0 = leftmost column). */
   col: number;
+  /**
+   * Optional exact resting row (the bounding box's top). When set it pins a
+   * tuck/spin position free-positioning input (#43) produced — the piece rests
+   * exactly here rather than being hard-dropped down the column. When omitted
+   * the placement is a plain hard drop: the piece falls straight to rest.
+   */
+  row?: number;
 }
 
 /**
@@ -117,7 +124,14 @@ export function restingCells(
   piece: Piece,
   placement: Placement,
 ): Array<[number, number]> | null {
-  const { rotation, col } = placement;
+  const { rotation, col, row } = placement;
+
+  // A pinned resting row (a tuck/spin, #43): the cells exactly there, if they
+  // legally fit. No straight drop — the position was reached by manoeuvring.
+  if (row !== undefined) {
+    if (!fits(grid, piece, rotation, col, row)) return null;
+    return placedCells(piece, rotation, col, row);
+  }
 
   // The resting drop is the largest `drop` for which the piece still fits.
   let resting = -1;

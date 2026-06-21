@@ -145,4 +145,31 @@ describe('PlacementInput', () => {
     await user.keyboard('[Space]');
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it('reaches a tuck resting placement under an overhang and confirms it (#43)', async () => {
+    const user = userEvent.setup();
+    // A ledge across cols 4..7 at row 10. The pocket beneath (col 4, rows 16-19)
+    // is reachable only by dropping down open col 3 and sliding right under the
+    // ledge — a tuck the old column-only ghost could not express.
+    const board = emptyBoard();
+    for (let c = 4; c <= 7; c++) board[10][c] = 1;
+    const onConfirm = vi.fn<(p: Placement) => void>();
+    render(<PlacementInput board={board} piece="I" onConfirm={onConfirm} />);
+
+    await user.click(screen.getByLabelText('placement input'));
+    await user.keyboard('{ArrowUp}'); // rotate the I to vertical (rotation 1) at col 3
+    for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop below the ledge
+    await user.keyboard('{ArrowRight}'); // slide under the ledge into the pocket
+    await user.keyboard('{Enter}');
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const emitted = onConfirm.mock.calls[0][0];
+
+    // The emitted placement rests in the pocket UNDER the ledge — a genuine tuck,
+    // not a straight drop onto the ledge, and what the ghost showed.
+    const landed = restingCells(board, 'I', emitted)!;
+    expect(landed).not.toBeNull();
+    expect(keysOf(landed)).toEqual(new Set(['16-4', '17-4', '18-4', '19-4']));
+    expect(keysOf(landed)).toEqual(ghostKeys());
+  });
 });

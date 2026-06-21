@@ -129,6 +129,28 @@ describe('restingCells', () => {
     for (const [r, c] of cells) manual[r][c] = 1;
     expect(manual).toEqual(applyPlacement(board, 'T', placement));
   });
+
+  it('honors a pinned resting row — a tuck under an overhang (#43)', () => {
+    // A ledge across cols 4..7 at row 10; a straight drop at col 4 rests ON the
+    // ledge, but pinning row 16 places the I in the pocket beneath it.
+    const board = emptyBoard();
+    for (let c = 4; c <= 7; c++) board[10][c] = 1;
+
+    const onLedge = restingCells(board, 'I', { rotation: 1, col: 4 })!;
+    expect(Math.min(...onLedge.map(([r]) => r))).toBe(6); // bottom at row 9, on the ledge
+
+    const tuck = restingCells(board, 'I', { rotation: 1, col: 4, row: 16 })!;
+    expect(new Set(tuck.map(([r, c]) => `${r},${c}`))).toEqual(
+      new Set(['16,4', '17,4', '18,4', '19,4']),
+    );
+  });
+
+  it('returns null when a pinned row does not fit (overlaps the stack)', () => {
+    const board = emptyBoard();
+    for (let c = 4; c <= 7; c++) board[10][c] = 1;
+    // Row 8 would put the I across rows 8-11 at col 4 — overlapping the ledge.
+    expect(restingCells(board, 'I', { rotation: 1, col: 4, row: 8 })).toBeNull();
+  });
 });
 
 describe('clearFullRows', () => {
