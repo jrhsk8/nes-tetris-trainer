@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { difficultyFromScores, seedRatingFor, EASY_SEED, HARD_SEED } from './difficulty.js';
+import {
+  difficultyFromScores,
+  seedRatingFor,
+  bandFor,
+  EASY_SEED,
+  HARD_SEED,
+  HARD_MAX_ACCEPTS,
+  EASY_MIN_ACCEPTS,
+} from './difficulty.js';
 
 describe('difficultyFromScores (#40)', () => {
   it('counts accepts (≥95) and the margin below the accept bar', () => {
@@ -39,5 +47,33 @@ describe('seedRatingFor (#40)', () => {
         expect(r).toBeLessThanOrEqual(HARD_SEED);
       }
     }
+  });
+});
+
+describe('bandFor (difficulty bands by answer-set tightness, #52)', () => {
+  it('buckets by acceptCount at the band boundaries', () => {
+    expect(bandFor(1)).toBe('hard');
+    expect(bandFor(HARD_MAX_ACCEPTS)).toBe('hard'); // 2 → hard
+    expect(bandFor(HARD_MAX_ACCEPTS + 1)).toBe('medium'); // 3 → medium
+    expect(bandFor(EASY_MIN_ACCEPTS - 1)).toBe('medium'); // 7 → medium
+    expect(bandFor(EASY_MIN_ACCEPTS)).toBe('easy'); // 8 → easy
+    expect(bandFor(50)).toBe('easy');
+  });
+
+  it('guarantees every hard puzzle has a genuinely tight answer set (≤ 2)', () => {
+    for (let n = 1; n <= 30; n++) {
+      if (bandFor(n) === 'hard') expect(n).toBeLessThanOrEqual(HARD_MAX_ACCEPTS);
+    }
+  });
+
+  it('seed rating tracks the band (hard > medium > easy)', () => {
+    const hard = seedRatingFor({ acceptCount: 1, margin: 30 });
+    const medium = seedRatingFor({ acceptCount: 5, margin: 30 });
+    const easy = seedRatingFor({ acceptCount: 12, margin: 30 });
+    expect(bandFor(1)).toBe('hard');
+    expect(bandFor(5)).toBe('medium');
+    expect(bandFor(12)).toBe('easy');
+    expect(hard).toBeGreaterThan(medium);
+    expect(medium).toBeGreaterThan(easy);
   });
 });

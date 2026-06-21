@@ -16,7 +16,7 @@ import {
   DEFAULT_GENERATION_CONFIG,
   type GeneratorEngine,
 } from './generate.js';
-import { EASY_SEED, HARD_SEED } from './difficulty.js';
+import { EASY_SEED, HARD_SEED, HARD_MAX_ACCEPTS } from './difficulty.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
 import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
 import { StackRabbitClient, DEFAULT_BASE_URL } from '../engine/client.js';
@@ -99,6 +99,45 @@ function tallCandidate(): Candidate {
   const board: Grid = emptyBoard();
   for (let r = 20 - 14; r < 20; r++) for (let c = 0; c < 9; c++) board[r][c] = 1; // 14 tall, no holes
   return { ...sampleCandidate(), board };
+}
+
+/**
+ * An engine that produces a controllable difficulty band per candidate (#52),
+ * keyed off the candidate's `lines` (so the pieces/board geometry stays flat and
+ * clean enough to clear the #50 quality gate in every band):
+ *  - lines 2 → one dominant combo (acceptCount 1)   → hard
+ *  - lines 1 → five near-tied combos (acceptCount 5) → medium
+ *  - lines 0 → a flat field (all combos pass)        → easy
+ * The per-candidate sweep counter resets on `getBestMove`, which runs once at the
+ * start of each `assemblePuzzle` (board-health) before the `rateMove` sweep.
+ */
+function bandEngine(): GeneratorEngine {
+  let n = 0;
+  return {
+    async getBestMove(query: MoveQuery): Promise<EngineMove | null> {
+      n = 0;
+      return {
+        rotation: 0,
+        x: 0,
+        y: 0,
+        board: applyPlacement(query.board, query.currentPiece, { rotation: 0, col: 0 }),
+        totalValue: 100,
+      };
+    },
+    async rateMove(query: MoveQuery, _after: Grid): Promise<RateMoveResult> {
+      const i = n++;
+      const mode = query.lines === 2 ? 'hard' : query.lines === 1 ? 'medium' : 'easy';
+      const value = mode === 'easy' ? 100 : mode === 'hard' ? (i === 0 ? 1000 : 0) : i < 5 ? 1000 - i : 0;
+      return { playerValue: value, bestValue: 0 };
+    },
+  };
+}
+
+/** A candidate with a flat, clean floor `rows` tall and a band signal in `lines`. */
+function bandCandidate(rows: number, lines: number): Candidate {
+  const board: Grid = emptyBoard();
+  for (let r = 20 - rows; r < 20; r++) for (let c = 0; c < 10; c++) board[r][c] = 1;
+  return { board, colors: emptyColorGrid(), currentPiece: 'O', nextPiece: 'O', level: 18, lines };
 }
 
 /** A db double that records inserts and returns them as if stored. */
@@ -304,6 +343,63 @@ describe('generateBank (deterministic)', () => {
     );
     expect(result.stored).toHaveLength(0);
     expect(result.rejections['geometry-prefilter']).toBe(1);
+  });
+
+  it('reports survivors per difficulty band, summing to the stored count (#52)', async () => {
+    const { db } = recordingDb();
+    const result = await generateBank(
+      { source: new FixedSource([candidateWith('O', 'O'), candidateWith('T', 'O')]), engine: comboEngine(), db },
+      { targetCount: 2, maxCandidates: 10 },
+    );
+    const total = result.byBand.easy + result.byBand.medium + result.byBand.hard;
+    expect(total).toBe(result.stored.length);
+  });
+
+  it('spans easy→hard under per-band quotas, keeping hard puzzles tight (#52)', async () => {
+    const { db, stored } = recordingDb();
+    const result = await generateBank(
+      {
+        // Distinct flat boards per band so dedup never fires; the engine sets the
+        // band from `lines` (0 easy / 1 medium / 2 hard).
+        source: new FixedSource([
+          bandCandidate(4, 2), // hard
+          bandCandidate(2, 1), // medium
+          bandCandidate(0, 0), // easy
+        ]),
+        engine: bandEngine(),
+        db,
+      },
+      { targetCount: 0, bandQuotas: { easy: 1, medium: 1, hard: 1 }, maxCandidates: 20 },
+    );
+
+    expect(result.byBand).toEqual({ easy: 1, medium: 1, hard: 1 });
+    expect(stored).toHaveLength(3);
+    // The hard survivor has a genuinely tight acceptable set (≤ 2).
+    const hard = stored.find((p) => p.acceptCount! <= HARD_MAX_ACCEPTS);
+    expect(hard).toBeDefined();
+    expect(hard!.acceptCount).toBe(1);
+  });
+
+  it('caps a band at its quota, rejecting further survivors of a full band (#52)', async () => {
+    const { db, stored } = recordingDb();
+    const result = await generateBank(
+      {
+        // Easy is over-supplied (2 candidates) but only has 1 slot; the run keeps
+        // going for the still-unfilled hard band, so the surplus easy is rejected.
+        source: new FixedSource([
+          bandCandidate(0, 0), // easy (accepted)
+          bandCandidate(2, 0), // easy (band-full → rejected)
+          bandCandidate(4, 2), // hard (accepted)
+        ]),
+        engine: bandEngine(),
+        db,
+      },
+      { targetCount: 0, bandQuotas: { easy: 1, hard: 1 }, maxCandidates: 20 },
+    );
+
+    expect(result.byBand).toEqual({ easy: 1, medium: 0, hard: 1 });
+    expect(stored).toHaveLength(2);
+    expect(result.rejections['band-full:easy']).toBe(1);
   });
 });
 

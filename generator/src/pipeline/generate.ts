@@ -34,7 +34,13 @@ import {
   sweepCombos,
   type ComboContext,
 } from './combo.js';
-import { difficultyFromScores, seedRatingFor } from './difficulty.js';
+import {
+  difficultyFromScores,
+  seedRatingFor,
+  bandFor,
+  DIFFICULTY_BANDS,
+  type DifficultyBand,
+} from './difficulty.js';
 import { isNearDuplicate, type BankKey } from './dedup.js';
 
 /** The engine surface the pipeline needs (best move + move rating). */
@@ -207,8 +213,20 @@ export interface GenerateBankDeps {
 
 /** Options controlling a bank-generation run. */
 export interface GenerateBankOptions {
-  /** How many surviving puzzles to produce and store. */
+  /**
+   * How many surviving puzzles to produce and store. Ignored when {@link
+   * bandQuotas} is given (the quotas then set the targets per band).
+   */
   targetCount: number;
+  /**
+   * Per-band survivor quotas (#52). When set, the run deliberately spans
+   * easy→hard: a survivor is kept only while its band is below quota, and
+   * generation keeps pulling candidates until every band's quota is met (or
+   * {@link maxCandidates} is hit) — so the rare, tight hard band is filled
+   * rather than crowded out by the abundant easy one. Omit for the legacy
+   * `targetCount` behaviour (no band shaping).
+   */
+  bandQuotas?: Partial<Record<DifficultyBand, number>>;
   /** Safety cap on candidates tried (the gates reject most). */
   maxCandidates: number;
   /** Quality-gate tuning; defaults to {@link DEFAULT_GENERATION_CONFIG}. */
@@ -232,6 +250,8 @@ export interface BankResult {
   candidatesTried: number;
   /** Count of rejections by reason. */
   rejections: Record<string, number>;
+  /** Survivors stored per difficulty band (#52) — the realized easy→hard spread. */
+  byBand: Record<DifficultyBand, number>;
 }
 
 /**
@@ -249,11 +269,22 @@ export async function generateBank(
   const onProgress = options.onProgress ?? (() => {});
   const survivors: NewPuzzle[] = [];
   const rejections: Record<string, number> = {};
+  const byBand: Record<DifficultyBand, number> = { easy: 0, medium: 0, hard: 0 };
   // Dedup keys: the existing bank plus every survivor accepted so far.
   const acceptedKeys: BankKey[] = [...(deps.existingKeys ?? [])];
   let candidatesTried = 0;
 
-  while (survivors.length < options.targetCount && candidatesTried < options.maxCandidates) {
+  // Band-quota mode (#52): the targets are the per-band quotas and the run is
+  // done only when every band is filled; otherwise it is the flat targetCount.
+  const quotas = options.bandQuotas;
+  const target = quotas
+    ? DIFFICULTY_BANDS.reduce((sum, b) => sum + (quotas[b] ?? 0), 0)
+    : options.targetCount;
+  const quotaFor = (band: DifficultyBand) => quotas?.[band] ?? 0;
+  const bandsFilled = () => DIFFICULTY_BANDS.every((b) => byBand[b] >= quotaFor(b));
+  const done = () => (quotas ? bandsFilled() : survivors.length >= target);
+
+  while (!done() && candidatesTried < options.maxCandidates) {
     const candidate = await deps.source.next();
     if (!candidate) break;
     candidatesTried++;
@@ -261,6 +292,15 @@ export async function generateBank(
     const result = await assemblePuzzle(deps.engine, candidate, config);
     if (!result.ok) {
       rejections[result.reason] = (rejections[result.reason] ?? 0) + 1;
+      continue;
+    }
+
+    // Bucket by the measured acceptCount (#52). In quota mode, a survivor whose
+    // band is already full is rejected so the run keeps hunting for the bands
+    // that still need filling (notably the rare, tight hard band).
+    const band = bandFor(result.puzzle.acceptCount ?? 0);
+    if (quotas && byBand[band] >= quotaFor(band)) {
+      rejections[`band-full:${band}`] = (rejections[`band-full:${band}`] ?? 0) + 1;
       continue;
     }
 
@@ -275,9 +315,12 @@ export async function generateBank(
     }
 
     survivors.push(result.puzzle);
+    byBand[band]++;
     acceptedKeys.push(key);
     onProgress(
-      `accepted ${survivors.length}/${options.targetCount} (after ${candidatesTried} tried)`,
+      `accepted ${survivors.length}/${target} [${band}] ` +
+        `(easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard}; ` +
+        `after ${candidatesTried} tried)`,
     );
   }
 
@@ -290,6 +333,9 @@ export async function generateBank(
   }
 
   const stored = await deps.db.insertPuzzles(survivors);
-  onProgress(`stored ${stored.length} puzzles`);
-  return { stored, candidatesTried, rejections };
+  onProgress(
+    `stored ${stored.length} puzzles ` +
+      `(easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard})`,
+  );
+  return { stored, candidatesTried, rejections, byBand };
 }

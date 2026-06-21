@@ -21,6 +21,17 @@ export {
   type ComboEngine,
   type ScoredCombo,
 } from './combo.js';
-export { difficultyFromScores, seedRatingFor, EASY_SEED, HARD_SEED, type Difficulty } from './difficulty.js';
+export {
+  difficultyFromScores,
+  seedRatingFor,
+  bandFor,
+  EASY_SEED,
+  HARD_SEED,
+  HARD_MAX_ACCEPTS,
+  EASY_MIN_ACCEPTS,
+  DIFFICULTY_BANDS,
+  type Difficulty,
+  type DifficultyBand,
+} from './difficulty.js';
 export { boardHamming, isNearDuplicate, type BankKey } from './dedup.js';
 export { tallyBankRatings, type TallyDeps, type TallyResult } from './tally.js';

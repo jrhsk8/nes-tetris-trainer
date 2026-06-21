@@ -12,16 +12,22 @@ import { createDataAccess, createSupabaseClient } from '@trainer/data';
 import { StackRabbitClient } from './engine/index.js';
 import { SelfPlayBoardSource } from './selfplay/index.js';
 import { generateBank } from './pipeline/index.js';
+import type { DifficultyBand } from './pipeline/index.js';
 
 interface CliArgs {
   count: number;
   max: number;
   floor?: number;
   replace: boolean;
+  /** Per-band survivor quotas (#52); when any is set the run spans bands. */
+  bandQuotas?: Partial<Record<DifficultyBand, number>>;
 }
 
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = { count: 20, max: 2000, replace: false };
+  const setQuota = (band: DifficultyBand, value: string) => {
+    args.bandQuotas = { ...args.bandQuotas, [band]: Number.parseInt(value, 10) };
+  };
   for (let i = 0; i < argv.length; i++) {
     const value = argv[i + 1];
     switch (argv[i]) {
@@ -42,6 +48,19 @@ function parseArgs(argv: string[]): CliArgs {
         // Replace the whole bank (delete existing puzzles + their attempts)
         // before inserting the freshly generated set.
         args.replace = true;
+        break;
+      // Difficulty-band quotas (#52): deliberately span easy→hard.
+      case '--easy':
+        setQuota('easy', value);
+        i++;
+        break;
+      case '--medium':
+        setQuota('medium', value);
+        i++;
+        break;
+      case '--hard':
+        setQuota('hard', value);
+        i++;
         break;
     }
   }
@@ -66,14 +85,18 @@ async function main(): Promise<void> {
   const db = createDataAccess(createSupabaseClient(supabaseUrl, serviceKey));
   const source = new SelfPlayBoardSource(engine);
 
+  const target = args.bandQuotas
+    ? `bands ${JSON.stringify(args.bandQuotas)}`
+    : `up to ${args.count} puzzles`;
   console.log(
-    `Generating up to ${args.count} puzzles (max ${args.max} candidates)` +
+    `Generating ${target} (max ${args.max} candidates)` +
       `${args.replace ? ', replacing the existing bank' : ''}...`,
   );
   const result = await generateBank(
     { source, engine, db },
     {
       targetCount: args.count,
+      bandQuotas: args.bandQuotas,
       maxCandidates: args.max,
       replace: args.replace,
       config: args.floor !== undefined ? { healthFloor: args.floor } : undefined,
@@ -83,6 +106,9 @@ async function main(): Promise<void> {
 
   console.log(
     `\nStored ${result.stored.length} puzzles from ${result.candidatesTried} candidates.`,
+  );
+  console.log(
+    `By difficulty band: easy ${result.byBand.easy} / medium ${result.byBand.medium} / hard ${result.byBand.hard}.`,
   );
   console.log('Rejections by reason:');
   for (const [reason, count] of Object.entries(result.rejections).sort((a, b) => b[1] - a[1])) {
