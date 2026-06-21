@@ -15,6 +15,8 @@ export type {
   Glicko,
   Puzzle,
   PlacementValue,
+  ComboEntry,
+  ComboTable,
   NewPuzzle,
   UserRating,
   Attempt,

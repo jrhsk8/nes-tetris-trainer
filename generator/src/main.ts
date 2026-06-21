@@ -16,7 +16,7 @@ import { generateBank } from './pipeline/index.js';
 interface CliArgs {
   count: number;
   max: number;
-  threshold?: number;
+  floor?: number;
   replace: boolean;
 }
 
@@ -33,8 +33,9 @@ function parseArgs(argv: string[]): CliArgs {
         args.max = Number.parseInt(value, 10);
         i++;
         break;
-      case '--threshold':
-        args.threshold = Number.parseFloat(value);
+      case '--floor':
+        // Board-health floor (#33): tune candidate cleanliness vs. yield.
+        args.floor = Number.parseFloat(value);
         i++;
         break;
       case '--replace':
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
       targetCount: args.count,
       maxCandidates: args.max,
       replace: args.replace,
-      config: args.threshold !== undefined ? { unambiguityThreshold: args.threshold } : undefined,
+      config: args.floor !== undefined ? { healthFloor: args.floor } : undefined,
       onProgress: (message) => console.log(`  ${message}`),
     },
   );

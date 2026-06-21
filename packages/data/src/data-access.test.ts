@@ -37,11 +37,13 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
   it('round-trips a puzzle: insert then read back by id', async () => {
     const board = encodeBoard(emptyBoard());
     const colors = '1'.repeat(200);
-    const firstValues = [
-      { rotation: 0, col: 0, value: 12.5 },
-      { rotation: 1, col: 3, value: 9.1 },
-    ];
-    const secondValues = [{ rotation: 0, col: 4, value: 7.2 }];
+    const combos = {
+      entries: [
+        { rot1: 0, col1: 0, rot2: 1, col2: 3, score: 100 },
+        { rot1: 0, col1: 1, rot2: 0, col2: 4, score: 62.5 },
+      ],
+      total: 17,
+    };
     const inserted = await db!.insertPuzzle({
       board,
       piece1: 'T',
@@ -49,8 +51,7 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
       optimalLine: sampleLine,
       optimalMetrics: boardMetrics(emptyBoard()),
       colors,
-      firstValues,
-      secondValues,
+      combos,
     });
     createdPuzzleIds.push(inserted.id);
 
@@ -62,10 +63,9 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(fetched!.piece1).toBe('T');
     expect(fetched!.optimalLine).toEqual(sampleLine);
     expect(fetched!.optimalMetrics.holes).toBe(0);
-    // The colour grid and value tables (#27) round-trip intact.
+    // The colour grid and combo table (#28/#33) round-trip intact.
     expect(fetched!.colors).toBe(colors);
-    expect(fetched!.firstValues).toEqual(firstValues);
-    expect(fetched!.secondValues).toEqual(secondValues);
+    expect(fetched!.combos).toEqual(combos);
   });
 
   it('selects a random puzzle from the bank', async () => {

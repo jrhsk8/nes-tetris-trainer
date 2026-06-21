@@ -60,6 +60,7 @@ function rowToPuzzle(row: PuzzleRow): Puzzle {
     optimalMetrics: row.optimal_metrics,
     glicko: { rating: row.rating, deviation: row.deviation, volatility: row.volatility },
     colors: row.colors ?? '',
+    combos: row.combos ?? { entries: [], total: 0 },
     firstValues: row.first_values ?? [],
     secondValues: row.second_values ?? [],
   };
@@ -120,6 +121,7 @@ function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
   if (puzzle.glicko?.deviation !== undefined) row.deviation = puzzle.glicko.deviation;
   if (puzzle.glicko?.volatility !== undefined) row.volatility = puzzle.glicko.volatility;
   if (puzzle.colors !== undefined) row.colors = puzzle.colors;
+  if (puzzle.combos !== undefined) row.combos = puzzle.combos;
   if (puzzle.firstValues !== undefined) row.first_values = puzzle.firstValues;
   if (puzzle.secondValues !== undefined) row.second_values = puzzle.secondValues;
   return row;

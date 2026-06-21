@@ -62,14 +62,10 @@ describe.skipIf(!configured)('Play flow (deep, real stored puzzle)', () => {
     expect(await screen.findByTestId('outcome')).toHaveTextContent('Solved!');
     expect(screen.getByTestId('rating-change')).toHaveTextContent('(+');
 
-    // Feedback: the optimal line animates and the solutions charts (#29) show
-    // both plies, with the player's move ranked 1st (they played optimal). No
-    // engine call is made — the charts read the stored value tables.
+    // Feedback: the optimal line animates. (The deprecated value-table strip
+    // charts are no longer populated after the combo regen #33; the ranked combo
+    // list that replaces them is asserted in #35.)
     expect(screen.getByTestId('feedback-step')).toBeInTheDocument();
-    expect(screen.getAllByTestId('solutions-chart')).toHaveLength(2);
-    const ranks = screen.getAllByTestId('strip-rank');
-    expect(ranks[0]).toHaveTextContent(/1st of \d+/);
-    expect(ranks[1]).toHaveTextContent(/1st of \d+/);
 
     // Persistence: the attempt and the raised rating round-trip through the DAL.
     await waitFor(async () => {

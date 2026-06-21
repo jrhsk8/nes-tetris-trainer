@@ -21,17 +21,23 @@ create table if not exists public.puzzles (
   volatility double precision not null default 0.06,
   created_at timestamptz not null default now(),
   -- 200-char colour grid parallel to `board` (#28): '0' empty, '1'/'2'/'3' NES
-  -- colour group. The optional value tables drive the solutions chart (#29):
-  -- `first_values` = every legal piece-1 placement + engine value (optimal
-  -- follow-up); `second_values` = piece-2 placements after the optimal first
-  -- move. All three are added additively so legacy rows stay valid.
+  -- colour group.
   colors text,
+  -- The ranked two-piece combo table (#33): { entries: [{rot1,col1,rot2,col2,
+  -- score}], total }. `entries` is the top-K combos best-first (rank-1 scores
+  -- 100); `total` is the count of all ranked combos found at generation, so the
+  -- play app can report an exact rank or "too low to rank". Combo-threshold
+  -- grading (#34) reads this; no engine runs at play time.
+  combos jsonb,
+  -- Deprecated value tables from the first overhaul (#29), superseded by
+  -- `combos` (#33). Left nullable for legacy rows; no longer populated.
   first_values jsonb,
   second_values jsonb
 );
 
 -- Additive backfill for banks created before the 2026-06-20 colour/value regen.
 alter table public.puzzles add column if not exists colors text;
+alter table public.puzzles add column if not exists combos jsonb;
 alter table public.puzzles add column if not exists first_values jsonb;
 alter table public.puzzles add column if not exists second_values jsonb;
 

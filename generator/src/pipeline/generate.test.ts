@@ -1,18 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import {
-  applyPlacement,
-  boardMetrics,
-  emptyBoard,
-  emptyColorGrid,
-  encodeBoard,
-  isPiece,
-} from '@trainer/core';
+import { applyPlacement, emptyBoard, emptyColorGrid, encodeBoard, isPiece, type Grid } from '@trainer/core';
 import type { NewPuzzle, Puzzle } from '@trainer/data';
-import { assemblePuzzle, generateBank, type GeneratorEngine } from './generate.js';
+import {
+  assemblePuzzle,
+  generateBank,
+  DEFAULT_GENERATION_CONFIG,
+  type GeneratorEngine,
+} from './generate.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
-import type { EngineMove, MoveQuery, RateMoveResult, ScoredMove } from '../engine/client.js';
-import { StackRabbitClient } from '../engine/client.js';
-import { DEFAULT_BASE_URL } from '../engine/client.js';
+import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
+import { StackRabbitClient, DEFAULT_BASE_URL } from '../engine/client.js';
 import { SelfPlayBoardSource } from '../selfplay/self-play.js';
 
 // --- Deterministic test doubles (no engine) ---------------------------------
@@ -27,30 +24,31 @@ class FixedSource implements BoardSource {
 }
 
 /**
- * An engine that always drops the piece flat at column 0, identically across
- * timelines (so the Hz gate passes), and reports a configurable top-two margin.
+ * A controllable fake engine for the combo pipeline (#33):
+ *  - `getBestMove` reports a constant board-health `totalValue` for every piece.
+ *  - `rateMove` assigns combo values from a per-timeline counter: descending at
+ *    the slow timeline (so the FIRST swept combo ranks #1), and — unless
+ *    `speedVariant` — descending again at the fast timeline (so the best combo
+ *    is the same at both speeds). With `speedVariant` the fast counter ascends,
+ *    so the best combo flips and the Hz gate must reject.
  */
-function flatDropEngine(margin: number): GeneratorEngine {
-  const drop = (query: MoveQuery): EngineMove => ({
-    rotation: 0,
-    x: 0,
-    y: 0,
-    board: applyPlacement(query.board, query.currentPiece, { rotation: 0, col: 0 }),
-    totalValue: 100,
-  });
+function comboEngine(opts: { health?: number; speedVariant?: boolean } = {}): GeneratorEngine {
+  let slow = 1_000_000;
+  let fast = opts.speedVariant ? 0 : 1_000_000;
   return {
-    async getBestMove(query) {
-      return drop(query);
+    async getBestMove(query: MoveQuery): Promise<EngineMove | null> {
+      return {
+        rotation: 0,
+        x: 0,
+        y: 0,
+        board: applyPlacement(query.board, query.currentPiece, { rotation: 0, col: 0 }),
+        totalValue: opts.health ?? 100,
+      };
     },
-    async getTopMoves(): Promise<ScoredMove[]> {
-      return [
-        { rotation: 0, x: 0, y: 0, totalValue: 100 },
-        { rotation: 0, x: 1, y: 0, totalValue: 100 - margin },
-      ];
-    },
-    async rateMove(): Promise<RateMoveResult> {
-      // A flat, deterministic value is enough for the value-table assertions.
-      return { playerValue: 42, bestValue: 50 };
+    async rateMove(query: MoveQuery): Promise<RateMoveResult> {
+      const isFast = query.inputFrameTimeline === DEFAULT_GENERATION_CONFIG.fastTimeline;
+      const value = isFast ? (opts.speedVariant ? fast++ : fast--) : slow--;
+      return { playerValue: value, bestValue: 0 };
     },
   };
 }
@@ -68,8 +66,9 @@ function recordingDb() {
         ...p,
         glicko: { rating: 1500, deviation: 350, volatility: 0.06 },
         colors: p.colors ?? '',
-        firstValues: p.firstValues ?? [],
-        secondValues: p.secondValues ?? [],
+        combos: p.combos ?? { entries: [], total: 0 },
+        firstValues: [],
+        secondValues: [],
       }));
     },
     async deleteAllPuzzles(): Promise<number> {
@@ -84,67 +83,74 @@ const sampleCandidate = (): Candidate => ({
   board: emptyBoard(),
   colors: emptyColorGrid(),
   currentPiece: 'O',
-  nextPiece: 'T',
+  nextPiece: 'O',
   level: 18,
   lines: 0,
 });
 
-const config = { unambiguityThreshold: 8, slowTimeline: 'X.....', fastTimeline: 'X.' };
+/** A candidate whose board has many holes (fails the geometric pre-filter). */
+function holeyCandidate(): Candidate {
+  const board: Grid = emptyBoard();
+  for (let i = 0; i < 10; i++) {
+    const row = 19 - i;
+    board[row][0] = 1; // filled cell...
+    if (row + 1 < 20) board[row + 1][0] = 0; // ...with gaps below → holes
+    board[row][2] = 1;
+  }
+  return { ...sampleCandidate(), board };
+}
 
-describe('assemblePuzzle (deterministic)', () => {
-  it('assembles a complete puzzle with the optimal line and result metrics', async () => {
-    const candidate = sampleCandidate();
-    const result = await assemblePuzzle(flatDropEngine(50), candidate, config);
-
+describe('assemblePuzzle combo pipeline (#33)', () => {
+  it('stores a normalized top-K combo table with the rank-1 combo as the optimal line', async () => {
+    const result = await assemblePuzzle(comboEngine(), sampleCandidate());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const puzzle = result.puzzle;
 
-    expect(puzzle.board).toBe(encodeBoard(candidate.board));
+    expect(puzzle.board).toBe(encodeBoard(emptyBoard()));
     expect(puzzle.piece1).toBe('O');
-    expect(puzzle.piece2).toBe('T');
-    expect(puzzle.optimalLine).toHaveLength(2);
-    // Both plies were the flat column-0 drop the fake engine returns.
-    expect(puzzle.optimalLine[0]).toEqual({ rotation: 0, col: 0 });
+    expect(puzzle.piece2).toBe('O');
 
-    // Optimal metrics are those of the board after both optimal placements.
-    const board1 = applyPlacement(candidate.board, 'O', { rotation: 0, col: 0 });
-    const board2 = applyPlacement(board1, 'T', { rotation: 0, col: 0 });
-    expect(puzzle.optimalMetrics).toEqual(boardMetrics(board2));
+    // O×O on an empty board = 81 ranked combos; the top-30 are stored.
+    expect(puzzle.combos!.total).toBe(81);
+    expect(puzzle.combos!.entries).toHaveLength(30);
+    // Sorted descending; the rank-1 combo scores exactly 100.
+    expect(puzzle.combos!.entries[0].score).toBe(100);
+    for (let i = 1; i < puzzle.combos!.entries.length; i++) {
+      expect(puzzle.combos!.entries[i - 1].score).toBeGreaterThanOrEqual(
+        puzzle.combos!.entries[i].score,
+      );
+    }
 
-    // The colour grid and value tables (#27) are populated. An empty-board O
-    // has 9 legal placements; the optimal first move is included.
+    // The optimal line is the rank-1 combo (first legal O placement, twice).
+    expect(puzzle.optimalLine).toEqual([
+      { rotation: 0, col: 0 },
+      { rotation: 0, col: 0 },
+    ]);
+    // Colour grid still populated; no value tables.
     expect(puzzle.colors).toHaveLength(200);
-    expect(puzzle.firstValues).toHaveLength(9);
-    expect(puzzle.firstValues).toContainEqual({ rotation: 0, col: 0, value: 42 });
-    expect(puzzle.secondValues!.length).toBeGreaterThan(0);
+    expect(puzzle.firstValues).toBeUndefined();
   });
 
-  it('skips placements the engine cannot value, without aborting the table', async () => {
-    // An engine like flatDropEngine, but whose rate-move throws on its 2nd call
-    // (as the real engine does for an unreachable "player move not found").
-    let calls = 0;
-    const base = flatDropEngine(50);
-    const flaky: GeneratorEngine = {
-      ...base,
-      async rateMove(query, after) {
-        calls++;
-        if (calls === 2) throw new Error('rate-move failed: Error: player move not found');
-        return base.rateMove(query, after);
-      },
-    };
-
-    const result = await assemblePuzzle(flaky, sampleCandidate(), config);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    // One of the nine O placements was unratable and dropped from the table.
-    expect(result.puzzle.firstValues).toHaveLength(8);
-  });
-
-  it('rejects a candidate whose first ply is ambiguous (margin below threshold)', async () => {
-    const result = await assemblePuzzle(flatDropEngine(3), sampleCandidate(), config);
+  it('rejects a candidate below the board-health floor', async () => {
+    const result = await assemblePuzzle(comboEngine({ health: -5 }), sampleCandidate(), {
+      ...DEFAULT_GENERATION_CONFIG,
+      healthFloor: 0,
+    });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('ply1-ambiguous');
+    if (!result.ok) expect(result.reason).toBe('board-health-floor');
+  });
+
+  it('rejects an obviously garbage board via the geometric pre-filter', async () => {
+    const result = await assemblePuzzle(comboEngine(), holeyCandidate());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('geometry-prefilter');
+  });
+
+  it('rejects a candidate whose best combo changes with tap speed', async () => {
+    const result = await assemblePuzzle(comboEngine({ speedVariant: true }), sampleCandidate());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('best-combo-speed-variant');
   });
 });
 
@@ -154,15 +160,16 @@ describe('generateBank (deterministic)', () => {
     const result = await generateBank(
       {
         source: new FixedSource([sampleCandidate(), sampleCandidate(), sampleCandidate()]),
-        engine: flatDropEngine(50),
+        engine: comboEngine(),
         db,
       },
-      { targetCount: 2, maxCandidates: 10, config },
+      { targetCount: 2, maxCandidates: 10 },
     );
 
     expect(result.stored).toHaveLength(2);
     expect(stored).toHaveLength(2); // stopped at targetCount, did not try the third
     expect(result.candidatesTried).toBe(2);
+    expect(stored[0].combos!.entries[0].score).toBe(100);
   });
 
   it('replaces the bank: deletes existing puzzles after assembling survivors, then inserts', async () => {
@@ -170,27 +177,25 @@ describe('generateBank (deterministic)', () => {
     const result = await generateBank(
       {
         source: new FixedSource([sampleCandidate(), sampleCandidate()]),
-        engine: flatDropEngine(50),
+        engine: comboEngine(),
         db,
       },
-      { targetCount: 2, maxCandidates: 10, replace: true, config },
+      { targetCount: 2, maxCandidates: 10, replace: true },
     );
 
     expect(result.stored).toHaveLength(2);
     expect(stored).toHaveLength(2);
-    // The delete happens only once survivors are ready, immediately before the
-    // insert — minimising the window where the bank is empty.
     expect(order).toEqual(['delete', 'insert']);
   });
 
   it('records the rejection reason when nothing survives', async () => {
     const { db } = recordingDb();
     const result = await generateBank(
-      { source: new FixedSource([sampleCandidate()]), engine: flatDropEngine(1), db },
-      { targetCount: 5, maxCandidates: 10, config },
+      { source: new FixedSource([holeyCandidate()]), engine: comboEngine(), db },
+      { targetCount: 5, maxCandidates: 10 },
     );
     expect(result.stored).toHaveLength(0);
-    expect(result.rejections['ply1-ambiguous']).toBe(1);
+    expect(result.rejections['geometry-prefilter']).toBe(1);
   });
 });
 
@@ -199,18 +204,18 @@ const baseUrl = process.env.STACKRABBIT_URL ?? DEFAULT_BASE_URL;
 const engineUp = await new StackRabbitClient({ baseUrl }).ping();
 
 describe.skipIf(!engineUp)('generateBank (live engine)', () => {
-  it('produces a small bank of well-formed stored puzzles', async () => {
+  it('produces a small bank of well-formed combo puzzles', async () => {
     const engine = new StackRabbitClient({ baseUrl });
     const source = new SelfPlayBoardSource(engine, Math.random, {
       minDepth: 6,
       maxDepth: 14,
-      noiseRate: 0.35,
+      noiseRate: 0.2,
     });
     const { db, stored } = recordingDb();
 
     const result = await generateBank(
       { source, engine, db },
-      { targetCount: 2, maxCandidates: 60 },
+      { targetCount: 2, maxCandidates: 80 },
     );
 
     expect(result.stored.length).toBeGreaterThan(0);
@@ -220,17 +225,18 @@ describe.skipIf(!engineUp)('generateBank (live engine)', () => {
       expect(isPiece(puzzle.piece2)).toBe(true);
       expect(puzzle.optimalLine).toHaveLength(2);
       expect(puzzle.optimalMetrics.holes).toBeGreaterThanOrEqual(0);
-      // The colour grid and value tables are present and well-formed (#27).
+      // The colour grid and combo table are present and well-formed (#33).
       expect(puzzle.colors).toHaveLength(200);
       expect(/^[0-3]{200}$/.test(puzzle.colors!)).toBe(true);
-      expect(puzzle.firstValues!.length).toBeGreaterThan(0);
-      expect(puzzle.secondValues!.length).toBeGreaterThan(0);
-      // The optimal first move appears in the piece-1 value table.
-      expect(
-        puzzle.firstValues!.some(
-          (v) => v.rotation === puzzle.optimalLine[0].rotation && v.col === puzzle.optimalLine[0].col,
-        ),
-      ).toBe(true);
+      const combos = puzzle.combos!;
+      expect(combos.entries.length).toBeGreaterThan(0);
+      expect(combos.entries.length).toBeLessThanOrEqual(DEFAULT_GENERATION_CONFIG.topK);
+      expect(combos.total).toBeGreaterThanOrEqual(combos.entries.length);
+      expect(combos.entries[0].score).toBe(100);
+      // The optimal line is the rank-1 combo.
+      const top = combos.entries[0];
+      expect(puzzle.optimalLine[0]).toEqual({ rotation: top.rot1, col: top.col1 });
+      expect(puzzle.optimalLine[1]).toEqual({ rotation: top.rot2, col: top.col2 });
     }
-  }, 120_000);
+  }, 180_000);
 });

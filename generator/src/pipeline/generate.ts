@@ -9,75 +9,58 @@
  * via the data-access layer (#2).
  */
 
-import {
-  applyPlacement,
-  boardMetrics,
-  encodeBoard,
-  encodeColors,
-  type Grid,
-  type Line,
-  type Piece,
-} from '@trainer/core';
-import type { DataAccess, NewPuzzle, PlacementValue, Puzzle } from '@trainer/data';
-import { isHzInvariant, isUnambiguous, type ComparableMove } from '../quality/filters.js';
-import type { EngineMove, MoveQuery, RateMoveResult, ScoredMove } from '../engine/client.js';
+import { boardMetrics, encodeBoard, encodeColors, type Grid, type Line } from '@trainer/core';
+import type { DataAccess, NewPuzzle, Puzzle } from '@trainer/data';
+import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
+import { passesGeometricPrefilter } from '../quality/filters.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
-import { enumerateLegalMoves } from '../selfplay/self-play.js';
-import { toPlacement } from './placement.js';
+import {
+  boardHealth,
+  combosEqual,
+  normalizeCombos,
+  rerankAt,
+  sweepCombos,
+  type ComboContext,
+} from './combo.js';
 
-/** The engine surface the pipeline needs (best move, ranked moves, move rating). */
+/** The engine surface the pipeline needs (best move + move rating). */
 export interface GeneratorEngine {
   getBestMove(query: MoveQuery): Promise<EngineMove | null>;
-  getTopMoves(query: MoveQuery): Promise<ScoredMove[]>;
   rateMove(query: MoveQuery, playerBoardAfter: Grid): Promise<RateMoveResult>;
 }
 
-/**
- * The value table for one ply (#29): every legal placement of `piece` on
- * `board`, paired with the engine's value for it. Each placement is applied in
- * OUR coordinates and scored with `rate-move`, so the resulting (rotation, col)
- * keys match the player's placements exactly. `query` carries the piece context
- * (current piece, optional lookahead, level/lines/timeline).
- */
-async function computeValueTable(
-  engine: GeneratorEngine,
-  query: MoveQuery,
-  board: Grid,
-  piece: Piece,
-): Promise<PlacementValue[]> {
-  const table: PlacementValue[] = [];
-  for (const placement of enumerateLegalMoves(board, piece)) {
-    const after = applyPlacement(board, piece, placement);
-    let value: number;
-    try {
-      value = (await engine.rateMove(query, after)).playerValue;
-    } catch {
-      // The engine can't value every geometrically-legal placement: a far
-      // column may be unreachable under the query's input timeline, so
-      // `rate-move` reports "player move not found". Such a placement is not a
-      // fair alternative — skip it rather than abort the whole table.
-      continue;
-    }
-    table.push({ rotation: placement.rotation, col: placement.col, value });
-  }
-  return table;
-}
-
-/** Tuning for the quality gates. */
+/** Tuning for the combo gates (#33). */
 export interface GenerationConfig {
-  /** Minimum best-vs-second-best margin for the fairness gate (both plies). */
-  unambiguityThreshold: number;
-  /** Slow-tap input timeline for the Hz-invariance gate. */
+  /** Top-K combos to store per puzzle. */
+  topK: number;
+  /**
+   * Board-health floor: keep a candidate only if the min over the 7 piece types
+   * of `getBestMove(board, piece).totalValue` is at least this (#33). Moderate
+   * and tunable — protect yield, don't overdo it.
+   */
+  healthFloor: number;
+  /** Geometric pre-filter: drop candidates with more holes than this. */
+  maxHoles: number;
+  /** Geometric pre-filter: drop candidates bumpier than this. */
+  maxBumpiness: number;
+  /** Slow-tap input timeline for the combo sweep + Hz-invariance gate. */
   slowTimeline: string;
   /** Fast-DAS input timeline for the Hz-invariance gate. */
   fastTimeline: string;
 }
 
 export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
-  // Calibrated against the live engine on self-play candidates: at a margin of 8
-  // (playout-score units) ~35-40% of speed-invariant candidates survive and the
-  // dominant rejection becomes ply ambiguity — the fairness intent of the gate.
-  unambiguityThreshold: 8,
+  topK: 30,
+  // Calibrated against the live engine on geometric-prefilter survivors: the
+  // min-over-7-pieces eval is harsh (the worst piece often forces a hole), so
+  // values run negative even on clean boards (median ≈ -40). A moderate floor of
+  // -30 keeps ~45% of clean boards — protects yield while gating the worst
+  // surfaces. Tune with --floor.
+  healthFloor: -30,
+  // Holes ≤ 4 / bumpiness ≤ 32 makes starting boards visibly cleaner than the
+  // pre-#33 bank (whose holes ran a median of 8, up to 47).
+  maxHoles: 4,
+  maxBumpiness: 32,
   slowTimeline: 'X.....',
   fastTimeline: 'X.',
 };
@@ -85,13 +68,13 @@ export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
 /** Outcome of trying to assemble a puzzle from one candidate. */
 export type AssemblyResult = { ok: true; puzzle: NewPuzzle } | { ok: false; reason: string };
 
-const asComparable = (move: EngineMove): ComparableMove => ({ rotation: move.rotation, x: move.x });
-
 /**
- * Build a stored puzzle from a candidate, or reject it with a reason. Applies,
- * in fail-fast order, the fairness (unambiguity) and Hz-invariance gates to
- * both plies; survivors get their optimal line and optimal-result metrics
- * computed.
+ * Build a stored puzzle from a candidate, or reject it with a reason (#33).
+ * Fail-fast order: a cheap geometric pre-filter, then the board-health floor
+ * (engine, piece-independent), then the full combo cross-product sweep, then the
+ * Hz-invariance gate (the best combo must be identical slow-tap and fast-DAS).
+ * Survivors store the normalized top-K combo table; the optimal line is the
+ * rank-1 combo (so it scores 100, consistent with combo-threshold grading #34).
  */
 export async function assemblePuzzle(
   engine: GeneratorEngine,
@@ -99,77 +82,38 @@ export async function assemblePuzzle(
   config: GenerationConfig = DEFAULT_GENERATION_CONFIG,
 ): Promise<AssemblyResult> {
   const { board, currentPiece, nextPiece, level, lines } = candidate;
-  const slow = config.slowTimeline;
-  const fast = config.fastTimeline;
 
-  const ply1 = (timeline: string): MoveQuery => ({
-    board,
-    currentPiece,
-    nextPiece,
-    level,
-    lines,
-    inputFrameTimeline: timeline,
-  });
-
-  // --- Ply 1: optimal first move (with lookahead). ---
-  const move1 = await engine.getBestMove(ply1(slow));
-  if (!move1) return { ok: false, reason: 'no-legal-first-move' };
-  const placement1 = toPlacement(board, currentPiece, move1.board);
-  if (!placement1) return { ok: false, reason: 'first-move-not-representable' };
-  const board1 = move1.board;
-
-  // Fairness gate, ply 1: the best must clearly beat the second-best.
-  const top1 = await engine.getTopMoves(ply1(slow));
-  if (
-    top1.length < 2 ||
-    !isUnambiguous(top1[0].totalValue, top1[1].totalValue, config.unambiguityThreshold)
-  ) {
-    return { ok: false, reason: 'ply1-ambiguous' };
+  // 1. Cheap geometric pre-filter: drop obvious garbage before any engine call.
+  if (!passesGeometricPrefilter(board, config.maxHoles, config.maxBumpiness)) {
+    return { ok: false, reason: 'geometry-prefilter' };
   }
 
-  // Hz-invariance gate, ply 1: the optimal move must not change with speed.
-  const fast1 = await engine.getBestMove(ply1(fast));
-  if (!fast1 || !isHzInvariant([asComparable(move1), asComparable(fast1)])) {
-    return { ok: false, reason: 'ply1-speed-variant' };
+  // 2. Board-health floor (engine, piece-independent).
+  const health = await boardHealth(engine, board, level, lines, config.slowTimeline);
+  if (health < config.healthFloor) return { ok: false, reason: 'board-health-floor' };
+
+  const ctx: ComboContext = { board, piece1: currentPiece, piece2: nextPiece, level, lines };
+
+  // 3. Full cross-product combo sweep at the slow timeline.
+  const slow = await sweepCombos(engine, ctx, config.slowTimeline);
+  if (slow.length === 0) return { ok: false, reason: 'no-rateable-combos' };
+
+  // 4. Hz-invariance, retargeted to the best combo: re-value the stored top-K at
+  //    the fast timeline; the rank-1 combo must still be best (and reachable).
+  const fast = await rerankAt(engine, ctx, slow.slice(0, config.topK), config.fastTimeline);
+  if (fast.length === 0 || !combosEqual(slow[0], fast[0])) {
+    return { ok: false, reason: 'best-combo-speed-variant' };
   }
 
-  const ply2 = (timeline: string): MoveQuery => ({
-    board: board1,
-    currentPiece: nextPiece,
-    nextPiece: null,
-    level,
-    lines,
-    inputFrameTimeline: timeline,
-  });
+  // 5. Normalize to 0–100, keep the top-K, and derive the optimal line from the
+  //    rank-1 combo (board2 is the board after both rank-1 placements).
+  const combos = normalizeCombos(slow, config.topK);
+  const best = slow[0];
+  const optimalLine: Line = [
+    { rotation: best.rot1, col: best.col1 },
+    { rotation: best.rot2, col: best.col2 },
+  ];
 
-  // --- Ply 2: optimal second move (no lookahead). ---
-  const move2 = await engine.getBestMove(ply2(slow));
-  if (!move2) return { ok: false, reason: 'no-legal-second-move' };
-  const placement2 = toPlacement(board1, nextPiece, move2.board);
-  if (!placement2) return { ok: false, reason: 'second-move-not-representable' };
-  const board2 = move2.board;
-
-  const top2 = await engine.getTopMoves(ply2(slow));
-  if (
-    top2.length < 2 ||
-    !isUnambiguous(top2[0].totalValue, top2[1].totalValue, config.unambiguityThreshold)
-  ) {
-    return { ok: false, reason: 'ply2-ambiguous' };
-  }
-
-  const fast2 = await engine.getBestMove(ply2(fast));
-  if (!fast2 || !isHzInvariant([asComparable(move2), asComparable(fast2)])) {
-    return { ok: false, reason: 'ply2-speed-variant' };
-  }
-
-  // Value tables for the solutions chart (#29): every legal placement of each
-  // piece with its engine value. Ply 1 is scored with the lookahead (optimal
-  // follow-up); ply 2 is scored on the post-optimal-move board with no
-  // lookahead — mirroring how the two plies are graded.
-  const firstValues = await computeValueTable(engine, ply1(slow), board, currentPiece);
-  const secondValues = await computeValueTable(engine, ply2(slow), board1, nextPiece);
-
-  const optimalLine: Line = [placement1, placement2];
   return {
     ok: true,
     puzzle: {
@@ -177,10 +121,9 @@ export async function assemblePuzzle(
       piece1: currentPiece,
       piece2: nextPiece,
       optimalLine,
-      optimalMetrics: boardMetrics(board2),
+      optimalMetrics: boardMetrics(best.board2),
       colors: encodeColors(candidate.colors),
-      firstValues,
-      secondValues,
+      combos,
     },
   };
 }
