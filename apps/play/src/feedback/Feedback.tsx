@@ -24,6 +24,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   gradeCombo,
+  comboOutcomeKey,
   type ColorGrid,
   type ComboTable,
   type Grid,
@@ -163,9 +164,9 @@ export function Feedback({
   const verdict = useMemo(
     () =>
       playerLine
-        ? gradeCombo(combos, playerLine)
+        ? gradeCombo(combos, playerLine, comboOutcomeKey(board0, piece1, piece2, playerLine))
         : { correct: false, score: null, rank: null, total: combos.total, ranked: false },
-    [combos, playerLine],
+    [combos, playerLine, board0, piece1, piece2],
   );
 
   // The combo currently shown on the board; the player's move by default, or the

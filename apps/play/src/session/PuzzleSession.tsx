@@ -23,6 +23,7 @@ import {
   decodeBoard,
   decodeColors,
   gradeCombo,
+  comboOutcomeKey,
   PIECE_GROUP,
   ROWS,
   COLS,
@@ -145,10 +146,16 @@ export function PuzzleSession({
   const onConfirm2 = useCallback(
     (p2: Placement) => {
       const line: Line = [placement1!, p2];
-      const graded = gradeCombo(puzzle.combos, line);
+      // Grade by the attempt's resulting-board key (#42): the combo is matched
+      // by where the pieces rest, not by the (rotation, col) tuple.
+      const graded = gradeCombo(
+        puzzle.combos,
+        line,
+        comboOutcomeKey(board0, puzzle.piece1, puzzle.piece2, line),
+      );
       void finish([placement1!, p2], graded.correct);
     },
-    [placement1, puzzle.combos, finish],
+    [placement1, puzzle.combos, board0, puzzle.piece1, puzzle.piece2, finish],
   );
 
   if (phase === 'place1') {

@@ -13,7 +13,9 @@
  * (*Combo-threshold grading*, *Combo score*, *Verdict*).
  */
 
-import type { Line } from './board.js';
+import { applyPlacement, type Grid, type Line } from './board.js';
+import type { Piece } from './pieces.js';
+import { boardKey } from './placement.js';
 
 /**
  * One ranked two-piece combo: the placement of piece 1 (`rot1`/`col1`) and piece
@@ -79,14 +81,39 @@ function matchesLine(entry: ComboEntry, line: Line): boolean {
 }
 
 /**
+ * The canonical outcome key for a two-piece attempt: the resulting locked cells
+ * after dropping `piece1` then `piece2` along `line`, as the 200-char board
+ * string (see @trainer/core `boardKey`). The play app computes this for the
+ * player's attempt and hands it to {@link gradeCombo}, which matches it against
+ * the stored {@link ComboEntry.boardKey} — so an answer landing the same cells
+ * grades identically regardless of how its placements were encoded, and a
+ * tuck/spin combo is graded by where it rests. Throws on an illegal placement.
+ */
+export function comboOutcomeKey(board0: Grid, piece1: Piece, piece2: Piece, line: Line): string {
+  const after1 = applyPlacement(board0, piece1, line[0]);
+  const after2 = applyPlacement(after1, piece2, line[1]);
+  return boardKey(after2);
+}
+
+/**
  * Grade a player's two-piece `user` combo against the puzzle's stored combo
  * `table`. No first-move short-circuit — a weak first placement simply yields a
  * low or absent score. When the combo is among the stored top-K its rank +
  * score are returned (correct iff score ≥ 95); when it is beyond the top-K it is
  * "too low to rank" (no exact rank/score, never correct).
+ *
+ * Matching is by **canonical resulting-board key** (#42): pass `userKey` (the
+ * attempt's {@link comboOutcomeKey}) and each stored entry is matched against
+ * its `boardKey`, so rotation-numbering mismatches can't mis-grade a same-cells
+ * answer and tuck/spin combos match by where they rest. Legacy entries minted
+ * before the v2 regen (no `boardKey`) fall back to placement-tuple matching.
  */
-export function gradeCombo(table: ComboTable, user: Line): ComboResult {
-  const index = table.entries.findIndex((entry) => matchesLine(entry, user));
+export function gradeCombo(table: ComboTable, user: Line, userKey?: string): ComboResult {
+  const index = table.entries.findIndex((entry) =>
+    entry.boardKey !== undefined
+      ? userKey !== undefined && entry.boardKey === userKey
+      : matchesLine(entry, user),
+  );
   if (index === -1) {
     return { correct: false, score: null, rank: null, total: table.total, ranked: false };
   }
