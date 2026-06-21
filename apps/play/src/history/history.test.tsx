@@ -41,6 +41,7 @@ function makeDb(entries: AttemptHistoryEntry[], puzzle?: Puzzle | null): History
 function samplePuzzle(): Puzzle {
   return {
     id: 'p-a',
+    number: 1,
     board: encodeBoard(emptyBoard()),
     piece1: 'T',
     piece2: 'L',

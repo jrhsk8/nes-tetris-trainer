@@ -12,7 +12,7 @@
  * (#26) lists past attempts and re-opens each read-only in the Feedback view.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Attempt, DataAccess } from '@trainer/data';
 import { seedRating } from '@trainer/rating';
 import { PuzzlePlay, type PlayDb } from '../session/index.js';
@@ -21,6 +21,7 @@ import { History } from '../history/index.js';
 import { SubmitScreenshot } from '../submit/index.js';
 import { DEFAULT_BINDINGS, sanitizeBindings, type KeyBindings } from '../board/keybindings.js';
 import { WORDMARK } from '../branding.js';
+import { parsePuzzleParam } from '../share.js';
 import type { AuthApi, AuthUser } from './auth.js';
 import { RatingHistory } from './RatingHistory.js';
 
@@ -57,6 +58,11 @@ export function Account({ db, user, auth }: AccountProps) {
   const [rating, setRating] = useState<number>(seedRating().rating);
   const [bindings, setBindings] = useState<KeyBindings>(DEFAULT_BINDINGS);
   const [view, setView] = useState<View>('play');
+  // A `?puzzle=N` share link (#49) opens that exact puzzle first; read once.
+  const sharedPuzzleNumber = useMemo(
+    () => (typeof window !== 'undefined' ? parsePuzzleParam(window.location.search) : null),
+    [],
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -132,6 +138,7 @@ export function Account({ db, user, auth }: AccountProps) {
           <PuzzlePlay
             db={db}
             userId={user.id}
+            initialPuzzleNumber={sharedPuzzleNumber}
             onAdvance={() => void refresh()}
             leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
             bindings={bindings}

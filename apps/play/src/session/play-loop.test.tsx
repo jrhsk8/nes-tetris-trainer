@@ -17,6 +17,7 @@ function samplePuzzle(id: string): Puzzle {
   const board2 = applyPlacement(applyPlacement(emptyBoard(), 'T', line[0]), 'L', line[1]);
   return {
     id,
+    number: 1,
     board: encodeBoard(emptyBoard()),
     piece1: 'T',
     piece2: 'L',
@@ -40,6 +41,9 @@ function countingDb(): { db: PlayDb; calls: () => number } {
     async getMatchmadePuzzle() {
       n += 1;
       return samplePuzzle(`p${n}`);
+    },
+    async getPuzzleByNumber() {
+      return null;
     },
     async getUserRating(userId) {
       return ratings.get(userId) ?? null;

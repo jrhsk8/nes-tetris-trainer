@@ -36,6 +36,7 @@ import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
 import { ComboList } from './ComboList.js';
 import { buildReplay, type Keyframe, type ReplayOverlay } from './replay.js';
+import { PuzzleTitle } from '../session/PuzzleTitle.js';
 
 /** A player rating change to surface alongside the verdict. */
 export interface RatingChange {
@@ -45,6 +46,8 @@ export interface RatingChange {
 }
 
 export interface FeedbackProps {
+  /** The puzzle's stable number (#49) — shown as the title; null for legacy. */
+  number?: number | null;
   /** The starting board. */
   board0: Grid;
   piece1: Piece;
@@ -147,6 +150,7 @@ function bestLineOf(combos: ComboTable): Line | null {
 }
 
 export function Feedback({
+  number = null,
   board0,
   piece1,
   piece2,
@@ -199,6 +203,7 @@ export function Feedback({
   return (
     <div className="feedback">
       <div className="play-center feedback-board" data-testid="board-center">
+        <PuzzleTitle number={number} />
         <Board
           grid={frame.grid}
           colorGrid={frame.colorGrid}

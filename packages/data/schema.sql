@@ -53,6 +53,38 @@ alter table public.puzzles add column if not exists second_values jsonb;
 alter table public.puzzles add column if not exists accept_count int;
 alter table public.puzzles add column if not exists margin double precision;
 
+-- #49: stable, human-friendly puzzle number (1, 2, 3 …) — the title + share key.
+-- Additive + idempotent: re-running this block is safe.
+alter table public.puzzles add column if not exists number int;
+
+-- Backfill any unnumbered rows deterministically by CREATION order (not physical
+-- row order), continuing past the current max so a re-run never collides.
+update public.puzzles p
+set number = base.m + ranked.rn
+from
+  (
+    select id, row_number() over (order by created_at asc, id asc) as rn
+    from public.puzzles
+    where number is null
+  ) ranked,
+  (select coalesce(max(number), 0) as m from public.puzzles) base
+where p.id = ranked.id;
+
+-- A sequence assigns numbers to NEW inserts (the generator insert path), starting
+-- just past the current max so generator inserts never collide with the backfill.
+create sequence if not exists public.puzzles_number_seq;
+select setval(
+  'public.puzzles_number_seq',
+  coalesce((select max(number) from public.puzzles), 0) + 1,
+  false
+);
+alter table public.puzzles alter column number set default nextval('public.puzzles_number_seq');
+alter sequence public.puzzles_number_seq owned by public.puzzles.number;
+
+-- Enforce uniqueness + not-null now that every row is numbered.
+create unique index if not exists puzzles_number_key on public.puzzles (number);
+alter table public.puzzles alter column number set not null;
+
 -- Per-user Glicko-2 rating (one row per user).
 create table if not exists public.user_ratings (
   user_id uuid primary key,

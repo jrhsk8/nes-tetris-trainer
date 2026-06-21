@@ -33,6 +33,9 @@ function emptyDb() {
     async getMatchmadePuzzle() {
       return null;
     },
+    async getPuzzleByNumber() {
+      return null;
+    },
     async upsertUserRating(r: { userId: string }) {
       return { userId: r.userId, rating: 1500, deviation: 200, volatility: 0.06 };
     },

@@ -8,6 +8,7 @@ function puzzleAt(id: string, rating: number): Puzzle {
   const board = encodeBoard(emptyBoard());
   return {
     id,
+    number: 1,
     board,
     piece1: 'T',
     piece2: 'L',

@@ -207,6 +207,33 @@ h2 {
   color: var(--ink);
 }
 
+/* Puzzle number + share control (#49): a slim line above the board — small, in
+ * keeping with the slim top bar (#32), no stacked header. */
+.puzzle-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0 0 0.3rem;
+  font-size: 9px;
+}
+.puzzle-title-label {
+  color: var(--ink-dim);
+  letter-spacing: 0.04em;
+}
+.puzzle-share {
+  font: inherit;
+  font-size: 8px;
+  color: var(--ink);
+  background: transparent;
+  border: 2px solid var(--ink-dim);
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.puzzle-share:hover {
+  border-color: var(--ink);
+}
+
 /* The board hero: scales with the viewport, preserving its 1:2 aspect (10 wide
  * cells → height = 2 × width). No fixed pixel cap (#22). The board is now the
  * dominant element (#32): width grows toward 36vh (≈ 72vh tall) but is also

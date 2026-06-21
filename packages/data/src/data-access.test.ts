@@ -83,6 +83,29 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(fetched!.margin).toBe(12.5);
   });
 
+  it('auto-assigns a stable number to new puzzles and fetches by it (#49)', async () => {
+    const inserted = await db!.insertPuzzle({
+      board: encodeBoard(emptyBoard()),
+      piece1: 'S',
+      piece2: 'Z',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+    });
+    createdPuzzleIds.push(inserted.id);
+
+    // The numbering migration's sequence default assigns a fresh number on insert.
+    expect(typeof inserted.number).toBe('number');
+    expect(inserted.number!).toBeGreaterThan(0);
+
+    const byNumber = await db!.getPuzzleByNumber(inserted.number!);
+    expect(byNumber).not.toBeNull();
+    expect(byNumber!.id).toBe(inserted.id);
+    expect(byNumber!.number).toBe(inserted.number);
+
+    // A number that does not exist falls back to null (caller → matchmaking).
+    expect(await db!.getPuzzleByNumber(2_000_000_000)).toBeNull();
+  });
+
   it('defaults the v2 difficulty columns to null for a puzzle without them', async () => {
     const puzzle = await db!.insertPuzzle({
       board: encodeBoard(emptyBoard()),

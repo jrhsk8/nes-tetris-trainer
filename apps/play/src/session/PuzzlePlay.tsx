@@ -13,7 +13,7 @@ import { type KeyBindings } from '../board/keybindings.js';
 /** The persistence the loader + session need. */
 export type PlayDb = Pick<
   DataAccess,
-  'getMatchmadePuzzle' | 'getUserRating' | 'upsertUserRating' | 'insertAttempt'
+  'getMatchmadePuzzle' | 'getPuzzleByNumber' | 'getUserRating' | 'upsertUserRating' | 'insertAttempt'
 >;
 
 /**
@@ -26,6 +26,13 @@ const COOLDOWN_WINDOW = 10;
 export interface PuzzlePlayProps {
   db: PlayDb;
   userId: string;
+  /**
+   * A shared puzzle number (#49) to open instead of matchmaking on first load —
+   * from a `?puzzle=N` link. Loaded by number once; "Next" then returns to the
+   * normal matchmade loop. A missing/invalid number just falls back to
+   * matchmaking immediately.
+   */
+  initialPuzzleNumber?: number | null;
   /** Called when a new puzzle is loaded (e.g. to refresh the rating history). */
   onAdvance?: () => void;
   /** Content for the play screen's left rail (the rating panel). */
@@ -34,7 +41,14 @@ export interface PuzzlePlayProps {
   bindings?: KeyBindings;
 }
 
-export function PuzzlePlay({ db, userId, onAdvance, leftFlank, bindings }: PuzzlePlayProps) {
+export function PuzzlePlay({
+  db,
+  userId,
+  initialPuzzleNumber = null,
+  onAdvance,
+  leftFlank,
+  bindings,
+}: PuzzlePlayProps) {
   // undefined = loading, null = empty bank, Puzzle = ready.
   const [puzzle, setPuzzle] = useState<Puzzle | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -53,13 +67,22 @@ export function PuzzlePlay({ db, userId, onAdvance, leftFlank, bindings }: Puzzl
   // next puzzle never re-creates `load` and re-triggers the mount effect (#17).
   const recentRef = useRef<string[]>([]);
 
+  // A shared puzzle to open first (#49), consumed once: after the shared puzzle
+  // (or an invalid number that fell back), "Next" returns to matchmaking.
+  const pendingNumberRef = useRef<number | null>(initialPuzzleNumber);
+
   const load = useCallback(async () => {
     setPuzzle(undefined);
     setError(null);
     onAdvanceRef.current?.();
     try {
-      const rating = (await db.getUserRating(userId))?.rating ?? SEED_RATING;
-      const next = await db.getMatchmadePuzzle({ rating, recentIds: recentRef.current });
+      const wanted = pendingNumberRef.current;
+      pendingNumberRef.current = null; // one-shot — the loop is matchmade hereafter
+      let next = wanted != null ? await db.getPuzzleByNumber(wanted) : null;
+      if (!next) {
+        const rating = (await db.getUserRating(userId))?.rating ?? SEED_RATING;
+        next = await db.getMatchmadePuzzle({ rating, recentIds: recentRef.current });
+      }
       if (next) {
         recentRef.current = [...recentRef.current, next.id].slice(-COOLDOWN_WINDOW);
       }

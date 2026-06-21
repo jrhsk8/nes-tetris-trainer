@@ -40,6 +40,13 @@ export interface PlacementValue {
 /** A stored puzzle: everything the play app needs with no engine at runtime. */
 export interface Puzzle {
   id: string;
+  /**
+   * Stable, human-friendly puzzle number (#49): unique, sequential (1, 2, 3 …),
+   * assigned in `created_at` order and continued for new puzzles. Shown as the
+   * title ("Puzzle #123") and the share-link key. Null only for legacy rows
+   * generated before the numbering migration.
+   */
+  number: number | null;
   /** 200-char board encoding (see @trainer/core board model). */
   board: string;
   piece1: Piece;
@@ -156,6 +163,8 @@ export interface NewAttempt {
 
 export interface PuzzleRow {
   id: string;
+  /** Stable, human-friendly puzzle number (#49); null for legacy rows. */
+  number: number | null;
   board: string;
   piece1: string;
   piece2: string;

@@ -16,6 +16,7 @@ function samplePuzzle(): Puzzle {
   const board2 = applyPlacement(applyPlacement(emptyBoard(), 'T', line[0]), 'L', line[1]);
   return {
     id: 'p1',
+    number: 1,
     board: encodeBoard(emptyBoard()),
     piece1: 'T',
     piece2: 'L',
@@ -36,6 +37,9 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
   return {
     async getMatchmadePuzzle() {
       return puzzle;
+    },
+    async getPuzzleByNumber() {
+      return null;
     },
     async getUserRating(userId) {
       return ratings.get(userId) ?? null;
@@ -64,5 +68,60 @@ describe('PuzzlePlay (load a puzzle from the bank)', () => {
   it('shows an empty-bank message when there are no puzzles', async () => {
     render(<PuzzlePlay db={makeDb(null)} userId="u1" />);
     expect(await screen.findByText(/No puzzles in the bank yet/)).toBeInTheDocument();
+  });
+});
+
+/** A puzzle with a chosen number so the title distinguishes which one loaded. */
+function numbered(n: number): Puzzle {
+  return { ...samplePuzzle(), id: `p${n}`, number: n };
+}
+
+/** A db that records which selector was called, with distinct shared/matchmade puzzles. */
+function trackingDb() {
+  const calls: string[] = [];
+  const ratings = new Map<string, UserRating>();
+  const db: PlayDb = {
+    async getMatchmadePuzzle() {
+      calls.push('matchmade');
+      return numbered(99);
+    },
+    async getPuzzleByNumber(n) {
+      calls.push(`byNumber:${n}`);
+      return n === 5 ? numbered(5) : null; // only #5 exists
+    },
+    async getUserRating(userId) {
+      return ratings.get(userId) ?? null;
+    },
+    async upsertUserRating(rating) {
+      ratings.set(rating.userId, rating);
+      return rating;
+    },
+    async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
+      return { id: 'a1', createdAt: '2026-01-01T00:00:00Z', ratingAfter: null, ...attempt };
+    },
+  };
+  return { db, calls };
+}
+
+describe('PuzzlePlay shared-puzzle link (#49)', () => {
+  it('opens the exact shared puzzle by number, bypassing matchmaking', async () => {
+    const { db, calls } = trackingDb();
+    render(<PuzzlePlay db={db} userId="u1" initialPuzzleNumber={5} />);
+    expect(await screen.findByText(/Puzzle #5/)).toBeInTheDocument();
+    expect(calls).toEqual(['byNumber:5']); // matchmaking not consulted
+  });
+
+  it('falls back to matchmaking when no shared number is given', async () => {
+    const { db, calls } = trackingDb();
+    render(<PuzzlePlay db={db} userId="u1" />);
+    expect(await screen.findByText(/Puzzle #99/)).toBeInTheDocument();
+    expect(calls).toEqual(['matchmade']);
+  });
+
+  it('falls back to matchmaking when the shared number does not exist', async () => {
+    const { db, calls } = trackingDb();
+    render(<PuzzlePlay db={db} userId="u1" initialPuzzleNumber={404} />);
+    expect(await screen.findByText(/Puzzle #99/)).toBeInTheDocument();
+    expect(calls).toEqual(['byNumber:404', 'matchmade']);
   });
 });

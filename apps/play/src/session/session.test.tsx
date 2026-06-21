@@ -27,6 +27,7 @@ function makePuzzle(): Puzzle {
   const board2 = applyPlacement(board1, 'L', line[1]);
   return {
     id: 'puzzle-1',
+    number: 1,
     board: encodeBoard(board0),
     piece1: 'T',
     piece2: 'L',

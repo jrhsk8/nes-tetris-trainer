@@ -38,6 +38,7 @@ import { NextPieceBox } from '../board/NextPieceBox.js';
 import { DEFAULT_BINDINGS, type KeyBindings } from '../board/keybindings.js';
 import { Feedback } from '../feedback/index.js';
 import { PlayScreen } from './PlayScreen.js';
+import { PuzzleTitle } from './PuzzleTitle.js';
 
 /** The persistence the session needs (rating read/write + attempt insert). */
 export type SessionDb = Pick<DataAccess, 'getUserRating' | 'upsertUserRating' | 'insertAttempt'>;
@@ -162,6 +163,7 @@ export function PuzzleSession({
     return (
       <PlayScreen leftFlank={leftFlank}>
         <div className="play-center" data-testid="board-center">
+          <PuzzleTitle number={puzzle.number} />
           <p className="play-instruction">
             Place the <strong>{puzzle.piece1}</strong>.
           </p>
@@ -184,6 +186,7 @@ export function PuzzleSession({
     return (
       <PlayScreen leftFlank={leftFlank}>
         <div className="play-center" data-testid="board-center">
+          <PuzzleTitle number={puzzle.number} />
           <p className="play-instruction">
             Place the <strong>{puzzle.piece2}</strong>. <em>(no next piece)</em>
           </p>
@@ -206,6 +209,7 @@ export function PuzzleSession({
     return (
       <PlayScreen leftFlank={leftFlank}>
         <div className="play-center" data-testid="board-center">
+          <PuzzleTitle number={puzzle.number} />
           <p role="status">Grading…</p>
         </div>
       </PlayScreen>
@@ -216,6 +220,7 @@ export function PuzzleSession({
   return (
     <PlayScreen leftFlank={leftFlank}>
       <Feedback
+        number={puzzle.number}
         board0={board0}
         piece1={puzzle.piece1}
         piece2={puzzle.piece2}

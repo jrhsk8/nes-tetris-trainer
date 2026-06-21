@@ -59,6 +59,7 @@ function asPiece(value: string, field: string): Piece {
 function rowToPuzzle(row: PuzzleRow): Puzzle {
   return {
     id: row.id,
+    number: row.number ?? null,
     board: row.board,
     piece1: asPiece(row.piece1, 'piece1'),
     piece2: asPiece(row.piece2, 'piece2'),
@@ -117,6 +118,8 @@ export const SUBMISSIONS_BUCKET = 'submissions';
 /** The data-access surface shared by the play app and the generator. */
 export interface DataAccess {
   getPuzzle(id: string): Promise<Puzzle | null>;
+  /** Fetch a puzzle by its stable human-friendly number (#49); null if absent. */
+  getPuzzleByNumber(number: number): Promise<Puzzle | null>;
   getRandomPuzzle(): Promise<Puzzle | null>;
   /**
    * Matchmaking selection (#44): a puzzle near the player's rating, excluding
@@ -183,6 +186,16 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
   async function getPuzzle(id: string): Promise<Puzzle | null> {
     const { data, error } = await client.from('puzzles').select('*').eq('id', id).maybeSingle();
     if (error) throw new Error(`getPuzzle failed: ${error.message}`);
+    return data ? rowToPuzzle(data as PuzzleRow) : null;
+  }
+
+  async function getPuzzleByNumber(number: number): Promise<Puzzle | null> {
+    const { data, error } = await client
+      .from('puzzles')
+      .select('*')
+      .eq('number', number)
+      .maybeSingle();
+    if (error) throw new Error(`getPuzzleByNumber failed: ${error.message}`);
     return data ? rowToPuzzle(data as PuzzleRow) : null;
   }
 
@@ -439,6 +452,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
 
   return {
     getPuzzle,
+    getPuzzleByNumber,
     getRandomPuzzle,
     getMatchmadePuzzle,
     countPuzzles,

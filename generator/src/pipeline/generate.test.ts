@@ -111,6 +111,7 @@ function recordingDb() {
       stored.push(...puzzles);
       return puzzles.map((p, i) => ({
         id: `id-${i}`,
+        number: i + 1,
         ...p,
         glicko: { rating: p.glicko?.rating ?? 1500, deviation: 350, volatility: 0.06 },
         colors: p.colors ?? '',
