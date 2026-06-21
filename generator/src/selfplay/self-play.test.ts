@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { emptyBoard, ROWS, COLS, type Grid } from '@trainer/core';
-import { SelfPlayBoardSource, enumerateLegalMoves, type MoveEngine } from './self-play.js';
+import { applyPlacement, emptyBoard, ROWS, COLS, type Grid } from '@trainer/core';
+import {
+  SelfPlayBoardSource,
+  enumerateLegalMoves,
+  gridsEqual,
+  toHardDropPlacement,
+  type MoveEngine,
+} from './self-play.js';
 import { StackRabbitClient } from '../engine/client.js';
 import { DEFAULT_BASE_URL } from '../engine/client.js';
 
@@ -39,6 +45,40 @@ describe('enumerateLegalMoves', () => {
   it('returns nothing for a piece with no room on a full board', () => {
     const full: Grid = Array.from({ length: ROWS }, () => new Array<number>(COLS).fill(1));
     expect(enumerateLegalMoves(full, 'T')).toHaveLength(0);
+  });
+});
+
+describe('gridsEqual', () => {
+  it('is true for identical grids and false otherwise', () => {
+    const a = emptyBoard();
+    const b = emptyBoard();
+    expect(gridsEqual(a, b)).toBe(true);
+    b[0][0] = 1;
+    expect(gridsEqual(a, b)).toBe(false);
+  });
+});
+
+describe('toHardDropPlacement (recover our placement from the engine result)', () => {
+  it('recovers the (rotation, col) that produced a result board', () => {
+    const before = emptyBoard();
+    const placement = { rotation: 0, col: 4 };
+    const after = applyPlacement(before, 'T', placement);
+    expect(toHardDropPlacement(before, 'T', after)).toEqual(placement);
+  });
+
+  it('recovers a placement even when it clears a line', () => {
+    const before = emptyBoard();
+    for (let col = 0; col < 8; col++) before[ROWS - 1][col] = 1;
+    const placement = { rotation: 0, col: 8 };
+    const after = applyPlacement(before, 'O', placement);
+    expect(toHardDropPlacement(before, 'O', after)).toEqual(placement);
+  });
+
+  it('returns null when no single placement reproduces the board', () => {
+    const before = emptyBoard();
+    const bogus: Grid = emptyBoard();
+    bogus[0][0] = 1; // a lone floating cell no dropped piece could create
+    expect(toHardDropPlacement(before, 'T', bogus)).toBeNull();
   });
 });
 

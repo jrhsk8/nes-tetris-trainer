@@ -1,24 +1,33 @@
 /**
- * Two-piece combo evaluation (#33) — the heart of the combo-grading overhaul.
+ * Two-piece combo evaluation (#33, rewired for v2 in #40).
  *
- * A puzzle is "find the best two-piece combo." Rather than scoring each ply in
- * isolation, the generator sweeps the FULL cross-product of legal placements —
- * every piece-1 placement × every piece-2 placement on the resulting board —
- * and values each combo by StackRabbit's evaluation of the board after BOTH
- * placements (the second move's `rate-move` value, which is a function of that
- * resulting board). The values are field-normalized to 0–100 across the puzzle
- * (best = 100, worst legal = 0) and the top-K are stored (docs/decisions.md,
- * 2026-06-20 "Combo-grading overhaul"; glossary *Two-piece combo*, *Combo
- * score*, *Combo table*, *Board-health floor*).
+ * A puzzle is "find the best two-piece combo." The generator sweeps the FULL
+ * cross-product of legal placements — every collision-reachable resting
+ * placement of piece 1 × every reachable resting placement of piece 2 on the
+ * resulting board (tucks and spins included, via @trainer/core reachability,
+ * #37) — and values each combo by StackRabbit's evaluation of the board after
+ * BOTH placements. Combos are keyed by their **resulting board** (the canonical
+ * outcome key, #37): two placement paths that land the same cells are the SAME
+ * answer, so they collapse to one entry. Values are field-normalized to 0–100
+ * (best = 100, worst legal = 0) and the top-K are stored with their `boardKey`
+ * for outcome-matching at play time (#42).
  *
  * Engine-only: this module runs in the offline generator and never ships to the
  * play app (CLAUDE.md guardrail). It reuses the typed engine client (#4).
  */
 
-import { PIECES, applyPlacement, type Grid, type Piece } from '@trainer/core';
+import {
+  PIECES,
+  applyRestingPlacement,
+  enumerateResting,
+  boardKey,
+  CORRECT_SCORE_THRESHOLD,
+  type Grid,
+  type Piece,
+  type RestingPlacement,
+} from '@trainer/core';
 import type { ComboEntry, ComboTable } from '@trainer/data';
 import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
-import { enumerateLegalMoves } from '../selfplay/self-play.js';
 
 /** The slice of the engine client combo evaluation needs. */
 export interface ComboEngine {
@@ -36,27 +45,20 @@ export interface ComboContext {
 }
 
 /**
- * One swept combo: both placements (in our (rotation, col) coordinates), the
- * raw engine value of the combo, and the board after both placements (kept so
- * the rank-1 combo's result metrics can be computed without re-applying).
+ * One swept combo: both resting placements (rotation + board offset, so tucks
+ * and spins are expressible, #37), the raw engine value of the combo, the board
+ * after both placements (kept so the rank-1 combo's result metrics can be
+ * computed without re-applying), and the canonical outcome key of that board.
  */
 export interface ScoredCombo {
-  rot1: number;
-  col1: number;
-  rot2: number;
-  col2: number;
+  p1: RestingPlacement;
+  p2: RestingPlacement;
   /** Raw engine value (the second move's rate-move `playerValue`). */
   value: number;
   /** The board after both placements (line clears included). */
   board2: Grid;
-}
-
-/** True if two combos are the same pair of placements. */
-export function combosEqual(
-  a: { rot1: number; col1: number; rot2: number; col2: number },
-  b: { rot1: number; col1: number; rot2: number; col2: number },
-): boolean {
-  return a.rot1 === b.rot1 && a.col1 === b.col1 && a.rot2 === b.rot2 && a.col2 === b.col2;
+  /** Canonical outcome key of `board2` (#37) — the matching key (#42). */
+  boardKey: string;
 }
 
 /**
@@ -65,7 +67,7 @@ export function combosEqual(
  * on for its *worst* possible next piece. Piece-independent on purpose, so an
  * awkward puzzle piece draw doesn't reject an otherwise good board. Returns
  * `-Infinity` if any piece has no legal move or no finite value (a board that
- * bad is below any sensible floor).
+ * bad is unfair — the v2 floor is relaxed to reject only this garbage, #40).
  */
 export async function boardHealth(
   engine: ComboEngine,
@@ -92,11 +94,13 @@ export async function boardHealth(
 }
 
 /**
- * Sweep the full cross-product of legal two-piece combos on `ctx.board`, valuing
- * each by the second move's `rate-move` value at `timeline`. Combos the engine
- * cannot value (a placement unreachable under the timeline — `rate-move` reports
- * "player move not found") are skipped, exactly as the old value-table sweep
- * did. Returned best-first by value.
+ * Sweep the full cross-product of legal two-piece combos on `ctx.board`,
+ * enumerating EVERY collision-reachable resting placement of each piece (#37) so
+ * tucks and spins are candidates, and valuing each by the second move's
+ * `rate-move` value at `timeline`. Combos the engine cannot value (a placement
+ * unreachable under the timeline — `rate-move` reports "player move not found")
+ * are skipped. Combos that land the SAME resulting board collapse to one entry
+ * (keyed by `boardKey`), keeping the best value. Returned best-first by value.
  */
 export async function sweepCombos(
   engine: ComboEngine,
@@ -104,10 +108,10 @@ export async function sweepCombos(
   timeline: string,
 ): Promise<ScoredCombo[]> {
   const { board, piece1, piece2, level, lines } = ctx;
-  const combos: ScoredCombo[] = [];
+  const byOutcome = new Map<string, ScoredCombo>();
 
-  for (const p1 of enumerateLegalMoves(board, piece1)) {
-    const board1 = applyPlacement(board, piece1, p1);
+  for (const p1 of enumerateResting(board, piece1)) {
+    const board1 = applyRestingPlacement(board, piece1, p1);
     const query2: MoveQuery = {
       board: board1,
       currentPiece: piece2,
@@ -116,8 +120,8 @@ export async function sweepCombos(
       lines,
       inputFrameTimeline: timeline,
     };
-    for (const p2 of enumerateLegalMoves(board1, piece2)) {
-      const board2 = applyPlacement(board1, piece2, p2);
+    for (const p2 of enumerateResting(board1, piece2)) {
+      const board2 = applyRestingPlacement(board1, piece2, p2);
       let value: number;
       try {
         value = (await engine.rateMove(query2, board2)).playerValue;
@@ -125,75 +129,71 @@ export async function sweepCombos(
         continue; // unreachable under this timeline — not a fair combo.
       }
       if (!Number.isFinite(value)) continue;
-      combos.push({ rot1: p1.rotation, col1: p1.col, rot2: p2.rotation, col2: p2.col, value, board2 });
+      const key = boardKey(board2);
+      const existing = byOutcome.get(key);
+      if (!existing || value > existing.value) {
+        byOutcome.set(key, { p1, p2, value, board2, boardKey: key });
+      }
     }
   }
 
+  const combos = [...byOutcome.values()];
   combos.sort((a, b) => b.value - a.value);
   return combos;
 }
 
 /**
- * Re-value an existing set of combos at a different `timeline` and return them
- * best-first — used by the Hz-invariance gate to confirm the best combo does not
- * change between slow-tap and fast-DAS. Combos unreachable under the timeline
- * are dropped (so a best combo that cannot be executed fast correctly fails the
- * gate).
+ * Field-normalize swept combos to a 0–100 score aligned to their (best-first)
+ * order: best = 100, worst legal = 0. When every combo ties (or there is only
+ * one) all score 100. Rounded to whole numbers for a clean ranked list.
  */
-export async function rerankAt(
-  engine: ComboEngine,
-  ctx: ComboContext,
-  combos: readonly ScoredCombo[],
-  timeline: string,
-): Promise<ScoredCombo[]> {
-  const { board, piece1, piece2, level, lines } = ctx;
-  const reranked: ScoredCombo[] = [];
-
-  for (const combo of combos) {
-    const board1 = applyPlacement(board, piece1, { rotation: combo.rot1, col: combo.col1 });
-    const query2: MoveQuery = {
-      board: board1,
-      currentPiece: piece2,
-      nextPiece: null,
-      level,
-      lines,
-      inputFrameTimeline: timeline,
-    };
-    let value: number;
-    try {
-      value = (await engine.rateMove(query2, combo.board2)).playerValue;
-    } catch {
-      continue;
-    }
-    if (!Number.isFinite(value)) continue;
-    reranked.push({ ...combo, value });
-  }
-
-  reranked.sort((a, b) => b.value - a.value);
-  return reranked;
-}
-
-/**
- * Field-normalize swept combos to a 0–100 score (best = 100, worst legal = 0)
- * and keep the top `topK`, best-first, alongside the total ranked count. When
- * every combo ties (or there is only one), all score 100. Scores are rounded to
- * whole numbers for a clean ranked list (the rank-1 combo is always exactly 100).
- */
-export function normalizeCombos(combos: readonly ScoredCombo[], topK: number): ComboTable {
-  if (combos.length === 0) return { entries: [], total: 0 };
-
+export function normalizedScores(combos: readonly ScoredCombo[]): number[] {
+  if (combos.length === 0) return [];
   const values = combos.map((c) => c.value);
   const max = Math.max(...values);
   const min = Math.min(...values);
   const span = max - min;
+  return combos.map((c) => (span === 0 ? 100 : Math.round(((c.value - min) / span) * 100)));
+}
 
-  const entries: ComboEntry[] = combos.slice(0, topK).map((c) => ({
-    rot1: c.rot1,
-    col1: c.col1,
-    rot2: c.rot2,
-    col2: c.col2,
-    score: span === 0 ? 100 : Math.round(((c.value - min) / span) * 100),
+/**
+ * Normalize swept combos and keep the top `topK`, best-first, alongside the
+ * total ranked count. Each stored entry carries its placements (for replay) and
+ * the canonical `boardKey` (for outcome-matching, #42). The rank-1 combo always
+ * scores exactly 100.
+ */
+export function normalizeCombos(combos: readonly ScoredCombo[], topK: number): ComboTable {
+  if (combos.length === 0) return { entries: [], total: 0 };
+  const scores = normalizedScores(combos);
+  const entries: ComboEntry[] = combos.slice(0, topK).map((c, i) => ({
+    rot1: c.p1.rotation,
+    col1: c.p1.col,
+    rot2: c.p2.rotation,
+    col2: c.p2.col,
+    score: scores[i],
+    boardKey: c.boardKey,
   }));
-
   return { entries, total: combos.length };
 }
+
+/**
+ * Whether a resting placement is collision-reachable on a board — the narrowed
+ * Hz-invariance check (#40): tuck/spin *capability* is granted (v2 free-
+ * positioning input has no timer, so horizontal-traverse speed never blocks the
+ * player), so the surviving requirement is simply that the stored optimal is a
+ * genuinely reachable resting placement (the binding superset invariant, #37).
+ * `sweepCombos` only emits reachable placements, so this guards the rank-1 combo
+ * against any non-reachability-filtered source.
+ */
+export function isReachablePlacement(
+  board: Grid,
+  piece: Piece,
+  placement: RestingPlacement,
+): boolean {
+  return enumerateResting(board, piece).some(
+    (p) => p.rotation === placement.rotation && p.row === placement.row && p.col === placement.col,
+  );
+}
+
+/** A combo scoring at least this counts as an acceptable answer (mirrors core). */
+export { CORRECT_SCORE_THRESHOLD };

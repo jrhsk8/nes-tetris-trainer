@@ -11,4 +11,15 @@ export type {
   GenerateBankOptions,
   BankResult,
 } from './generate.js';
-export { toPlacement, gridsEqual } from './placement.js';
+export {
+  sweepCombos,
+  normalizeCombos,
+  normalizedScores,
+  boardHealth,
+  isReachablePlacement,
+  type ComboContext,
+  type ComboEngine,
+  type ScoredCombo,
+} from './combo.js';
+export { difficultyFromScores, seedRatingFor, EASY_SEED, HARD_SEED, type Difficulty } from './difficulty.js';
+export { boardHamming, isNearDuplicate, type BankKey } from './dedup.js';

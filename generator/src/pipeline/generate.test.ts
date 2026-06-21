@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { applyPlacement, emptyBoard, emptyColorGrid, encodeBoard, isPiece, type Grid } from '@trainer/core';
+import {
+  applyPlacement,
+  emptyBoard,
+  emptyColorGrid,
+  encodeBoard,
+  isPiece,
+  type Grid,
+  type Piece,
+} from '@trainer/core';
 import type { NewPuzzle, Puzzle } from '@trainer/data';
 import {
   assemblePuzzle,
@@ -7,6 +15,7 @@ import {
   DEFAULT_GENERATION_CONFIG,
   type GeneratorEngine,
 } from './generate.js';
+import { EASY_SEED, HARD_SEED } from './difficulty.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
 import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
 import { StackRabbitClient, DEFAULT_BASE_URL } from '../engine/client.js';
@@ -24,17 +33,12 @@ class FixedSource implements BoardSource {
 }
 
 /**
- * A controllable fake engine for the combo pipeline (#33):
+ * A controllable fake engine for the combo pipeline:
  *  - `getBestMove` reports a constant board-health `totalValue` for every piece.
- *  - `rateMove` assigns combo values from a per-timeline counter: descending at
- *    the slow timeline (so the FIRST swept combo ranks #1), and — unless
- *    `speedVariant` — descending again at the fast timeline (so the best combo
- *    is the same at both speeds). With `speedVariant` the fast counter ascends,
- *    so the best combo flips and the Hz gate must reject.
+ *  - `rateMove` values a combo by the sum of the row indices of its resulting
+ *    filled cells, so distinct outcomes get distinct values and the sweep ranks.
  */
-function comboEngine(opts: { health?: number; speedVariant?: boolean } = {}): GeneratorEngine {
-  let slow = 1_000_000;
-  let fast = opts.speedVariant ? 0 : 1_000_000;
+function comboEngine(opts: { health?: number } = {}): GeneratorEngine {
   return {
     async getBestMove(query: MoveQuery): Promise<EngineMove | null> {
       return {
@@ -45,10 +49,11 @@ function comboEngine(opts: { health?: number; speedVariant?: boolean } = {}): Ge
         totalValue: opts.health ?? 100,
       };
     },
-    async rateMove(query: MoveQuery): Promise<RateMoveResult> {
-      const isFast = query.inputFrameTimeline === DEFAULT_GENERATION_CONFIG.fastTimeline;
-      const value = isFast ? (opts.speedVariant ? fast++ : fast--) : slow--;
-      return { playerValue: value, bestValue: 0 };
+    async rateMove(_query: MoveQuery, after: Grid): Promise<RateMoveResult> {
+      let v = 0;
+      for (let r = 0; r < after.length; r++)
+        for (let c = 0; c < after[r].length; c++) if (after[r][c]) v += r;
+      return { playerValue: v, bestValue: 0 };
     },
   };
 }
@@ -64,11 +69,11 @@ function recordingDb() {
       return puzzles.map((p, i) => ({
         id: `id-${i}`,
         ...p,
-        glicko: { rating: 1500, deviation: 350, volatility: 0.06 },
+        glicko: { rating: p.glicko?.rating ?? 1500, deviation: 350, volatility: 0.06 },
         colors: p.colors ?? '',
         combos: p.combos ?? { entries: [], total: 0 },
-        acceptCount: null,
-        margin: null,
+        acceptCount: p.acceptCount ?? null,
+        margin: p.margin ?? null,
         firstValues: [],
         secondValues: [],
       }));
@@ -81,14 +86,16 @@ function recordingDb() {
   return { db, stored, order };
 }
 
-const sampleCandidate = (): Candidate => ({
+const candidateWith = (piece1: Piece, piece2: Piece): Candidate => ({
   board: emptyBoard(),
   colors: emptyColorGrid(),
-  currentPiece: 'O',
-  nextPiece: 'O',
+  currentPiece: piece1,
+  nextPiece: piece2,
   level: 18,
   lines: 0,
 });
+
+const sampleCandidate = (): Candidate => candidateWith('O', 'O');
 
 /** A candidate whose board has many holes (fails the geometric pre-filter). */
 function holeyCandidate(): Candidate {
@@ -102,8 +109,8 @@ function holeyCandidate(): Candidate {
   return { ...sampleCandidate(), board };
 }
 
-describe('assemblePuzzle combo pipeline (#33)', () => {
-  it('stores a normalized top-K combo table with the rank-1 combo as the optimal line', async () => {
+describe('assemblePuzzle combo pipeline (#40)', () => {
+  it('stores a normalized top-K combo table (with boardKeys) and a difficulty seed rating', async () => {
     const result = await assemblePuzzle(comboEngine(), sampleCandidate());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -113,25 +120,31 @@ describe('assemblePuzzle combo pipeline (#33)', () => {
     expect(puzzle.piece1).toBe('O');
     expect(puzzle.piece2).toBe('O');
 
-    // O×O on an empty board = 81 ranked combos; the top-30 are stored.
-    expect(puzzle.combos!.total).toBe(81);
-    expect(puzzle.combos!.entries).toHaveLength(30);
-    // Sorted descending; the rank-1 combo scores exactly 100.
+    // A ranked, de-duplicated-by-outcome combo table; rank-1 scores exactly 100.
+    expect(puzzle.combos!.total).toBeGreaterThan(0);
+    expect(puzzle.combos!.entries.length).toBe(Math.min(30, puzzle.combos!.total));
     expect(puzzle.combos!.entries[0].score).toBe(100);
     for (let i = 1; i < puzzle.combos!.entries.length; i++) {
       expect(puzzle.combos!.entries[i - 1].score).toBeGreaterThanOrEqual(
         puzzle.combos!.entries[i].score,
       );
     }
+    // Every stored entry carries its outcome boardKey (#42).
+    expect(puzzle.combos!.entries.every((e) => /^[01]{200}$/.test(e.boardKey!))).toBe(true);
 
-    // The optimal line is the rank-1 combo (first legal O placement, twice).
-    expect(puzzle.optimalLine).toEqual([
-      { rotation: 0, col: 0 },
-      { rotation: 0, col: 0 },
-    ]);
-    // Colour grid still populated; no value tables.
+    // The optimal line is the rank-1 combo's resting (rotation, col).
+    const top = puzzle.combos!.entries[0];
+    expect(puzzle.optimalLine[0]).toEqual({ rotation: top.rot1, col: top.col1 });
+    expect(puzzle.optimalLine[1]).toEqual({ rotation: top.rot2, col: top.col2 });
+
+    // Difficulty signals + seed rating are populated and in range.
+    expect(typeof puzzle.acceptCount).toBe('number');
+    expect(puzzle.acceptCount!).toBeGreaterThanOrEqual(1);
+    expect(typeof puzzle.margin).toBe('number');
+    expect(puzzle.glicko!.rating!).toBeGreaterThanOrEqual(EASY_SEED);
+    expect(puzzle.glicko!.rating!).toBeLessThanOrEqual(HARD_SEED);
+
     expect(puzzle.colors).toHaveLength(200);
-    expect(puzzle.firstValues).toBeUndefined();
   });
 
   it('rejects a candidate below the board-health floor', async () => {
@@ -143,16 +156,16 @@ describe('assemblePuzzle combo pipeline (#33)', () => {
     if (!result.ok) expect(result.reason).toBe('board-health-floor');
   });
 
+  it('keeps a playable board under the relaxed (fairness-only) default floor', async () => {
+    // health -5 is far above the relaxed default floor, so the board survives.
+    const result = await assemblePuzzle(comboEngine({ health: -5 }), sampleCandidate());
+    expect(result.ok).toBe(true);
+  });
+
   it('rejects an obviously garbage board via the geometric pre-filter', async () => {
     const result = await assemblePuzzle(comboEngine(), holeyCandidate());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('geometry-prefilter');
-  });
-
-  it('rejects a candidate whose best combo changes with tap speed', async () => {
-    const result = await assemblePuzzle(comboEngine({ speedVariant: true }), sampleCandidate());
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('best-combo-speed-variant');
   });
 });
 
@@ -161,7 +174,11 @@ describe('generateBank (deterministic)', () => {
     const { db, stored } = recordingDb();
     const result = await generateBank(
       {
-        source: new FixedSource([sampleCandidate(), sampleCandidate(), sampleCandidate()]),
+        source: new FixedSource([
+          candidateWith('O', 'O'),
+          candidateWith('I', 'O'),
+          candidateWith('T', 'O'),
+        ]),
         engine: comboEngine(),
         db,
       },
@@ -174,11 +191,44 @@ describe('generateBank (deterministic)', () => {
     expect(stored[0].combos!.entries[0].score).toBe(100);
   });
 
+  it('rejects a near-duplicate of an already-accepted puzzle (#40)', async () => {
+    const { db, stored } = recordingDb();
+    const result = await generateBank(
+      {
+        // Two identical candidates (same pieces, same board) — the second is a
+        // near-duplicate (Hamming 0) and is rejected.
+        source: new FixedSource([candidateWith('O', 'O'), candidateWith('O', 'O')]),
+        engine: comboEngine(),
+        db,
+      },
+      { targetCount: 2, maxCandidates: 10 },
+    );
+
+    expect(stored).toHaveLength(1);
+    expect(result.rejections['duplicate']).toBe(1);
+  });
+
+  it('rejects a candidate near-identical to the existing bank (#40)', async () => {
+    const { db, stored } = recordingDb();
+    const result = await generateBank(
+      {
+        source: new FixedSource([candidateWith('O', 'O')]),
+        engine: comboEngine(),
+        db,
+        existingKeys: [{ piece1: 'O', piece2: 'O', board: emptyBoard() }],
+      },
+      { targetCount: 1, maxCandidates: 10 },
+    );
+
+    expect(stored).toHaveLength(0);
+    expect(result.rejections['duplicate']).toBe(1);
+  });
+
   it('replaces the bank: deletes existing puzzles after assembling survivors, then inserts', async () => {
     const { db, stored, order } = recordingDb();
     const result = await generateBank(
       {
-        source: new FixedSource([sampleCandidate(), sampleCandidate()]),
+        source: new FixedSource([candidateWith('O', 'O'), candidateWith('I', 'O')]),
         engine: comboEngine(),
         db,
       },
@@ -206,7 +256,7 @@ const baseUrl = process.env.STACKRABBIT_URL ?? DEFAULT_BASE_URL;
 const engineUp = await new StackRabbitClient({ baseUrl }).ping();
 
 describe.skipIf(!engineUp)('generateBank (live engine)', () => {
-  it('produces a small bank of well-formed combo puzzles', async () => {
+  it('produces a small bank of well-formed v2 combo puzzles', async () => {
     const engine = new StackRabbitClient({ baseUrl });
     const source = new SelfPlayBoardSource(engine, Math.random, {
       minDepth: 6,
@@ -215,10 +265,7 @@ describe.skipIf(!engineUp)('generateBank (live engine)', () => {
     });
     const { db, stored } = recordingDb();
 
-    const result = await generateBank(
-      { source, engine, db },
-      { targetCount: 2, maxCandidates: 80 },
-    );
+    const result = await generateBank({ source, engine, db }, { targetCount: 2, maxCandidates: 80 });
 
     expect(result.stored.length).toBeGreaterThan(0);
     for (const puzzle of stored) {
@@ -227,18 +274,21 @@ describe.skipIf(!engineUp)('generateBank (live engine)', () => {
       expect(isPiece(puzzle.piece2)).toBe(true);
       expect(puzzle.optimalLine).toHaveLength(2);
       expect(puzzle.optimalMetrics.holes).toBeGreaterThanOrEqual(0);
-      // The colour grid and combo table are present and well-formed (#33).
-      expect(puzzle.colors).toHaveLength(200);
+      // Colour grid + v2 combo table with boardKeys + difficulty seed.
       expect(/^[0-3]{200}$/.test(puzzle.colors!)).toBe(true);
       const combos = puzzle.combos!;
       expect(combos.entries.length).toBeGreaterThan(0);
       expect(combos.entries.length).toBeLessThanOrEqual(DEFAULT_GENERATION_CONFIG.topK);
       expect(combos.total).toBeGreaterThanOrEqual(combos.entries.length);
       expect(combos.entries[0].score).toBe(100);
-      // The optimal line is the rank-1 combo.
+      expect(combos.entries.every((e) => /^[01]{200}$/.test(e.boardKey!))).toBe(true);
       const top = combos.entries[0];
       expect(puzzle.optimalLine[0]).toEqual({ rotation: top.rot1, col: top.col1 });
       expect(puzzle.optimalLine[1]).toEqual({ rotation: top.rot2, col: top.col2 });
+      // Difficulty + seed rating present.
+      expect(typeof puzzle.acceptCount).toBe('number');
+      expect(puzzle.glicko!.rating!).toBeGreaterThanOrEqual(EASY_SEED);
+      expect(puzzle.glicko!.rating!).toBeLessThanOrEqual(HARD_SEED);
     }
   }, 180_000);
 });

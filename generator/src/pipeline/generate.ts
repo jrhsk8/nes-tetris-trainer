@@ -1,27 +1,39 @@
 /**
- * Generation pipeline (#9) — turn self-play candidates (#8) into stored puzzles
- * (docs/PRD-v1.md, "Generation pipeline").
+ * Generation pipeline (#9; rewired for v2 in #40) — turn self-play candidates
+ * (#8) into stored puzzles (docs/PRD-v1.md "Generation pipeline";
+ * docs/decisions.md 2026-06-21).
  *
- * For each candidate it builds the optimal two-ply line and the second-best
- * alternatives via the engine (#4), applies the quality gates (#7), and — for
- * survivors — assembles the stored puzzle (board, pieces, optimal line,
- * precomputed optimal-result metrics via #3, flat seed rating) and writes it
- * via the data-access layer (#2).
+ * For each candidate it sweeps the full two-piece combo cross-product over every
+ * collision-reachable resting placement (tucks/spins included, #37), values each
+ * via StackRabbit (#4), applies the v2 gates, and — for survivors — assembles
+ * the stored puzzle: board, pieces, the normalized top-K combo table (each entry
+ * with its outcome `boardKey`, #42), difficulty (`acceptCount` + `margin`) mapped
+ * to a seed rating (#40), precomputed optimal-result metrics, and the colour
+ * grid — written via the data-access layer (#2).
  */
 
-import { boardMetrics, encodeBoard, encodeColors, type Grid, type Line } from '@trainer/core';
+import {
+  applyRestingPlacement,
+  boardMetrics,
+  encodeBoard,
+  encodeColors,
+  type Grid,
+  type Line,
+} from '@trainer/core';
 import type { DataAccess, NewPuzzle, Puzzle } from '@trainer/data';
 import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
 import { passesGeometricPrefilter } from '../quality/filters.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
 import {
   boardHealth,
-  combosEqual,
+  isReachablePlacement,
   normalizeCombos,
-  rerankAt,
+  normalizedScores,
   sweepCombos,
   type ComboContext,
 } from './combo.js';
+import { difficultyFromScores, seedRatingFor } from './difficulty.js';
+import { isNearDuplicate, type BankKey } from './dedup.js';
 
 /** The engine surface the pipeline needs (best move + move rating). */
 export interface GeneratorEngine {
@@ -29,52 +41,65 @@ export interface GeneratorEngine {
   rateMove(query: MoveQuery, playerBoardAfter: Grid): Promise<RateMoveResult>;
 }
 
-/** Tuning for the combo gates (#33). */
+/** Tuning for the v2 combo gates (#40). */
 export interface GenerationConfig {
   /** Top-K combos to store per puzzle. */
   topK: number;
   /**
-   * Board-health floor: keep a candidate only if the min over the 7 piece types
-   * of `getBestMove(board, piece).totalValue` is at least this (#33). Moderate
-   * and tunable — protect yield, don't overdo it.
+   * Board-health floor (relaxed in v2 to fairness/garbage-only, #40): keep a
+   * candidate only if the min over the 7 piece types of
+   * `getBestMove(board, piece).totalValue` is at least this. The default is set
+   * so only genuinely unfair boards — where some piece has NO legal move, giving
+   * `boardHealth` `-Infinity` — are rejected; the difficulty target shapes the
+   * rest. Tunable via --floor.
    */
   healthFloor: number;
   /** Geometric pre-filter: drop candidates with more holes than this. */
   maxHoles: number;
   /** Geometric pre-filter: drop candidates bumpier than this. */
   maxBumpiness: number;
-  /** Slow-tap input timeline for the combo sweep + Hz-invariance gate. */
-  slowTimeline: string;
-  /** Fast-DAS input timeline for the Hz-invariance gate. */
-  fastTimeline: string;
+  /**
+   * Input timeline used to value combos. Permissive enough to value the
+   * intended placements; tuck/spin capability is granted (not gated) in v2, so
+   * combos the engine cannot reach under this timeline are simply skipped.
+   */
+  valuationTimeline: string;
+  /**
+   * Near-duplicate threshold (#40): reject a candidate whose `(piece1, piece2)`
+   * match and whose board is within this many differing cells of an already
+   * accepted puzzle.
+   */
+  dedupMaxHamming: number;
 }
 
 export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
   topK: 30,
-  // Calibrated against the live engine on geometric-prefilter survivors: the
-  // min-over-7-pieces eval is harsh (the worst piece often forces a hole), so
-  // values run negative even on clean boards (median ≈ -40). A moderate floor of
-  // -30 keeps ~45% of clean boards — protects yield while gating the worst
-  // surfaces. Tune with --floor.
-  healthFloor: -30,
-  // Holes ≤ 4 / bumpiness ≤ 32 makes starting boards visibly cleaner than the
-  // pre-#33 bank (whose holes ran a median of 8, up to 47).
+  // Relaxed to fairness/garbage-only (#40): boardHealth returns -Infinity only
+  // when some piece has no legal placement (an unfair board); a finite floor far
+  // below any real eval keeps every playable board and rejects only that garbage.
+  healthFloor: -1_000_000,
+  // Holes ≤ 4 / bumpiness ≤ 32 keeps starting boards visibly clean.
   maxHoles: 4,
   maxBumpiness: 32,
-  slowTimeline: 'X.....',
-  fastTimeline: 'X.',
+  // Slow-tap timeline, proven against the live engine for hard-drop placements.
+  // Tuck valuation against the live engine is the E smoke-test de-risk item; this
+  // is configurable so a more permissive timeline can be tuned in there.
+  valuationTimeline: 'X.....',
+  dedupMaxHamming: 4,
 };
 
 /** Outcome of trying to assemble a puzzle from one candidate. */
 export type AssemblyResult = { ok: true; puzzle: NewPuzzle } | { ok: false; reason: string };
 
 /**
- * Build a stored puzzle from a candidate, or reject it with a reason (#33).
- * Fail-fast order: a cheap geometric pre-filter, then the board-health floor
- * (engine, piece-independent), then the full combo cross-product sweep, then the
- * Hz-invariance gate (the best combo must be identical slow-tap and fast-DAS).
- * Survivors store the normalized top-K combo table; the optimal line is the
- * rank-1 combo (so it scores 100, consistent with combo-threshold grading #34).
+ * Build a stored puzzle from a candidate, or reject it with a reason (#40).
+ * Fail-fast order: a cheap geometric pre-filter, then the relaxed board-health
+ * (fairness) floor, then the full reachability-based combo cross-product sweep,
+ * then a reachability guard on the rank-1 combo (the narrowed Hz check — tuck
+ * capability is granted, so the surviving requirement is that the optimal is a
+ * genuinely reachable placement). Survivors store the normalized top-K combo
+ * table (with outcome `boardKey`s), difficulty + seed rating, and the optimal
+ * line derived from the rank-1 combo.
  */
 export async function assemblePuzzle(
   engine: GeneratorEngine,
@@ -88,30 +113,36 @@ export async function assemblePuzzle(
     return { ok: false, reason: 'geometry-prefilter' };
   }
 
-  // 2. Board-health floor (engine, piece-independent).
-  const health = await boardHealth(engine, board, level, lines, config.slowTimeline);
+  // 2. Relaxed board-health (fairness) floor (engine, piece-independent).
+  const health = await boardHealth(engine, board, level, lines, config.valuationTimeline);
   if (health < config.healthFloor) return { ok: false, reason: 'board-health-floor' };
 
   const ctx: ComboContext = { board, piece1: currentPiece, piece2: nextPiece, level, lines };
 
-  // 3. Full cross-product combo sweep at the slow timeline.
-  const slow = await sweepCombos(engine, ctx, config.slowTimeline);
-  if (slow.length === 0) return { ok: false, reason: 'no-rateable-combos' };
+  // 3. Full cross-product combo sweep over all reachable resting placements.
+  const combos = await sweepCombos(engine, ctx, config.valuationTimeline);
+  if (combos.length === 0) return { ok: false, reason: 'no-rateable-combos' };
 
-  // 4. Hz-invariance, retargeted to the best combo: re-value the stored top-K at
-  //    the fast timeline; the rank-1 combo must still be best (and reachable).
-  const fast = await rerankAt(engine, ctx, slow.slice(0, config.topK), config.fastTimeline);
-  if (fast.length === 0 || !combosEqual(slow[0], fast[0])) {
-    return { ok: false, reason: 'best-combo-speed-variant' };
-  }
+  const best = combos[0];
 
-  // 5. Normalize to 0–100, keep the top-K, and derive the optimal line from the
-  //    rank-1 combo (board2 is the board after both rank-1 placements).
-  const combos = normalizeCombos(slow, config.topK);
-  const best = slow[0];
+  // 4. Narrowed Hz-invariance: the stored optimal must be a genuinely reachable
+  //    resting placement (tuck capability granted, not gated — #40). Both pieces
+  //    must be reachable: piece 1 on the start board, piece 2 on the board after
+  //    the rank-1 first placement.
+  const boardAfter1 = applyRestingPlacement(board, currentPiece, best.p1);
+  const reachable =
+    isReachablePlacement(board, currentPiece, best.p1) &&
+    isReachablePlacement(boardAfter1, nextPiece, best.p2);
+  if (!reachable) return { ok: false, reason: 'optimal-unreachable' };
+
+  // 5. Normalize to 0–100, derive difficulty + seed rating, and build the table.
+  const scores = normalizedScores(combos);
+  const difficulty = difficultyFromScores(scores);
+  const seed = seedRatingFor(difficulty);
+  const table = normalizeCombos(combos, config.topK);
   const optimalLine: Line = [
-    { rotation: best.rot1, col: best.col1 },
-    { rotation: best.rot2, col: best.col2 },
+    { rotation: best.p1.rotation, col: best.p1.col },
+    { rotation: best.p2.rotation, col: best.p2.col },
   ];
 
   return {
@@ -123,7 +154,10 @@ export async function assemblePuzzle(
       optimalLine,
       optimalMetrics: boardMetrics(best.board2),
       colors: encodeColors(candidate.colors),
-      combos,
+      combos: table,
+      acceptCount: difficulty.acceptCount,
+      margin: difficulty.margin,
+      glicko: { rating: seed },
     },
   };
 }
@@ -133,6 +167,12 @@ export interface GenerateBankDeps {
   source: BoardSource;
   engine: GeneratorEngine;
   db: Pick<DataAccess, 'insertPuzzles'> & Partial<Pick<DataAccess, 'deleteAllPuzzles'>>;
+  /**
+   * Optional existing-bank dedup keys (#40): a candidate near-identical to one of
+   * these is rejected. For a full-replace regen the bank is wiped, so this is
+   * usually empty; appends pass the current bank's keys.
+   */
+  existingKeys?: BankKey[];
 }
 
 /** Options controlling a bank-generation run. */
@@ -167,8 +207,9 @@ export interface BankResult {
 /**
  * Run candidates from `source` through the pipeline until `targetCount`
  * survivors are assembled or `maxCandidates` are exhausted, then write the
- * survivors to the bank in one batch. Returns a summary including rejection
- * reasons (the substrate for tuning the gates).
+ * survivors to the bank in one batch. A near-duplicate of an already-accepted
+ * survivor (or of the existing bank) is rejected (#40). Returns a summary
+ * including rejection reasons (the substrate for tuning the gates).
  */
 export async function generateBank(
   deps: GenerateBankDeps,
@@ -178,6 +219,8 @@ export async function generateBank(
   const onProgress = options.onProgress ?? (() => {});
   const survivors: NewPuzzle[] = [];
   const rejections: Record<string, number> = {};
+  // Dedup keys: the existing bank plus every survivor accepted so far.
+  const acceptedKeys: BankKey[] = [...(deps.existingKeys ?? [])];
   let candidatesTried = 0;
 
   while (survivors.length < options.targetCount && candidatesTried < options.maxCandidates) {
@@ -186,14 +229,26 @@ export async function generateBank(
     candidatesTried++;
 
     const result = await assemblePuzzle(deps.engine, candidate, config);
-    if (result.ok) {
-      survivors.push(result.puzzle);
-      onProgress(
-        `accepted ${survivors.length}/${options.targetCount} (after ${candidatesTried} tried)`,
-      );
-    } else {
+    if (!result.ok) {
       rejections[result.reason] = (rejections[result.reason] ?? 0) + 1;
+      continue;
     }
+
+    const key: BankKey = {
+      piece1: candidate.currentPiece,
+      piece2: candidate.nextPiece,
+      board: candidate.board,
+    };
+    if (isNearDuplicate(key, acceptedKeys, config.dedupMaxHamming)) {
+      rejections['duplicate'] = (rejections['duplicate'] ?? 0) + 1;
+      continue;
+    }
+
+    survivors.push(result.puzzle);
+    acceptedKeys.push(key);
+    onProgress(
+      `accepted ${survivors.length}/${options.targetCount} (after ${candidatesTried} tried)`,
+    );
   }
 
   if (options.replace) {

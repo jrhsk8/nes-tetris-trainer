@@ -30,8 +30,47 @@ import {
   type Placement,
 } from '@trainer/core';
 import type { MoveQuery, EngineMove } from '../engine/client.js';
-import { toPlacement } from '../pipeline/placement.js';
 import type { BoardSource, Candidate } from './board-source.js';
+
+/** True if two grids have identical dimensions and cells. */
+export function gridsEqual(a: Grid, b: Grid): boolean {
+  if (a.length !== b.length) return false;
+  for (let row = 0; row < a.length; row++) {
+    if (a[row].length !== b[row].length) return false;
+    for (let col = 0; col < a[row].length; col++) {
+      if (a[row][col] !== b[row][col]) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Recover the hard-drop `(rotation, col)` placement of `piece` on `before` that
+ * yields exactly `after` (the engine's resulting board, line clears included),
+ * or `null` if no single hard-drop placement reproduces it.
+ *
+ * Self-play only — it converts StackRabbit's resulting board back into OUR
+ * placement coordinates so the colour grid can be tracked in lock-step (the
+ * engine returns only hard-drop moves during candidate generation). Play-time
+ * grading no longer recovers placements this way: it matches by the canonical
+ * resulting-board key instead (#42), which is why the old play-facing
+ * `pipeline/placement.ts` `toPlacement` was removed (#40).
+ */
+export function toHardDropPlacement(before: Grid, piece: Piece, after: Grid): Placement | null {
+  const rotations = ORIENTATIONS[piece].length;
+  for (let rotation = 0; rotation < rotations; rotation++) {
+    for (let col = 0; col < COLS; col++) {
+      let result: Grid;
+      try {
+        result = applyPlacement(before, piece, { rotation, col });
+      } catch {
+        continue; // illegal placement at this (rotation, col)
+      }
+      if (gridsEqual(result, after)) return { rotation, col };
+    }
+  }
+  return null;
+}
 
 /** The slice of the engine client self-play needs (a best-move oracle). */
 export interface MoveEngine {
@@ -140,7 +179,7 @@ export class SelfPlayBoardSource implements BoardSource {
           lines,
           inputFrameTimeline,
         });
-        if (move) placement = toPlacement(board, current, move.board);
+        if (move) placement = toHardDropPlacement(board, current, move.board);
       }
       if (!placement) {
         placement = this.randomLegalMove(board, current);
