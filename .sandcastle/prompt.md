@@ -28,19 +28,18 @@ treat the issues that need them as blocked.
 
 ## Run scope (this run)
 
-This is the **2026-06-21 post-v2 QA batch** — four issues filed from live QA after the v2 overhaul shipped and deployed (origin/main = `c6ab4a3`). All prior batches (#1–#46, including the v2 set #37–#45) are **closed**. Per-issue detail is in each issue body above and `docs/decisions.md`; there is no separate handoff file for this batch.
+This is the **2026-06-21 consensus-bank batch** — three issues (#51–#53) from a `/grill-with-docs` design session that followed the BetaTetris cross-check spike. They move the bank toward *quality-graded rating + difficulty-by-tightness + a deeper-confirmed optimal*. Rationale: `docs/decisions.md` (2026-06-21 — Consensus bank) + `FINDINGS-betatetris-spike.md`. All prior batches (#1–#50) are **closed**.
 
-- **Issues (this batch):**
-  - **#48** `[play]` — the positioning ("ghost") piece is drawn at `opacity: 0.5` and still reads as locked; make it unmistakably "not placed yet" (hollow/outlined and/or lower opacity), kept colour-coded by piece and visually distinct from the gold feedback highlight. Pure presentational, in `Board.tsx`'s `ghost` branch; no logic change.
-  - **#49** `[play]` — give each puzzle a stable human `number` (additive `puzzles.number` column + a deterministic `created_at`-order backfill; sequence continues for new puzzles), show it as a title ("Puzzle #123"), and add a copy-link `?puzzle=N` share that loads/plays that exact puzzle (bypassing matchmaking), respecting the `/nes-tetris-trainer/` base.
-  - **#50** `[generator]` — on a minority of puzzles the rank-1 / "optimal" combo is a tower or holey board ranked #1 over a strictly cleaner line. Add an **outcome quality gate** (reject a candidate puzzle whose rank-1 board is Pareto-dominated by another swept combo), a value sanity check (a holier/taller board must never outrank a cleaner one from the same start), and re-tighten the #40 board-health floor.
-  - **#47** `[core/generator]` — the 0–100 combo **score** is min-max-anchored to the *worst legal* combo, which compresses mediocre answers into the 90s (so ~96 still passes). Re-anchor to **gap-from-best**; the first task is to pick the margin from **sampled real eval gaps**, not a guess.
-- **No hard `Blocked by` deps** — work them in the priority order below (the bugs #50/#47 come before the polish #48/#49 per the priority rules).
-- **Bank regen — ⚠️ #47 AND #50 each regenerate the whole bank's `combos`.** **Back up first** (`create table if not exists puzzles_bak_<date> as select * from puzzles`). Regen is additive: it rewrites `combos`/scores, never puzzle identity or `boardKey`s. If both issues are worked in the same launch, the **later regen incorporates both fixes** — that is expected; do not skip either issue's regen. The live bank is currently **296** (13 egregious bad-rank-1 puzzles were already quarantined to `puzzles_quarantine_20260621`); the #50 regen restores the count to ~309. **Do NOT drop any `*_bak_*` or `*_quarantine_*` table.**
-- **#49's migration is additive** — `add column if not exists` + a guarded, idempotent backfill; re-running `schema.sql` stays safe.
+- **Issues (this batch — work top-to-bottom):**
+  - **#51** `[play]` — graded reward curve: replace the binary `solved?0:1` Glicko outcome with a quality-graded `scoreToOutcome(score)` (95 = neutral, convex up to 100, steep-below to a 0.10 floor) in `packages/rating` (live + offline `tally.ts`); persist a numeric `attempts.score` (additive migration); the play UI shows graded credit. Detail in the issue body.
+  - **#52** `[generator]` — enforce difficulty bands by measured `acceptCount` (hard = ≤ ~2 acceptable answers); generation deliberately spans easy→hard. Reshapes the bank → **regen**.
+  - **#53** `[generator]` — deeper-StackRabbit best-confirm gate (`playoutCount>0`) that re-ranks/rejects eval-only-quirk optimals. Reshapes the bank → **regen**.
+- **⚠️ #54 `[supervised]` is NOT for this run — SKIP IT.** It needs the offline BetaTetris build, which is not provisioned in this sandbox. Do not attempt it and do not comment-and-move-on past it as "blocked" — just leave it open for a supervised session. (It appears in the open-issues list above; ignore it entirely.)
+- **Bank regen — #52 AND #53 reshape which candidates survive + `combos`/difficulty.** **Back up first** (`create table if not exists puzzles_bak_<date> as select * from puzzles`). Regen is additive in form — `boardKey`s and placements are unchanged; only which candidates survive + their scores/difficulty change. If both run in one launch, the later regen incorporates both. The live bank is currently **309**. **Do NOT drop any `*_bak_*` or `*_quarantine_*` table.**
+- **#51's migration is additive** — `alter table public.attempts add column if not exists score double precision`; re-running `schema.sql` stays safe.
 - **Engine stays OFFLINE / generator-only** (StackRabbit at `$STACKRABBIT_URL`); never call it from the play app. Supabase **anonymous sign-ins are ENABLED** (not a blocker).
 - **Do NOT deploy, push, or host.** The push + GitHub Pages redeploy stay a manual step after this run.
-- When #47–#50 are all closed (the open-issues block above is empty), output the completion signal.
+- When **#51–#53** are all closed, output the completion signal — the still-open supervised **#54** is **not** remaining work; do not let it block completion.
 
 # Task
 
