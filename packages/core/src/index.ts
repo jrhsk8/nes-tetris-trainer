@@ -32,3 +32,6 @@ export type { BoardMetrics } from './metrics.js';
 
 export { gradeAttempt } from './checker.js';
 export type { Line, AttemptResult } from './checker.js';
+
+export { gradeCombo, CORRECT_SCORE_THRESHOLD } from './combo.js';
+export type { ComboEntry, ComboTable, ComboResult } from './combo.js';

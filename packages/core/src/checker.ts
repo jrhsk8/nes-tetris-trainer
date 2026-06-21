@@ -40,6 +40,10 @@ function placementsEqual(a: Placement, b: Placement): boolean {
  * Grade a player's `user` line against the stored `optimal` line using the
  * exact-match, whole-line rule. A wrong first move ends the puzzle and leaves
  * the second move ungraded (`secondCorrect: false`).
+ *
+ * @deprecated Superseded by combo-threshold grading ({@link gradeCombo}, #34).
+ * Still used by the play session until the state machine is reworked to place
+ * both pieces always (#35); removed then.
  */
 export function gradeAttempt(optimal: Line, user: Line): AttemptResult {
   const firstCorrect = placementsEqual(optimal[0], user[0]);

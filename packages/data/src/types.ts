@@ -8,6 +8,11 @@ import type { Line } from '@trainer/core';
 import type { BoardMetrics } from '@trainer/core';
 import type { Piece } from '@trainer/core';
 import type { Placement } from '@trainer/core';
+import type { ComboTable } from '@trainer/core';
+
+// The combo model is shared puzzle logic, so it lives in @trainer/core (#34);
+// re-exported here for data-layer consumers that import it from @trainer/data.
+export type { ComboEntry, ComboTable } from '@trainer/core';
 
 /** Glicko-2 rating triple carried by both players and puzzles. */
 export interface Glicko {
@@ -30,35 +35,6 @@ export interface PlacementValue {
   rotation: number;
   col: number;
   value: number;
-}
-
-/**
- * One ranked two-piece combo (#33): the placement of piece 1 (`rot1`/`col1`)
- * and piece 2 (`rot2`/`col2`), both in the app's placement coordinates (the same
- * as {@link Line} entries), with a field-normalized 0–100 `score` (best combo on
- * the puzzle = 100, worst legal = 0). Higher is better.
- */
-export interface ComboEntry {
-  rot1: number;
-  col1: number;
-  rot2: number;
-  col2: number;
-  score: number;
-}
-
-/**
- * A puzzle's stored combo table (#33): the top-K ranked two-piece combos sorted
- * by `score` descending (rank-1 first, scoring 100), plus the total number of
- * ranked (legal, engine-valued) combos the generator found — so the play app can
- * report a player's exact rank or "too low to rank" when their combo falls
- * beyond the stored top-K. Combo-threshold grading (#34) reads this; no engine
- * runs at play time.
- */
-export interface ComboTable {
-  /** The top-K combos, best-first (rank 1 = index 0). */
-  entries: ComboEntry[];
-  /** Total ranked combos found at generation (≥ `entries.length`). */
-  total: number;
 }
 
 /** A stored puzzle: everything the play app needs with no engine at runtime. */
