@@ -1,6 +1,6 @@
 # FINDINGS — BetaTetris cross-check feasibility spike
 
-> Verdict on `HANDOFF-betatetris-spike.md`. **Outcome: NO-GO on a BetaTetris-based
+> Verdict of the BetaTetris cross-check feasibility spike. **Outcome: NO-GO on a BetaTetris-based
 > gate — but the spike delivered its real prize: an independent strong engine
 > *corroborates the #50 fix*.** Run supervised on CPU in WSL; no GPU, no production
 > change. Adapter scripts: `betatetris-spike/` (throwaway; depend on the external
