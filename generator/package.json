@@ -6,11 +6,16 @@
   "scripts": {
     "start": "tsx src/main.ts",
     "tally": "tsx src/tally.ts",
+    "submit": "tsx src/submit.ts",
     "typecheck": "tsc --build"
   },
   "dependencies": {
     "@trainer/core": "*",
     "@trainer/data": "*",
-    "@trainer/rating": "*"
+    "@trainer/rating": "*",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5"
   }
 }

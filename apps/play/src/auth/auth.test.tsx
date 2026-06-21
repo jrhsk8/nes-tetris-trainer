@@ -132,6 +132,18 @@ describe('Account', () => {
       async upsertUserPrefs(p: { userId: string; bindings: Record<string, string> }) {
         return p;
       },
+      async uploadSubmissionImage() {},
+      async insertSubmission(s: { imagePath: string; submitter: string }) {
+        return {
+          id: 'sub-1',
+          imagePath: s.imagePath,
+          submitter: s.submitter,
+          status: 'pending' as const,
+          reason: null,
+          parsed: null,
+          createdAt: '2026-06-21T00:00:00Z',
+        };
+      },
     };
 
     render(<Account db={db} user={{ id: 'u1', email: 'me@example.com' }} auth={auth} />);

@@ -14,6 +14,8 @@ const db = configured ? createDataAccess(createSupabaseClient(url!, serviceKey!)
 // Track rows we create so we can clean up regardless of assertion outcomes.
 const createdPuzzleIds: string[] = [];
 const createdUserIds: string[] = [];
+const createdSubmissionIds: string[] = [];
+const createdStoragePaths: string[] = [];
 
 afterAll(async () => {
   if (!configured) return;
@@ -25,6 +27,12 @@ afterAll(async () => {
   for (const id of createdUserIds) {
     await client.from('user_ratings').delete().eq('user_id', id);
     await client.from('user_prefs').delete().eq('user_id', id);
+  }
+  for (const id of createdSubmissionIds) {
+    await client.from('submissions').delete().eq('id', id);
+  }
+  if (createdStoragePaths.length) {
+    await client.storage.from('submissions').remove(createdStoragePaths);
   }
 });
 
@@ -164,6 +172,35 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(history[0].puzzleId).toBe(puzzle.id);
     expect(history[0].difficulty).toBe(1623);
     expect(history[0].solved).toBe(false);
+  });
+
+  it('uploads a submission image and enqueues + processes a submission (#45)', async () => {
+    const submitter = crypto.randomUUID();
+    const path = `${submitter}/${crypto.randomUUID()}.png`;
+    createdStoragePaths.push(path);
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+
+    // Client side: upload the image, then enqueue the pending row.
+    await db!.uploadSubmissionImage(path, bytes);
+    const enqueued = await db!.insertSubmission({ imagePath: path, submitter });
+    createdSubmissionIds.push(enqueued.id);
+    expect(enqueued.status).toBe('pending');
+    expect(enqueued.imagePath).toBe(path);
+
+    // Offline side: it shows up in the pending queue and the image reads back.
+    const pending = await db!.listPendingSubmissions();
+    expect(pending.some((s) => s.id === enqueued.id)).toBe(true);
+    const downloaded = await db!.downloadSubmissionImage(path);
+    expect(Array.from(downloaded)).toEqual(Array.from(bytes));
+
+    // Status flips to banked with a parsed result attached.
+    await db!.updateSubmission(enqueued.id, {
+      status: 'banked',
+      reason: null,
+      parsed: { puzzleId: 'p-1' },
+    });
+    const afterPending = await db!.listPendingSubmissions();
+    expect(afterPending.some((s) => s.id === enqueued.id)).toBe(false);
   });
 
   it('round-trips user prefs (key bindings) via upsert and read', async () => {

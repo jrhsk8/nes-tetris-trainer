@@ -14,8 +14,12 @@ import type {
   Glicko,
   NewAttempt,
   NewPuzzle,
+  NewSubmission,
   Puzzle,
   PuzzleRow,
+  Submission,
+  SubmissionRow,
+  SubmissionStatus,
   UserPrefs,
   UserPrefsRow,
   UserRating,
@@ -94,6 +98,21 @@ function rowToUserPrefs(row: UserPrefsRow): UserPrefs {
   return { userId: row.user_id, bindings: row.bindings };
 }
 
+function rowToSubmission(row: SubmissionRow): Submission {
+  return {
+    id: row.id,
+    imagePath: row.image_path,
+    submitter: row.submitter,
+    status: row.status,
+    reason: row.reason,
+    parsed: row.parsed,
+    createdAt: row.created_at,
+  };
+}
+
+/** The Storage bucket holding uploaded submission screenshots (#45). */
+export const SUBMISSIONS_BUCKET = 'submissions';
+
 /** The data-access surface shared by the play app and the generator. */
 export interface DataAccess {
   getPuzzle(id: string): Promise<Puzzle | null>;
@@ -118,6 +137,19 @@ export interface DataAccess {
   getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]>;
   getUserPrefs(userId: string): Promise<UserPrefs | null>;
   upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs>;
+  /** Upload a submission screenshot to Storage (client, #45). */
+  uploadSubmissionImage(path: string, bytes: Uint8Array, contentType?: string): Promise<void>;
+  /** Download a submission screenshot from Storage (offline pipeline, #45). */
+  downloadSubmissionImage(path: string): Promise<Uint8Array>;
+  /** Enqueue a screenshot submission as `pending` (client, #45). */
+  insertSubmission(submission: NewSubmission): Promise<Submission>;
+  /** Every `pending` submission, oldest first (offline pipeline, #45). */
+  listPendingSubmissions(): Promise<Submission[]>;
+  /** Flip a submission's status, attaching a reason and/or parsed result (#45). */
+  updateSubmission(
+    id: string,
+    patch: { status: SubmissionStatus; reason?: string | null; parsed?: unknown },
+  ): Promise<void>;
 }
 
 function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
@@ -334,6 +366,58 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return rowToUserPrefs(data as UserPrefsRow);
   }
 
+  async function uploadSubmissionImage(
+    path: string,
+    bytes: Uint8Array,
+    contentType = 'image/png',
+  ): Promise<void> {
+    const { error } = await client.storage
+      .from(SUBMISSIONS_BUCKET)
+      .upload(path, bytes, { contentType, upsert: false });
+    if (error) throw new Error(`uploadSubmissionImage failed: ${error.message}`);
+  }
+
+  async function downloadSubmissionImage(path: string): Promise<Uint8Array> {
+    const { data, error } = await client.storage.from(SUBMISSIONS_BUCKET).download(path);
+    if (error || !data) throw new Error(`downloadSubmissionImage failed: ${error?.message}`);
+    return new Uint8Array(await data.arrayBuffer());
+  }
+
+  async function insertSubmission(submission: NewSubmission): Promise<Submission> {
+    const { data, error } = await client
+      .from('submissions')
+      .insert({
+        image_path: submission.imagePath,
+        submitter: submission.submitter,
+        status: 'pending',
+      })
+      .select('*')
+      .single();
+    if (error) throw new Error(`insertSubmission failed: ${error.message}`);
+    return rowToSubmission(data as SubmissionRow);
+  }
+
+  async function listPendingSubmissions(): Promise<Submission[]> {
+    const { data, error } = await client
+      .from('submissions')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(`listPendingSubmissions failed: ${error.message}`);
+    return (data ?? []).map((row) => rowToSubmission(row as SubmissionRow));
+  }
+
+  async function updateSubmission(
+    id: string,
+    patch: { status: SubmissionStatus; reason?: string | null; parsed?: unknown },
+  ): Promise<void> {
+    const row: Record<string, unknown> = { status: patch.status };
+    if (patch.reason !== undefined) row.reason = patch.reason;
+    if (patch.parsed !== undefined) row.parsed = patch.parsed;
+    const { error } = await client.from('submissions').update(row).eq('id', id);
+    if (error) throw new Error(`updateSubmission failed: ${error.message}`);
+  }
+
   return {
     getPuzzle,
     getRandomPuzzle,
@@ -352,5 +436,10 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     getUserAttemptHistory,
     getUserPrefs,
     upsertUserPrefs,
+    uploadSubmissionImage,
+    downloadSubmissionImage,
+    insertSubmission,
+    listPendingSubmissions,
+    updateSubmission,
   };
 }

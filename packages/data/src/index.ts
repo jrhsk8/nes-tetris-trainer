@@ -9,6 +9,7 @@ export {
   SEED_RATING,
   SEED_DEVIATION,
   SEED_VOLATILITY,
+  SUBMISSIONS_BUCKET,
 } from './data-access.js';
 export type { DataAccess } from './data-access.js';
 export type {

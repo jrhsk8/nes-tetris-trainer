@@ -18,6 +18,7 @@ import { seedRating } from '@trainer/rating';
 import { PuzzlePlay, type PlayDb } from '../session/index.js';
 import { Controls } from '../controls/index.js';
 import { History } from '../history/index.js';
+import { SubmitScreenshot } from '../submit/index.js';
 import { DEFAULT_BINDINGS, sanitizeBindings, type KeyBindings } from '../board/keybindings.js';
 import { WORDMARK } from '../branding.js';
 import type { AuthApi, AuthUser } from './auth.js';
@@ -27,7 +28,13 @@ import { RatingHistory } from './RatingHistory.js';
 export type AccountDb = PlayDb &
   Pick<
     DataAccess,
-    'getUserAttempts' | 'getUserAttemptHistory' | 'getPuzzle' | 'getUserPrefs' | 'upsertUserPrefs'
+    | 'getUserAttempts'
+    | 'getUserAttemptHistory'
+    | 'getPuzzle'
+    | 'getUserPrefs'
+    | 'upsertUserPrefs'
+    | 'uploadSubmissionImage'
+    | 'insertSubmission'
   >;
 
 export interface AccountProps {
@@ -36,12 +43,13 @@ export interface AccountProps {
   auth: AuthApi;
 }
 
-type View = 'play' | 'history' | 'controls';
+type View = 'play' | 'history' | 'controls' | 'submit';
 
 const NAV: { view: View; label: string }[] = [
   { view: 'play', label: 'Play' },
   { view: 'history', label: 'History' },
   { view: 'controls', label: 'Controls' },
+  { view: 'submit', label: 'Submit' },
 ];
 
 export function Account({ db, user, auth }: AccountProps) {
@@ -131,8 +139,10 @@ export function Account({ db, user, auth }: AccountProps) {
         </div>
       ) : view === 'history' ? (
         <History db={db} userId={user.id} />
-      ) : (
+      ) : view === 'controls' ? (
         <Controls bindings={bindings} onChange={changeBindings} />
+      ) : (
+        <SubmitScreenshot db={db} userId={user.id} />
       )}
     </div>
   );

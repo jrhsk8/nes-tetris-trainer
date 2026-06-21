@@ -52,6 +52,18 @@ function prefsDb(initial: UserPrefs | null, upserts: UserPrefs[]): AccountDb {
       upserts.push(p);
       return p;
     },
+    async uploadSubmissionImage() {},
+    async insertSubmission(s) {
+      return {
+        id: 'sub-1',
+        imagePath: s.imagePath,
+        submitter: s.submitter,
+        status: 'pending',
+        reason: null,
+        parsed: null,
+        createdAt: '2026-06-21T00:00:00Z',
+      };
+    },
   };
 }
 
