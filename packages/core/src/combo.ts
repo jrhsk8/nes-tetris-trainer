@@ -27,6 +27,14 @@ export interface ComboEntry {
   rot2: number;
   col2: number;
   score: number;
+  /**
+   * Canonical outcome key (see @trainer/core `boardKey`): the resulting locked
+   * cells after BOTH placements, as the 200-char board string. Populated by the
+   * v2 regen (#40/#41); the matcher (#42) grades by this so tucks/spins and
+   * rotation-numbering differences match by where the pieces rest. Optional for
+   * legacy combo rows generated before the v2 regen.
+   */
+  boardKey?: string;
 }
 
 /**

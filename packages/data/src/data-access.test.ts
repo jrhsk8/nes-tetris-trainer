@@ -37,10 +37,11 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
   it('round-trips a puzzle: insert then read back by id', async () => {
     const board = encodeBoard(emptyBoard());
     const colors = '1'.repeat(200);
+    // A combo entry carries the v2 canonical boardKey (#38/#42).
     const combos = {
       entries: [
-        { rot1: 0, col1: 0, rot2: 1, col2: 3, score: 100 },
-        { rot1: 0, col1: 1, rot2: 0, col2: 4, score: 62.5 },
+        { rot1: 0, col1: 0, rot2: 1, col2: 3, score: 100, boardKey: '1'.repeat(200) },
+        { rot1: 0, col1: 1, rot2: 0, col2: 4, score: 62.5, boardKey: '0'.repeat(200) },
       ],
       total: 17,
     };
@@ -52,6 +53,8 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
       optimalMetrics: boardMetrics(emptyBoard()),
       colors,
       combos,
+      acceptCount: 4,
+      margin: 12.5,
     });
     createdPuzzleIds.push(inserted.id);
 
@@ -63,9 +66,28 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(fetched!.piece1).toBe('T');
     expect(fetched!.optimalLine).toEqual(sampleLine);
     expect(fetched!.optimalMetrics.holes).toBe(0);
-    // The colour grid and combo table (#28/#33) round-trip intact.
+    // The colour grid and combo table (#28/#33) round-trip intact, including the
+    // v2 boardKey on each entry (#38).
     expect(fetched!.colors).toBe(colors);
     expect(fetched!.combos).toEqual(combos);
+    // The v2 difficulty columns (#38) round-trip.
+    expect(fetched!.acceptCount).toBe(4);
+    expect(fetched!.margin).toBe(12.5);
+  });
+
+  it('defaults the v2 difficulty columns to null for a puzzle without them', async () => {
+    const puzzle = await db!.insertPuzzle({
+      board: encodeBoard(emptyBoard()),
+      piece1: 'J',
+      piece2: 'T',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+    });
+    createdPuzzleIds.push(puzzle.id);
+
+    const fetched = await db!.getPuzzle(puzzle.id);
+    expect(fetched!.acceptCount).toBeNull();
+    expect(fetched!.margin).toBeNull();
   });
 
   it('selects a random puzzle from the bank', async () => {

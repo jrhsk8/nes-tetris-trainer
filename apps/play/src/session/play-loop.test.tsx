@@ -25,6 +25,8 @@ function samplePuzzle(id: string): Puzzle {
     glicko: { rating: 1500, deviation: 350, volatility: 0.06 },
     colors: '',
     combos: { entries: [], total: 0 },
+    acceptCount: null,
+    margin: null,
     firstValues: [],
     secondValues: [],
   };

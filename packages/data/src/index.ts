@@ -27,4 +27,8 @@ export type {
   UserRatingRow,
   AttemptRow,
   UserPrefsRow,
+  Submission,
+  NewSubmission,
+  SubmissionStatus,
+  SubmissionRow,
 } from './types.js';

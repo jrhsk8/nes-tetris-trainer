@@ -64,6 +64,13 @@ export interface Puzzle {
    */
   combos: ComboTable;
   /**
+   * v2 difficulty (#40): the number of combos scoring ≥ 95 (the accept count)
+   * and the score `margin` between the best combo and the best below the accept
+   * threshold. Raw inputs to the seed rating; null for legacy pre-v2 rows.
+   */
+  acceptCount: number | null;
+  margin: number | null;
+  /**
    * @deprecated Superseded by {@link combos} (#33). Empty for combo-era puzzles.
    * Every legal placement of `piece1` with its engine value (#29).
    */
@@ -88,6 +95,9 @@ export interface NewPuzzle {
   colors?: string;
   /** The ranked two-piece combo table (#33); omitted for legacy rows. */
   combos?: ComboTable;
+  /** v2 difficulty inputs (#40): combos ≥ 95 count and the accept-threshold margin. */
+  acceptCount?: number;
+  margin?: number;
   /** @deprecated Value table for piece 1 (#29); no longer populated (#33). */
   firstValues?: PlacementValue[];
   /** @deprecated Value table for piece 2 (#29); no longer populated (#33). */
@@ -159,6 +169,10 @@ export interface PuzzleRow {
   colors: string | null;
   /** The ranked two-piece combo table (#33); null for legacy rows. */
   combos: ComboTable | null;
+  /** v2 difficulty (#40): combos ≥ 95 count; null for legacy rows. */
+  accept_count: number | null;
+  /** v2 difficulty (#40): accept-threshold score margin; null for legacy rows. */
+  margin: number | null;
   /** @deprecated Value table for piece 1 (#29); null for combo-era rows. */
   first_values: PlacementValue[] | null;
   /** @deprecated Value table for piece 2 (#29); null for combo-era rows. */
@@ -187,4 +201,41 @@ export interface UserPrefsRow {
   user_id: string;
   bindings: Record<string, string>;
   updated_at: string;
+}
+
+/**
+ * A queued screenshot submission (#45, v2 overhaul issue I). The play app
+ * uploads the image to Storage and inserts a `pending` row; the offline pipeline
+ * OCRs, solves, and flips the status to `banked` or `rejected` (with a reason).
+ */
+export type SubmissionStatus = 'pending' | 'banked' | 'rejected';
+
+export interface Submission {
+  id: string;
+  /** Storage object path of the uploaded screenshot. */
+  imagePath: string;
+  /** The submitter's user id (null for legacy/service inserts). */
+  submitter: string | null;
+  status: SubmissionStatus;
+  /** Rejection reason when `status` is `rejected`. */
+  reason: string | null;
+  /** The OCR/solve result the offline pipeline attached. */
+  parsed: unknown | null;
+  createdAt: string;
+}
+
+/** The fields needed to enqueue a submission from the client. */
+export interface NewSubmission {
+  imagePath: string;
+  submitter: string;
+}
+
+export interface SubmissionRow {
+  id: string;
+  image_path: string;
+  submitter: string | null;
+  status: SubmissionStatus;
+  reason: string | null;
+  parsed: unknown | null;
+  created_at: string;
 }
