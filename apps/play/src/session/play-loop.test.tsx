@@ -53,7 +53,13 @@ function countingDb(): { db: PlayDb; calls: () => number } {
       return rating;
     },
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
-      return { id: 'a1', createdAt: '2026-01-01T00:00:00Z', ratingAfter: null, ...attempt };
+      return {
+        id: 'a1',
+        createdAt: '2026-01-01T00:00:00Z',
+        ratingAfter: null,
+        ...attempt,
+        score: attempt.score ?? null,
+      };
     },
   };
   return { db, calls: () => n };

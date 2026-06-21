@@ -11,7 +11,7 @@
  */
 
 import { glicko2 } from 'glicko2-lite';
-import { seedRating, GLICKO_TAU } from './glicko.js';
+import { seedRating, GLICKO_TAU, attemptOutcome } from './glicko.js';
 import type { Glicko } from '@trainer/data';
 
 /** One game in a rating period, scored from the subject's perspective. */
@@ -48,6 +48,12 @@ export interface TallyAttempt {
   puzzleId: string;
   userId: string;
   solved: boolean;
+  /**
+   * The attempt's 0–100 combo quality score (#51). Drives the graded rating
+   * outcome; `null`/absent (unranked combo or a legacy pre-#51 attempt) falls
+   * back to the binary `solved` signal — see {@link attemptOutcome}.
+   */
+  score?: number | null;
 }
 
 /**
@@ -74,8 +80,10 @@ export function tallyPuzzleRatings(
     if (!atts || atts.length === 0) continue;
     const matches: RatingPeriodMatch[] = atts.map((a) => ({
       opponent: userRatings.get(a.userId) ?? seedRating(),
-      // Puzzle perspective: the player solving is a loss for the puzzle.
-      score: a.solved ? 0 : 1,
+      // Puzzle perspective is the complement of the player's graded outcome: a
+      // strong solve (player ≈ 1) is a heavy puzzle loss (≈ 0), a near-miss is
+      // a partial result, a bad miss raises the puzzle.
+      score: 1 - attemptOutcome(a.score ?? null, a.solved),
     }));
     updated.set(puzzle.id, ratePeriod(puzzle.glicko, matches));
   }

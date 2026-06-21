@@ -32,7 +32,7 @@ import {
   type Placement,
 } from '@trainer/core';
 import type { DataAccess, Glicko, Puzzle } from '@trainer/data';
-import { applyAttempt, seedRating, updateRatings } from '@trainer/rating';
+import { applyAttempt, seedRating, updateRatings, attemptOutcome } from '@trainer/rating';
 import { PlacementInput } from '../board/PlacementInput.js';
 import { NextPieceBox } from '../board/NextPieceBox.js';
 import { DEFAULT_BINDINGS, type KeyBindings } from '../board/keybindings.js';
@@ -105,16 +105,20 @@ export function PuzzleSession({
   );
 
   const finish = useCallback(
-    async (userLine: Placement[], solved: boolean) => {
+    async (userLine: Placement[], solved: boolean, score: number | null) => {
       setPhase('grading');
+      // Graded reward (#51): the rating moves by answer quality, not pass/fail.
+      // An unranked combo (score null) falls back to the binary solved signal.
+      const outcome = attemptOutcome(score, solved);
       let rating: RatingChange;
       try {
-        const applied = await applyAttempt(db, userId, puzzle.glicko, solved);
+        const applied = await applyAttempt(db, userId, puzzle.glicko, outcome);
         await db.insertAttempt({
           userId,
           puzzleId: puzzle.id,
           userLine,
           solved,
+          score,
           ratingAfter: applied.after.rating,
         });
         rating = { before: applied.before, after: applied.after, delta: applied.delta };
@@ -124,7 +128,7 @@ export function PuzzleSession({
         // "rating never changes" bug. Surface it for diagnosis, then still show
         // the computed rating change so the loop stays playable.
         console.error('attempt/rating persistence failed:', err);
-        const update = updateRatings(seedRating(), puzzle.glicko, solved);
+        const update = updateRatings(seedRating(), puzzle.glicko, outcome);
         rating = {
           before: seedRating(),
           after: update.user,
@@ -154,7 +158,7 @@ export function PuzzleSession({
         line,
         comboOutcomeKey(board0, puzzle.piece1, puzzle.piece2, line),
       );
-      void finish([placement1!, p2], graded.correct);
+      void finish([placement1!, p2], graded.correct, graded.score);
     },
     [placement1, puzzle.combos, board0, puzzle.piece1, puzzle.piece2, finish],
   );

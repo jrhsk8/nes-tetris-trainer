@@ -126,6 +126,8 @@ export interface Attempt {
   puzzleId: string;
   userLine: readonly Placement[];
   solved: boolean;
+  /** The attempt's 0–100 combo quality score (#51); null for unranked/legacy. */
+  score: number | null;
   /** The player's rating immediately after this attempt (the trend point). */
   ratingAfter: number | null;
   createdAt: string;
@@ -155,6 +157,8 @@ export interface NewAttempt {
   puzzleId: string;
   userLine: readonly Placement[];
   solved: boolean;
+  /** The attempt's 0–100 combo quality score (#51); omit/null when unranked. */
+  score?: number | null;
   /** The player's rating after this attempt, for the rating history (#13). */
   ratingAfter?: number;
 }
@@ -202,6 +206,7 @@ export interface AttemptRow {
   puzzle_id: string;
   user_line: readonly Placement[];
   solved: boolean;
+  score: number | null;
   rating_after: number | null;
   created_at: string;
 }

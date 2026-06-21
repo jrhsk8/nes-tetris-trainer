@@ -20,6 +20,7 @@ function entry(over: Partial<AttemptHistoryEntry> & { id: string }): AttemptHist
     puzzleId: `p-${over.id}`,
     userLine: line,
     solved: false,
+    score: null,
     ratingAfter: 1500,
     createdAt: '2026-06-01T00:00:00.000Z',
     difficulty: 1500,

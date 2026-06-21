@@ -4,13 +4,19 @@ import { tallyBankRatings, type TallyDeps } from './tally.js';
 
 const seed = (): Glicko => ({ rating: 1500, deviation: 350, volatility: 0.06 });
 
-function attempt(puzzleId: string, userId: string, solved: boolean): Attempt {
+function attempt(
+  puzzleId: string,
+  userId: string,
+  solved: boolean,
+  score: number | null = null,
+): Attempt {
   return {
     id: `${puzzleId}-${userId}`,
     userId,
     puzzleId,
     userLine: [],
     solved,
+    score,
     ratingAfter: null,
     createdAt: '2026-06-21T00:00:00Z',
   };
@@ -72,5 +78,27 @@ describe('tallyBankRatings (offline puzzle-rating tally, #41)', () => {
     const result = await tallyBankRatings(deps);
     expect(result.updated).toBe(0);
     expect(writes.size).toBe(0);
+  });
+
+  it('consumes graded scores — a near-best solve drops a puzzle less than a perfect one', async () => {
+    const puzzles = [
+      { id: 'near', glicko: seed() },
+      { id: 'perfect', glicko: seed() },
+    ];
+    const users: UserRating[] = [
+      { userId: 'u1', ...seed() },
+      { userId: 'u2', ...seed() },
+    ];
+    // Same solved=true verdict, different quality: 97 (small) vs 100 (full).
+    const attempts = [
+      attempt('near', 'u1', true, 97),
+      attempt('near', 'u2', true, 97),
+      attempt('perfect', 'u1', true, 100),
+      attempt('perfect', 'u2', true, 100),
+    ];
+    const { deps, writes } = fakeDeps(puzzles, attempts, users);
+    await tallyBankRatings(deps);
+    // Both fall (they were solved), but the perfect-quality solves push harder.
+    expect(writes.get('perfect')!.rating).toBeLessThan(writes.get('near')!.rating);
   });
 });

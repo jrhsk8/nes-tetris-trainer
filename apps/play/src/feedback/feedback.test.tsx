@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyBoard, type ComboTable, type Grid, type Line } from '@trainer/core';
-import { Feedback } from './Feedback.js';
+import { Feedback, creditLabel } from './Feedback.js';
 
 afterEach(() => cleanup());
 
@@ -65,6 +65,29 @@ describe('Feedback verdict banner (#35)', () => {
     );
     expect(screen.getByTestId('verdict')).toHaveTextContent('Incorrect');
     expect(screen.getByTestId('verdict-score')).toHaveTextContent('Score 80');
+  });
+});
+
+describe('Feedback graded credit (#51)', () => {
+  it('labels a perfect answer as full credit', () => {
+    expect(creditLabel(100)).toBe('full credit');
+    expect(creditLabel(97)).toBe('small gain');
+    expect(creditLabel(95)).toBe('neutral');
+    expect(creditLabel(80)).toBe('heavily docked');
+    expect(creditLabel(null)).toBeNull();
+  });
+
+  it('shows the graded credit phrase next to the score', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+      />,
+    );
+    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Score 100 — full credit');
   });
 });
 

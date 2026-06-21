@@ -63,6 +63,7 @@ function fakeDb() {
         createdAt: '2026-01-01T00:00:00Z',
         ratingAfter: attempt.ratingAfter ?? null,
         ...attempt,
+        score: attempt.score ?? null,
       };
     },
   };

@@ -56,6 +56,7 @@ export async function tallyBankRatings(
     puzzleId: a.puzzleId,
     userId: a.userId,
     solved: a.solved,
+    score: a.score,
   }));
 
   const updated = tallyPuzzleRatings(puzzles, tallyAttempts, ratingByUser);

@@ -19,6 +19,49 @@ import {
 /** Glicko-2 system constant (tau) constraining volatility change. */
 export const GLICKO_TAU = 0.5;
 
+// --- Graded reward curve (#51) ---
+// The rating signal is the combo's 0–100 quality, not a binary pass/fail. The
+// curve is gentle above the accept bar (a near-best answer earns a little) and
+// steeper below it (a real miss is docked harder than a near-miss is rewarded),
+// floored so a single bad answer can't tank a rating. Knots are named constants
+// so the curve stays tunable. See docs/decisions.md (2026-06-21 — Consensus bank).
+
+/** Player-perspective Glicko outcome for a neutral answer (no rating change). */
+export const NEUTRAL_OUTCOME = 0.5;
+/** The accept-threshold score (combo ≥ this is a solve) — maps to neutral. */
+export const NEUTRAL_SCORE = 95;
+/** The best possible combo score (rank-1), mapping to a full win. */
+export const MAX_SCORE = 100;
+/** The lowest outcome a numerically-scored answer can earn (a bad-but-ranked miss). */
+export const OUTCOME_FLOOR = 0.1;
+/** Per-point dock applied to scores below the neutral bar. */
+export const BELOW_NEUTRAL_SLOPE = 0.0267;
+
+/**
+ * Map a combo's 0–100 quality `score` to the player-perspective Glicko outcome
+ * in `[OUTCOME_FLOOR, 1]` (the puzzle's perspective is `1 - outcome`):
+ * - **At the bar (95):** neutral (0.5) — no rating change.
+ * - **Above (convex up to 100):** `0.5 + 0.5·((score-95)/5)²` → 97≈0.58, 99≈0.82, 100=1.0.
+ * - **Below (steeper, floored):** `max(0.10, 0.5 − 0.0267·(95−score))` → 93≈0.45, ≤80→0.10.
+ */
+export function scoreToOutcome(score: number): number {
+  if (score >= NEUTRAL_SCORE) {
+    const t = Math.min((score - NEUTRAL_SCORE) / (MAX_SCORE - NEUTRAL_SCORE), 1);
+    return NEUTRAL_OUTCOME + NEUTRAL_OUTCOME * t * t;
+  }
+  return Math.max(OUTCOME_FLOOR, NEUTRAL_OUTCOME - BELOW_NEUTRAL_SLOPE * (NEUTRAL_SCORE - score));
+}
+
+/**
+ * The player-perspective outcome for one attempt. Uses the graded {@link
+ * scoreToOutcome} curve when a numeric combo `score` is known, and falls back to
+ * the binary `solved` signal when it is absent — i.e. an unranked combo
+ * (too-low-to-rank) or a legacy attempt recorded before scores were persisted.
+ */
+export function attemptOutcome(score: number | null, solved: boolean): number {
+  return score !== null ? scoreToOutcome(score) : solved ? 1 : 0;
+}
+
 /** New ratings for both sides after one attempt. */
 export interface RatingUpdate {
   /** The player's new rating. */
@@ -33,12 +76,14 @@ function toGlicko(result: { rating: number; rd: number; vol: number }): Glicko {
 
 /**
  * Pure co-rating update: treat the attempt as a single Glicko-2 match between
- * the player and the puzzle. `solved` is a player win (score 1) and a puzzle
- * loss; a failure is the reverse. Returns both sides' new ratings.
+ * the player and the puzzle. `outcome` is the player-perspective Glicko score in
+ * `[0,1]` (1 = full win, 0.5 = neutral, 0 = full loss — see {@link
+ * scoreToOutcome}); the puzzle plays the complement `1 - outcome`. Returns both
+ * sides' new ratings.
  */
-export function updateRatings(user: Glicko, puzzle: Glicko, solved: boolean): RatingUpdate {
-  const userScore = solved ? 1 : 0;
-  const puzzleScore = solved ? 0 : 1;
+export function updateRatings(user: Glicko, puzzle: Glicko, outcome: number): RatingUpdate {
+  const userScore = outcome;
+  const puzzleScore = 1 - outcome;
   const userResult = glicko2(
     user.rating,
     user.deviation,
@@ -76,22 +121,24 @@ export function seedRating(): Glicko {
 /**
  * Apply a graded attempt to the player's rating and persist it. Reads the
  * player's current rating (seeding it on first play), computes the co-rating
- * update against the puzzle's rating, writes the player's new rating, and
- * returns the change. The puzzle's drifted rating is computed and returned but
- * not yet persisted (deferred until there is enough traffic — PRD "Rating").
+ * update against the puzzle's rating for the given `outcome` (the player-
+ * perspective Glicko score in `[0,1]` — usually {@link scoreToOutcome} of the
+ * attempt's combo score), writes the player's new rating, and returns the
+ * change. The puzzle's drifted rating is computed and returned but not yet
+ * persisted (deferred until there is enough traffic — PRD "Rating").
  */
 export async function applyAttempt(
   db: Pick<DataAccess, 'getUserRating' | 'upsertUserRating'>,
   userId: string,
   puzzleRating: Glicko,
-  solved: boolean,
+  outcome: number,
 ): Promise<AttemptRatingResult> {
   const existing = await db.getUserRating(userId);
   const before: Glicko = existing
     ? { rating: existing.rating, deviation: existing.deviation, volatility: existing.volatility }
     : seedRating();
 
-  const update = updateRatings(before, puzzleRating, solved);
+  const update = updateRatings(before, puzzleRating, outcome);
   await db.upsertUserRating({ userId, ...update.user });
 
   return {

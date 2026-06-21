@@ -102,6 +102,8 @@ create table if not exists public.attempts (
   -- The line the player actually played: [{rotation,col},{rotation,col}].
   user_line jsonb not null,
   solved boolean not null,
+  -- The attempt's 0–100 combo quality score (#51); null for unranked/legacy rows.
+  score double precision,
   -- The player's rating immediately after this attempt (the trend substrate, #13).
   rating_after double precision,
   created_at timestamptz not null default now()
@@ -109,6 +111,8 @@ create table if not exists public.attempts (
 
 -- Backfill the column for databases created before #13.
 alter table public.attempts add column if not exists rating_after double precision;
+-- Backfill the graded-quality score column for databases created before #51.
+alter table public.attempts add column if not exists score double precision;
 
 create index if not exists attempts_user_id_idx on public.attempts (user_id);
 create index if not exists attempts_puzzle_id_idx on public.attempts (puzzle_id);

@@ -54,6 +54,7 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
         createdAt: '2026-01-01T00:00:00Z',
         ratingAfter: attempt.ratingAfter ?? null,
         ...attempt,
+        score: attempt.score ?? null,
       };
     },
   };
@@ -97,7 +98,13 @@ function trackingDb() {
       return rating;
     },
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
-      return { id: 'a1', createdAt: '2026-01-01T00:00:00Z', ratingAfter: null, ...attempt };
+      return {
+        id: 'a1',
+        createdAt: '2026-01-01T00:00:00Z',
+        ratingAfter: null,
+        ...attempt,
+        score: attempt.score ?? null,
+      };
     },
   };
   return { db, calls };

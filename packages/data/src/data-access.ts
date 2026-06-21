@@ -91,6 +91,7 @@ function rowToAttempt(row: AttemptRow): Attempt {
     puzzleId: row.puzzle_id,
     userLine: row.user_line,
     solved: row.solved,
+    score: row.score ?? null,
     ratingAfter: row.rating_after,
     createdAt: row.created_at,
   };
@@ -331,6 +332,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
         puzzle_id: attempt.puzzleId,
         user_line: attempt.userLine,
         solved: attempt.solved,
+        score: attempt.score ?? null,
         rating_after: attempt.ratingAfter ?? null,
       })
       .select('*')
