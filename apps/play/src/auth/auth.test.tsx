@@ -111,7 +111,7 @@ describe('Account', () => {
       async getUserRating() {
         return { userId: 'u1', rating: 1700, deviation: 200, volatility: 0.06 };
       },
-      async getRandomPuzzle() {
+      async getMatchmadePuzzle() {
         return null;
       },
       async upsertUserRating(r: { userId: string }) {

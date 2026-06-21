@@ -29,7 +29,7 @@ function emptyDb(): AccountDb {
     async getUserRating() {
       return null;
     },
-    async getRandomPuzzle() {
+    async getMatchmadePuzzle() {
       return null;
     },
     async upsertUserRating(r) {

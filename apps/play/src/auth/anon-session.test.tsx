@@ -30,7 +30,7 @@ function emptyDb() {
     async getUserRating() {
       return null;
     },
-    async getRandomPuzzle() {
+    async getMatchmadePuzzle() {
       return null;
     },
     async upsertUserRating(r: { userId: string }) {

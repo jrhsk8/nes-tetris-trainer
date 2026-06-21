@@ -7,6 +7,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isPiece, type Piece } from '@trainer/core';
+import { selectMatchmadePuzzle, type MatchmakeOptions } from './matchmaking.js';
 import type {
   Attempt,
   AttemptHistoryEntry,
@@ -117,6 +118,11 @@ export const SUBMISSIONS_BUCKET = 'submissions';
 export interface DataAccess {
   getPuzzle(id: string): Promise<Puzzle | null>;
   getRandomPuzzle(): Promise<Puzzle | null>;
+  /**
+   * Matchmaking selection (#44): a puzzle near the player's rating, excluding
+   * the recently-seen cooldown ids, auto-widening the band if too few qualify.
+   */
+  getMatchmadePuzzle(opts: MatchmakeOptions): Promise<Puzzle | null>;
   countPuzzles(): Promise<number>;
   insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle>;
   insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]>;
@@ -200,6 +206,19 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     if (error) throw new Error(`getRandomPuzzle failed: ${error.message}`);
     const rows = (data ?? []) as PuzzleRow[];
     return rows.length > 0 ? rowToPuzzle(rows[0]) : null;
+  }
+
+  async function getMatchmadePuzzle(opts: MatchmakeOptions): Promise<Puzzle | null> {
+    const exclude = opts.recentIds ?? [];
+    return selectMatchmadePuzzle(async (min, max) => {
+      let query = client.from('puzzles').select('*').gte('rating', min).lte('rating', max);
+      // One query delivers rating-match + anti-repeat: drop the cooldown ids
+      // in-band too (the helper re-filters as a safety net).
+      if (exclude.length > 0) query = query.not('id', 'in', `(${exclude.join(',')})`);
+      const { data, error } = await query;
+      if (error) throw new Error(`getMatchmadePuzzle failed: ${error.message}`);
+      return (data ?? []).map((row) => rowToPuzzle(row as PuzzleRow));
+    }, opts);
   }
 
   async function insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]> {
@@ -421,6 +440,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
   return {
     getPuzzle,
     getRandomPuzzle,
+    getMatchmadePuzzle,
     countPuzzles,
     insertPuzzle,
     insertPuzzles,

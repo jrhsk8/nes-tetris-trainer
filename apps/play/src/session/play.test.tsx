@@ -34,7 +34,7 @@ function samplePuzzle(): Puzzle {
 function makeDb(puzzle: Puzzle | null): PlayDb {
   const ratings = new Map<string, UserRating>();
   return {
-    async getRandomPuzzle() {
+    async getMatchmadePuzzle() {
       return puzzle;
     },
     async getUserRating(userId) {

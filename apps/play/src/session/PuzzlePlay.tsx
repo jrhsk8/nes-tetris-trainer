@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import type { DataAccess, Puzzle } from '@trainer/data';
+import { SEED_RATING, type DataAccess, type Puzzle } from '@trainer/data';
 import { PuzzleSession } from './PuzzleSession.js';
 import { PlayScreen } from './PlayScreen.js';
 import { type KeyBindings } from '../board/keybindings.js';
@@ -13,8 +13,15 @@ import { type KeyBindings } from '../board/keybindings.js';
 /** The persistence the loader + session need. */
 export type PlayDb = Pick<
   DataAccess,
-  'getRandomPuzzle' | 'getUserRating' | 'upsertUserRating' | 'insertAttempt'
+  'getMatchmadePuzzle' | 'getUserRating' | 'upsertUserRating' | 'insertAttempt'
 >;
+
+/**
+ * How many just-played puzzles to keep on the anti-repeat cooldown (#44). A
+ * puzzle in this window is excluded from selection so it returns later, not
+ * soon (docs/glossary.md "Anti-repeat cooldown").
+ */
+const COOLDOWN_WINDOW = 10;
 
 export interface PuzzlePlayProps {
   db: PlayDb;
@@ -42,16 +49,25 @@ export function PuzzlePlay({ db, userId, onAdvance, leftFlank, bindings }: Puzzl
     onAdvanceRef.current = onAdvance;
   }, [onAdvance]);
 
+  // The recently-seen cooldown window (#44), kept in a ref so selecting the
+  // next puzzle never re-creates `load` and re-triggers the mount effect (#17).
+  const recentRef = useRef<string[]>([]);
+
   const load = useCallback(async () => {
     setPuzzle(undefined);
     setError(null);
     onAdvanceRef.current?.();
     try {
-      setPuzzle(await db.getRandomPuzzle());
+      const rating = (await db.getUserRating(userId))?.rating ?? SEED_RATING;
+      const next = await db.getMatchmadePuzzle({ rating, recentIds: recentRef.current });
+      if (next) {
+        recentRef.current = [...recentRef.current, next.id].slice(-COOLDOWN_WINDOW);
+      }
+      setPuzzle(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load a puzzle');
     }
-  }, [db]);
+  }, [db, userId]);
 
   useEffect(() => {
     void load();

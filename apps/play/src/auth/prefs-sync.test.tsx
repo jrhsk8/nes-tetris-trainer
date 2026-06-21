@@ -30,7 +30,7 @@ function prefsDb(initial: UserPrefs | null, upserts: UserPrefs[]): AccountDb {
     async getUserRating() {
       return null;
     },
-    async getRandomPuzzle() {
+    async getMatchmadePuzzle() {
       return null;
     },
     async upsertUserRating(r) {

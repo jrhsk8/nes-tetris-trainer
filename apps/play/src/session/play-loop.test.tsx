@@ -32,12 +32,12 @@ function samplePuzzle(id: string): Puzzle {
   };
 }
 
-/** A db whose getRandomPuzzle hands back a fresh-id puzzle and counts calls. */
+/** A db whose getMatchmadePuzzle hands back a fresh-id puzzle and counts calls. */
 function countingDb(): { db: PlayDb; calls: () => number } {
   let n = 0;
   const ratings = new Map<string, UserRating>();
   const db: PlayDb = {
-    async getRandomPuzzle() {
+    async getMatchmadePuzzle() {
       n += 1;
       return samplePuzzle(`p${n}`);
     },
