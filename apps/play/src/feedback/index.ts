@@ -1,5 +1,6 @@
 /**
- * Feedback view (#12): animate the optimal line + show metric deltas.
+ * Feedback view (#12, #35): verdict banner + colour-aware combo replay + the
+ * ranked interactive combo list.
  */
 
 export { Feedback } from './Feedback.js';

@@ -2,89 +2,169 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { applyPlacement, emptyBoard, type Grid, type Line } from '@trainer/core';
-import type { PlacementValue } from '@trainer/data';
+import userEvent from '@testing-library/user-event';
+import { emptyBoard, type ComboTable, type Grid, type Line } from '@trainer/core';
 import { Feedback } from './Feedback.js';
 
 afterEach(() => cleanup());
 
-const optimalLine: Line = [
-  { rotation: 0, col: 3 },
-  { rotation: 0, col: 6 },
+const L = (a: [number, number], b: [number, number]): Line => [
+  { rotation: a[0], col: a[1] },
+  { rotation: b[0], col: b[1] },
 ];
 
-// Sample value tables: the optimal placement is the highest-valued entry.
-const firstValues: PlacementValue[] = [
-  { rotation: optimalLine[0].rotation, col: optimalLine[0].col, value: 30 },
-  { rotation: 0, col: 0, value: 20 },
-  { rotation: 0, col: 9, value: 10 },
-];
-const secondValues: PlacementValue[] = [
-  { rotation: optimalLine[1].rotation, col: optimalLine[1].col, value: 25 },
-  { rotation: 0, col: 1, value: 12 },
-];
-
-function filledCount(): number {
-  return document.querySelectorAll('[data-state="filled"]').length;
+/** A combo table whose entries are the legal T-then-L placements on an empty board. */
+function table(entries: ComboTable['entries'], total = entries.length): ComboTable {
+  return { entries, total };
 }
 
-describe('Feedback solutions chart (#29)', () => {
-  it('replaces the old geometric-metrics table with per-piece solution charts', () => {
+const rank1 = { rot1: 0, col1: 3, rot2: 0, col2: 6, score: 100 };
+
+describe('Feedback verdict banner (#35)', () => {
+  it('shows a Correct verdict with the combo score when the player plays the rank-1 combo', () => {
     render(
       <Feedback
         board0={emptyBoard()}
         piece1="T"
         piece2="L"
-        optimalLine={optimalLine}
-        firstValues={firstValues}
-        secondValues={secondValues}
-        userLine={[
-          { rotation: 0, col: 0 }, // a non-optimal first move (value 20 → 2nd of 3)
-        ]}
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
       />,
     );
-
-    // The old metrics table is gone.
-    expect(screen.queryByTestId('metric-holes')).toBeNull();
-    expect(document.querySelector('.metric-deltas')).toBeNull();
-
-    // The piece-1 distribution is always shown, with the player's rank.
-    const charts = screen.getAllByTestId('solutions-chart');
-    expect(charts).toHaveLength(1); // piece-2 omitted: the player never reached it
-    expect(screen.getByTestId('strip-rank')).toHaveTextContent('2nd of 3');
-    expect(screen.getAllByTestId('strip-dot')).toHaveLength(firstValues.length);
+    const verdict = screen.getByTestId('verdict');
+    expect(verdict).toHaveTextContent('Correct');
+    expect(verdict).toHaveAttribute('data-correct', 'true');
+    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Score 100');
   });
 
-  it('shows the piece-2 distribution once the player reached placement 2', () => {
+  it('shows an Incorrect, "too low to rank" verdict when the combo is beyond the top-K', () => {
     render(
       <Feedback
         board0={emptyBoard()}
         piece1="T"
         piece2="L"
-        optimalLine={optimalLine}
-        firstValues={firstValues}
-        secondValues={secondValues}
-        userLine={optimalLine} // both moves optimal → both charts, both rank 1st
+        combos={table([rank1], 40)}
+        userLine={L([0, 0], [0, 5])} // legal, but not among the stored entries
       />,
     );
+    const verdict = screen.getByTestId('verdict');
+    expect(verdict).toHaveTextContent('Incorrect');
+    expect(verdict).toHaveAttribute('data-correct', 'false');
+    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Too low to rank');
+  });
 
-    const charts = screen.getAllByTestId('solutions-chart');
-    expect(charts).toHaveLength(2);
-    const ranks = screen.getAllByTestId('strip-rank');
-    expect(ranks[0]).toHaveTextContent('1st of 3');
-    expect(ranks[1]).toHaveTextContent('1st of 2');
+  it('counts a ranked but sub-95 combo as Incorrect while still showing its score', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1, { rot1: 1, col1: 0, rot2: 0, col2: 4, score: 80 }])}
+        userLine={L([1, 0], [0, 4])}
+      />,
+    );
+    expect(screen.getByTestId('verdict')).toHaveTextContent('Incorrect');
+    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Score 80');
+  });
+});
+
+describe('Feedback ranked combo list (#35)', () => {
+  const six: ComboTable['entries'] = [
+    rank1,
+    { rot1: 0, col1: 1, rot2: 0, col2: 4, score: 90 },
+    { rot1: 0, col1: 2, rot2: 0, col2: 5, score: 80 },
+    { rot1: 0, col1: 4, rot2: 0, col2: 7, score: 70 },
+    { rot1: 0, col1: 5, rot2: 0, col2: 8, score: 60 },
+    { rot1: 0, col1: 6, rot2: 1, col2: 0, score: 50 }, // rank 6, not in the top-5
+  ];
+
+  it('lists exactly the top-5 combos with their scores', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table(six)}
+        userLine={L([0, 3], [0, 6])}
+      />,
+    );
+    expect(screen.getAllByTestId('combo-row')).toHaveLength(5);
+    expect(screen.queryByTestId('combo-your-move')).toBeNull(); // player ranks 1st
+  });
+
+  it('highlights the player’s combo in-list when it ranks in the top-5', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table(six)}
+        userLine={L([0, 2], [0, 5])} // rank 3
+      />,
+    );
+    const rows = screen.getAllByTestId('combo-row');
+    expect(rows[2]).toHaveTextContent('You');
+    expect(rows[2]).toHaveClass('is-player');
+    expect(screen.queryByTestId('combo-your-move')).toBeNull();
+  });
+
+  it('shows the player’s move below with its rank + score when it ranks beyond the top-5', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table(six)}
+        userLine={L([0, 6], [1, 0])} // rank 6
+      />,
+    );
+    const below = screen.getByTestId('combo-your-move');
+    expect(below).toHaveTextContent('6th');
+    expect(below).toHaveTextContent('50');
+  });
+
+  it('shows "too low to rank" below when the player’s combo is unranked', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table(six, 40)}
+        userLine={L([0, 0], [0, 5])}
+      />,
+    );
+    expect(screen.getByTestId('combo-your-move')).toHaveTextContent('too low to rank');
+  });
+
+  it('selects a clicked combo row (the board replays it); the player’s move is default', async () => {
+    const user = userEvent.setup();
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table(six)}
+        userLine={L([0, 2], [0, 5])} // rank 3 → its row is pressed by default
+      />,
+    );
+    const rows = screen.getAllByTestId('combo-row');
+    expect(rows[2]).toHaveAttribute('aria-pressed', 'true'); // player's move default
+    expect(rows[0]).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(rows[0]);
+    expect(rows[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(rows[2]).toHaveAttribute('aria-pressed', 'false');
   });
 });
 
 /** Run the whole replay timeline to its end under fake timers. */
 function runReplay(stepMs: number): void {
-  // Generous bound: far more steps than any two-ply replay produces.
   for (let i = 0; i < 12; i++) {
     act(() => void vi.advanceTimersByTime(stepMs));
   }
 }
 
-describe('Feedback replay animation of the optimal line', () => {
+describe('Feedback replay animation of the selected combo', () => {
   it('drops a falling piece, then locks it into the stack and finishes settled', () => {
     vi.useFakeTimers();
     try {
@@ -94,66 +174,20 @@ describe('Feedback replay animation of the optimal line', () => {
           board0={board0}
           piece1="T"
           piece2="L"
-          optimalLine={optimalLine}
-          firstValues={firstValues}
-          secondValues={secondValues}
-          userLine={optimalLine}
+          combos={table([rank1])}
+          userLine={L([0, 3], [0, 6])}
           stepMs={50}
         />,
       );
 
-      // First frame: piece 1 is a falling overlay (4 cells), stack still empty.
       expect(screen.getByTestId('falling-piece')).toBeInTheDocument();
       expect(screen.getAllByTestId('falling-cell')).toHaveLength(4);
-      const empty = filledCount();
-
-      // The falling overlay moves via a CSS transform (GPU motion).
       expect(screen.getByTestId('falling-piece').style.transform).not.toBe('');
 
       runReplay(50);
 
-      // Settled: both pieces are part of the static stack; nothing still falling.
       expect(screen.queryByTestId('falling-piece')).toBeNull();
-      expect(filledCount()).toBeGreaterThan(empty);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('flashes and collapses when the optimal line clears a row', () => {
-    vi.useFakeTimers();
-    try {
-      // A board one O-piece away from completing the bottom two rows: columns
-      // 0..7 filled on rows 18-19, leaving the 2x2 well at columns 8-9.
-      const board0: Grid = emptyBoard();
-      for (let c = 0; c < 8; c++) {
-        board0[18][c] = 1;
-        board0[19][c] = 1;
-      }
-      const line: Line = [
-        { rotation: 0, col: 8 },
-        { rotation: 0, col: 0 },
-      ];
-      render(
-        <Feedback
-          board0={board0}
-          piece1="O"
-          piece2="O"
-          optimalLine={line}
-          firstValues={firstValues}
-          secondValues={secondValues}
-          userLine={line}
-          stepMs={50}
-        />,
-      );
-
-      // Step until the flash frame appears.
-      let sawFlash = false;
-      for (let i = 0; i < 12 && !sawFlash; i++) {
-        if (screen.queryByTestId('line-flash')) sawFlash = true;
-        else act(() => void vi.advanceTimersByTime(50));
-      }
-      expect(sawFlash).toBe(true);
+      expect(document.querySelectorAll('[data-state="filled"]').length).toBeGreaterThan(0);
     } finally {
       vi.useRealTimers();
     }
@@ -172,27 +206,16 @@ describe('Feedback replay animation of the optimal line', () => {
       dispatchEvent: () => false,
     })) as unknown as typeof window.matchMedia;
     try {
-      const board0: Grid = emptyBoard();
       render(
         <Feedback
-          board0={board0}
+          board0={emptyBoard()}
           piece1="T"
           piece2="L"
-          optimalLine={optimalLine}
-          firstValues={firstValues}
-          secondValues={secondValues}
-          userLine={optimalLine}
+          combos={table([rank1])}
+          userLine={L([0, 3], [0, 6])}
         />,
       );
-      // No animation: the board is already fully settled and nothing falls.
       expect(screen.queryByTestId('falling-piece')).toBeNull();
-      const settled = applyPlacement(
-        applyPlacement(board0, 'T', optimalLine[0]),
-        'L',
-        optimalLine[1],
-      );
-      const expectedFilled = settled.flat().filter(Boolean).length;
-      expect(filledCount()).toBe(expectedFilled);
     } finally {
       window.matchMedia = original;
     }

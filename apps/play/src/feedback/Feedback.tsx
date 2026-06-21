@@ -1,33 +1,42 @@
 /**
- * Feedback view (#12, #22, #25) — the teaching payoff (docs/PRD-v1.md
+ * Feedback view (#12, #22, #25, #35) — the teaching payoff (docs/PRD-v1.md
  * "Feedback").
  *
- * After an attempt it replays the stored optimal two-ply line as a falling
- * animation (#25): each piece spawns at the top, slides into its column and
- * drops to rest on a GPU transform overlay, then locks into the stack; a line
- * clear flashes and collapses. With `prefers-reduced-motion` it snaps straight
- * to the settled board. Alongside it shows geometric metric deltas (holes,
- * bumpiness, height) of the player's result versus the optimal result — the
- * optimal-side metrics are precomputed at generation; the player-side metrics
- * are computed here, client-side, via @trainer/core (#3). No engine call is
- * made.
+ * After an attempt it shows an unmistakable Correct / Incorrect verdict banner
+ * with the combo's 0–100 score (#35), then a ranked list of the puzzle's top-5
+ * two-piece combos. The player's combo is highlighted in-list when it ranks in
+ * the top-5, otherwise a row below shows its exact rank + score or "too low to
+ * rank". Selecting any row replays that combo on the central board as a colour-
+ * aware falling animation (#25/#31): each piece spawns, slides into its column
+ * and drops to rest, locking into the stack with its NES colours; a line clear
+ * flashes and collapses. The player's own move is selected by default. With
+ * `prefers-reduced-motion` the board snaps straight to the settled combo.
  *
- * Laid out for the flanking dashboard (#22): the component uses `display:
- * contents` so its two regions — the animating board and the result panel
- * (outcome + rating change + chart + Next) — drop straight into the play
- * screen's centre and right columns. The board therefore stays in the same
- * centre position it occupied while solving.
+ * Grading is client-side via @trainer/core's combo-threshold checker (#34)
+ * against the puzzle's stored combo table — no engine call is made.
+ *
+ * Laid out for the flanking dashboard (#22): `display: contents` drops its two
+ * regions — the animating board and the result panel (verdict + rating + ranked
+ * list + Next) — into the play screen's centre and right columns, so the board
+ * stays in the same centre position it occupied while solving.
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { type ColorGrid, type Grid, type Line, type Piece, type Placement } from '@trainer/core';
-import type { PlacementValue } from '@trainer/data';
+import {
+  gradeCombo,
+  type ColorGrid,
+  type ComboTable,
+  type Grid,
+  type Line,
+  type Piece,
+  type Placement,
+} from '@trainer/core';
 import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
-import { SolutionsChart } from './SolutionsChart.js';
+import { ComboList } from './ComboList.js';
 import { buildReplay, type Keyframe, type ReplayOverlay } from './replay.js';
 
-/** A player rating change to surface alongside the outcome. */
+/** A player rating change to surface alongside the verdict. */
 export interface RatingChange {
   before: { rating: number };
   after: { rating: number };
@@ -39,24 +48,14 @@ export interface FeedbackProps {
   board0: Grid;
   piece1: Piece;
   piece2: Piece;
-  /** The stored optimal two-ply line. */
-  optimalLine: Line;
-  /**
-   * The starting board's colour grid (#31). When present the replay keeps the
-   * existing stack's NES colours and paints each dropped piece its own group,
-   * so the board never reverts to white. Absent → white-group fallback.
-   */
+  /** The starting board's colour grid (#31); enables the colour-aware replay. */
   baseColors?: ColorGrid;
-  /** Value table for piece 1 — every legal placement + engine value (#29). */
-  firstValues: readonly PlacementValue[];
-  /** Value table for piece 2, on the post-optimal-first-move board (#29). */
-  secondValues: readonly PlacementValue[];
+  /** The puzzle's stored ranked combo table (#33). */
+  combos: ComboTable;
   /** The placements the player actually made (one or two). */
   userLine: readonly Placement[];
   /** Milliseconds per animation step (also the falling-piece transition time). */
   stepMs?: number;
-  /** Whether the player solved the puzzle (shows the outcome heading). */
-  solved?: boolean;
   /** The rating change to display, if any. */
   ratingChange?: RatingChange;
   /** Called when the player asks for the next puzzle (renders the button). */
@@ -135,35 +134,56 @@ function LineFlash({ rows }: { rows: readonly number[] }) {
   );
 }
 
+/** The (rotation, col) pair the player played, as a Line, or null if incomplete. */
+function playerLineOf(userLine: readonly Placement[]): Line | null {
+  return userLine.length >= 2 ? [userLine[0], userLine[1]] : null;
+}
+
+/** The rank-1 combo as a Line, or null if the table is empty. */
+function bestLineOf(combos: ComboTable): Line | null {
+  const e = combos.entries[0];
+  return e ? [{ rotation: e.rot1, col: e.col1 }, { rotation: e.rot2, col: e.col2 }] : null;
+}
+
 export function Feedback({
   board0,
   piece1,
   piece2,
-  optimalLine,
   baseColors,
-  firstValues,
-  secondValues,
+  combos,
   userLine,
   stepMs = 320,
-  solved,
   ratingChange,
   onNext,
 }: FeedbackProps) {
   const [reduced] = useState(prefersReducedMotion);
 
+  const playerLine = useMemo(() => playerLineOf(userLine), [userLine]);
+  // Grade the whole combo — no first-move short-circuit (#34).
+  const verdict = useMemo(
+    () =>
+      playerLine
+        ? gradeCombo(combos, playerLine)
+        : { correct: false, score: null, rank: null, total: combos.total, ranked: false },
+    [combos, playerLine],
+  );
+
+  // The combo currently shown on the board; the player's move by default, or the
+  // rank-1 combo if the player did not complete the attempt.
+  const [selected, setSelected] = useState<Line>(() => playerLine ?? bestLineOf(combos) ?? [
+    { rotation: 0, col: 0 },
+    { rotation: 0, col: 0 },
+  ]);
+
   const timeline = useMemo<Keyframe[]>(() => {
-    const keyframes = buildReplay(board0, piece1, piece2, optimalLine, baseColors);
-    // Reduced motion: jump straight to the settled board (the last, fully
-    // collapsed keyframe — colours and all), no falling/flash.
-    if (reduced) {
-      return [keyframes[keyframes.length - 1]];
-    }
-    return keyframes;
-  }, [board0, piece1, piece2, optimalLine, baseColors, reduced]);
+    const keyframes = buildReplay(board0, piece1, piece2, selected, baseColors);
+    // Reduced motion: jump straight to the settled board (last keyframe).
+    return reduced ? [keyframes[keyframes.length - 1]] : keyframes;
+  }, [board0, piece1, piece2, selected, baseColors, reduced]);
 
   const [step, setStep] = useState(0);
 
-  // Restart the replay whenever the timeline changes (a new puzzle/attempt).
+  // Restart the replay whenever the timeline changes (new attempt / selection).
   useEffect(() => setStep(0), [timeline]);
 
   useEffect(() => {
@@ -173,11 +193,11 @@ export function Feedback({
   }, [step, timeline.length, stepMs]);
 
   const frame = timeline[Math.min(step, timeline.length - 1)];
+  const scoreText = verdict.score !== null ? `Score ${verdict.score}` : 'Too low to rank';
 
   return (
     <div className="feedback">
       <div className="play-center feedback-board" data-testid="board-center">
-        <p className="play-instruction">The optimal line:</p>
         <Board
           grid={frame.grid}
           colorGrid={frame.colorGrid}
@@ -203,9 +223,17 @@ export function Feedback({
       </div>
 
       <aside className="flank flank-right result-panel" aria-label="result">
-        {solved !== undefined ? (
-          <h2 data-testid="outcome">{solved ? 'Solved!' : 'Not solved'}</h2>
-        ) : null}
+        <div
+          className={`verdict ${verdict.correct ? 'is-correct' : 'is-incorrect'}`}
+          data-testid="verdict"
+          data-correct={verdict.correct}
+        >
+          <strong className="verdict-outcome">{verdict.correct ? 'Correct' : 'Incorrect'}</strong>
+          <span className="verdict-score" data-testid="verdict-score">
+            {scoreText}
+          </span>
+        </div>
+
         {ratingChange ? (
           <p data-testid="rating-change">
             Rating: {Math.round(ratingChange.before.rating)} →{' '}
@@ -214,24 +242,15 @@ export function Feedback({
           </p>
         ) : null}
 
-        <div className="solutions-charts" data-testid="solutions-charts">
-          <SolutionsChart
-            label={`First piece (${piece1})`}
-            values={firstValues}
-            optimal={optimalLine[0]}
-            player={userLine[0]}
-          />
-          {/* The piece-2 distribution is only meaningful once the player reached
-              placement 2 — i.e. their first move was optimal. */}
-          {userLine.length > 1 ? (
-            <SolutionsChart
-              label={`Second piece (${piece2})`}
-              values={secondValues}
-              optimal={optimalLine[1]}
-              player={userLine[1]}
-            />
-          ) : null}
-        </div>
+        <ComboList
+          entries={combos.entries}
+          total={combos.total}
+          userLine={userLine}
+          playerRank={verdict.rank}
+          playerScore={verdict.score}
+          selected={selected}
+          onSelect={setSelected}
+        />
 
         {onNext ? (
           <button type="button" onClick={onNext}>

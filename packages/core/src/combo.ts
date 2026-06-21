@@ -13,7 +13,7 @@
  * (*Combo-threshold grading*, *Combo score*, *Verdict*).
  */
 
-import type { Line } from './checker.js';
+import type { Line } from './board.js';
 
 /**
  * One ranked two-piece combo: the placement of piece 1 (`rot1`/`col1`) and piece

@@ -1,18 +1,19 @@
 /**
- * Puzzle session flow (#11) — the headline play loop (docs/PRD-v1.md "Solution",
- * user stories 1-10). Presents the board with the current and next piece,
- * captures placement 1, then presents the second piece with NO lookahead and
- * captures placement 2, grades the line (#5), updates the rating (#6), and
- * records the attempt (#2).
+ * Puzzle session flow (#11, #35) — the headline play loop (docs/PRD-v1.md
+ * "Solution", user stories 1-10). Presents the board with the current and next
+ * piece, captures placement 1, then presents the second piece with NO lookahead
+ * and captures placement 2, grades the whole two-piece combo (#34), updates the
+ * rating (#6), and records the attempt (#2).
  *
- * A wrong FIRST placement ends the puzzle immediately and reveals the optimal
- * line — the second move is not played, since it would no longer make sense
- * (user story 7 / the checker's whole-line rule).
+ * The player ALWAYS places both pieces — even a wrong first placement advances
+ * to placement 2 (#35); the attempt is the combo `(p1, p2)`, graded against the
+ * puzzle's stored combo table (correct iff the combo scores ≥ 95). There is no
+ * first-move short-circuit.
  *
  * Laid out as a flanking dashboard (#22): the board is the centred hero and
  * never moves between phases; the left rail holds the rating, the right rail
- * holds the next-piece box while solving and the result + chart after an
- * attempt (see {@link PlayScreen} and {@link Feedback}).
+ * holds the next-piece box while solving and the verdict + ranked combo list
+ * after an attempt (see {@link PlayScreen} and {@link Feedback}).
  */
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
@@ -21,7 +22,7 @@ import {
   applyPlacementColored,
   decodeBoard,
   decodeColors,
-  gradeAttempt,
+  gradeCombo,
   PIECE_GROUP,
   ROWS,
   COLS,
@@ -131,27 +132,20 @@ export function PuzzleSession({
     [db, userId, puzzle.glicko, puzzle.id],
   );
 
-  const onConfirm1 = useCallback(
-    (p1: Placement) => {
-      setPlacement1(p1);
-      const firstCorrect = gradeAttempt(puzzle.optimalLine, [p1, p1]).firstCorrect;
-      if (!firstCorrect) {
-        // Wrong first move — end immediately and reveal the line.
-        void finish([p1], false);
-      } else {
-        setPhase('place2');
-      }
-    },
-    [puzzle.optimalLine, finish],
-  );
+  const onConfirm1 = useCallback((p1: Placement) => {
+    // Always advance to placement 2 — both pieces are played even if the first
+    // is weak; the combo is graded as a whole (#35).
+    setPlacement1(p1);
+    setPhase('place2');
+  }, []);
 
   const onConfirm2 = useCallback(
     (p2: Placement) => {
       const line: Line = [placement1!, p2];
-      const graded = gradeAttempt(puzzle.optimalLine, line);
-      void finish([placement1!, p2], graded.solved);
+      const graded = gradeCombo(puzzle.combos, line);
+      void finish([placement1!, p2], graded.correct);
     },
-    [placement1, puzzle.optimalLine, finish],
+    [placement1, puzzle.combos, finish],
   );
 
   if (phase === 'place1') {
@@ -215,12 +209,9 @@ export function PuzzleSession({
         board0={board0}
         piece1={puzzle.piece1}
         piece2={puzzle.piece2}
-        optimalLine={puzzle.optimalLine}
         baseColors={colors0}
-        firstValues={puzzle.firstValues}
-        secondValues={puzzle.secondValues}
+        combos={puzzle.combos}
         userLine={result!.userLine}
-        solved={result!.solved}
         ratingChange={result!.rating}
         onNext={onNext}
       />

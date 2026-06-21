@@ -114,20 +114,9 @@ export function buildReplay(
   plies.forEach(({ piece, placement }, i) => {
     const rest = restingCells(current, piece, placement);
     if (!rest) {
-      // Defensive: a stored line should always rest; skip its animation.
-      if (currentColors) {
-        const stepped = applyPlacementColored(
-          current,
-          currentColors,
-          piece,
-          placement,
-          PIECE_GROUP[piece],
-        );
-        current = stepped.board;
-        currentColors = stepped.colors;
-      } else {
-        current = applyPlacement(current, piece, placement);
-      }
+      // The placement cannot legally rest (e.g. an off-board combo selected from
+      // the ranked list); it also cannot be applied, so skip it entirely and
+      // leave the board unchanged rather than throwing.
       return;
     }
     const group = PIECE_GROUP[piece];

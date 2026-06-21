@@ -458,74 +458,120 @@ input:focus-visible {
   background: var(--nes-blue);
 }
 
-/* ---- Feedback solutions chart (#29) ------------------------------------ */
+/* ---- Feedback verdict + ranked combo list (#35) ------------------------ */
 
-.solutions-charts {
+/* The Correct / Incorrect verdict banner — unmistakable after an attempt. */
+.verdict {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border: 3px solid var(--panel-edge);
+  padding: 10px 14px;
+  margin: 0 0 var(--space);
+}
+
+.verdict.is-correct {
+  border-color: var(--nes-blue);
+  background: rgba(0, 88, 248, 0.16);
+}
+
+.verdict.is-incorrect {
+  border-color: var(--nes-red);
+  background: rgba(216, 40, 0, 0.16);
+}
+
+.verdict-outcome {
+  font-family: var(--font-pixel);
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.verdict.is-correct .verdict-outcome {
+  color: var(--nes-gold);
+}
+
+.verdict.is-incorrect .verdict-outcome {
+  color: #ffb3a0;
+}
+
+.verdict-score {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+
+/* The ranked top-5 list (replaces the strip-plot chart). */
+.combo-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space);
+  gap: 6px;
   margin-top: var(--space);
 }
 
-.solutions-chart {
-  margin: 0;
-}
-
-.solutions-chart-label {
+.combo-list-label {
   font-family: var(--font-pixel);
   font-size: 8px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--nes-gold);
-  margin-bottom: 8px;
+  margin: 0 0 4px;
 }
 
-/* The 0–100 axis: a thin track the dots sit on (optimal at the right). */
-.strip-track {
-  height: 18px;
-  margin: 10px 6px 6px;
-  border-bottom: 2px solid var(--panel-edge);
+/* Each combo is an interactive row; selecting it replays it on the board. */
+.combo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: var(--nes-field);
+  border: 2px solid var(--panel-edge);
+  box-shadow: none;
+  padding: 8px 10px;
+  text-transform: none;
 }
 
-.strip-dot {
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
-  margin-top: -3px;
-  background: var(--ink-dim, #9a9a9a);
+.combo-row:hover {
+  background: var(--panel);
+  border-color: var(--nes-grey-dark);
 }
 
-.strip-dot.is-optimal {
-  background: var(--nes-gold);
+.combo-row.is-selected {
+  border-color: var(--nes-gold);
+  background: rgba(252, 208, 0, 0.12);
 }
 
-.strip-dot.is-player {
-  background: var(--nes-red);
+.combo-row.is-player {
+  border-left-width: 4px;
+  border-left-color: var(--nes-red);
 }
 
-/* Rings drawn over the optimal / player dots so they read clearly. */
-.strip-marker {
-  top: 50%;
-  width: 12px;
-  height: 12px;
-  margin-left: -6px;
-  margin-top: -6px;
-  box-sizing: border-box;
+.combo-rank {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--ink);
+  min-width: 4.5ch;
 }
 
-.strip-marker.is-optimal {
-  border: 2px solid var(--nes-gold);
+.combo-score {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--nes-white);
+  margin-left: auto;
 }
 
-.strip-marker.is-player {
-  border: 2px solid var(--nes-red);
-}
-
-.strip-rank {
-  font-weight: 700;
+.combo-you {
+  font-family: var(--font-pixel);
+  font-size: 8px;
   color: var(--nes-red);
-  margin: 0;
+}
+
+/* The "Your move" row shown below the top-5 when the player ranks lower. */
+.combo-row.combo-yours {
+  margin-top: 6px;
+  border-style: dashed;
 }
 
 /* ---- Controls panel (#24) ---------------------------------------------- */

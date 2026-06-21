@@ -34,7 +34,8 @@ function makePuzzle(): Puzzle {
     optimalMetrics: boardMetrics(board2),
     glicko: { rating: 1500, deviation: 350, volatility: 0.06 },
     colors: '',
-    combos: { entries: [], total: 0 },
+    // The optimal line is the rank-1 combo (score 100); anything else is unranked.
+    combos: { entries: [{ rot1: 0, col1: 3, rot2: 0, col2: 6, score: 100 }], total: 18 },
     firstValues: [],
     secondValues: [],
   };
@@ -93,7 +94,7 @@ describe('PuzzleSession (headline play loop)', () => {
     await place(user, puzzle.optimalLine[0]); // correct first placement
     await place(user, puzzle.optimalLine[1]); // correct second placement
 
-    expect(await screen.findByTestId('outcome')).toHaveTextContent('Solved!');
+    expect(await screen.findByTestId('verdict')).toHaveTextContent('Correct');
     expect(screen.getByTestId('rating-change')).toHaveTextContent('(+');
 
     // The attempt was recorded with both placements and solved = true.
@@ -104,22 +105,25 @@ describe('PuzzleSession (headline play loop)', () => {
     expect(ratings.get('u1')!.rating).toBeGreaterThan(1500);
   });
 
-  it('ends immediately on a wrong first move and reveals the result (negative rating change)', async () => {
+  it('still plays both pieces after a wrong first move, grading the combo as Incorrect', async () => {
     const user = userEvent.setup();
     const puzzle = makePuzzle();
     const { db, attempts } = fakeDb();
     render(<PuzzleSession puzzle={puzzle} userId="u2" db={db} />);
 
-    // Confirm a first placement that is NOT the optimal column 3.
+    // A first placement that is NOT the optimal column 3 — no short-circuit (#35).
     await place(user, { rotation: 0, col: 0 });
+    // The session advanced to placement 2 (the second piece is now prompted).
+    expect(await screen.findByText(/Place the/)).toHaveTextContent('L');
+    await place(user, { rotation: 0, col: 6 });
 
-    expect(await screen.findByTestId('outcome')).toHaveTextContent('Not solved');
+    expect(await screen.findByTestId('verdict')).toHaveTextContent('Incorrect');
     expect(screen.getByTestId('rating-change')).toHaveTextContent('(-');
 
-    // Recorded as a single-placement, failed attempt (no second move played).
+    // Recorded as a two-placement, failed attempt.
     expect(attempts).toHaveLength(1);
     expect(attempts[0].solved).toBe(false);
-    expect(attempts[0].userLine).toHaveLength(1);
+    expect(attempts[0].userLine).toHaveLength(2);
   });
 
   it('advances to the next puzzle when asked', async () => {
@@ -129,7 +133,8 @@ describe('PuzzleSession (headline play loop)', () => {
     const onNext = vi.fn();
     render(<PuzzleSession puzzle={puzzle} userId="u3" db={db} onNext={onNext} />);
 
-    await place(user, { rotation: 0, col: 0 }); // quick fail to reach the result screen
+    await place(user, { rotation: 0, col: 0 }); // place both to reach the result screen
+    await place(user, { rotation: 0, col: 6 });
     await user.click(await screen.findByRole('button', { name: 'Next puzzle' }));
     expect(onNext).toHaveBeenCalledTimes(1);
   });

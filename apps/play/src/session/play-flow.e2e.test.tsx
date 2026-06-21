@@ -58,8 +58,8 @@ describe.skipIf(!configured)('Play flow (deep, real stored puzzle)', () => {
     await place(user, puzzle.optimalLine[0]);
     await place(user, puzzle.optimalLine[1]);
 
-    // Grade + rating: solved, rating went up.
-    expect(await screen.findByTestId('outcome')).toHaveTextContent('Solved!');
+    // Grade + rating: the rank-1 combo is correct, rating went up.
+    expect(await screen.findByTestId('verdict')).toHaveTextContent('Correct');
     expect(screen.getByTestId('rating-change')).toHaveTextContent('(+');
 
     // Feedback: the optimal line animates. (The deprecated value-table strip

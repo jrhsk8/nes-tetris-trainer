@@ -130,16 +130,13 @@ export function History({ db, userId }: HistoryProps) {
           board0={decodeBoard(puzzle.board)}
           piece1={puzzle.piece1}
           piece2={puzzle.piece2}
-          optimalLine={puzzle.optimalLine}
           baseColors={
             puzzle.colors && puzzle.colors.length === ROWS * COLS
               ? decodeColors(puzzle.colors)
               : undefined
           }
-          firstValues={puzzle.firstValues}
-          secondValues={puzzle.secondValues}
+          combos={puzzle.combos}
           userLine={attempt.userLine}
-          solved={attempt.solved}
         />
       </section>
     );

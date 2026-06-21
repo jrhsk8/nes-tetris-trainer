@@ -25,13 +25,10 @@ export {
   decodeColors,
   applyPlacementColored,
 } from './board.js';
-export type { Grid, Placement, ColorGrid } from './board.js';
+export type { Grid, Placement, ColorGrid, Line } from './board.js';
 
 export { columnHeights, aggregateHeight, bumpiness, holes, boardMetrics } from './metrics.js';
 export type { BoardMetrics } from './metrics.js';
-
-export { gradeAttempt } from './checker.js';
-export type { Line, AttemptResult } from './checker.js';
 
 export { gradeCombo, CORRECT_SCORE_THRESHOLD } from './combo.js';
 export type { ComboEntry, ComboTable, ComboResult } from './combo.js';

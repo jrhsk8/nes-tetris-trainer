@@ -29,6 +29,12 @@ export interface Placement {
   col: number;
 }
 
+/**
+ * An ordered two-placement line: the first placement, then the second. Both the
+ * player's attempt and a stored two-piece combo take this shape.
+ */
+export type Line = readonly [Placement, Placement];
+
 /** An empty `ROWS`×`COLS` grid. */
 export function emptyBoard(): Grid {
   return Array.from({ length: ROWS }, () => new Array<number>(COLS).fill(0));
