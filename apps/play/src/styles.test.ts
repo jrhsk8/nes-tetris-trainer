@@ -67,3 +67,26 @@ describe('Flanking dashboard layout (#22)', () => {
     expect(css).toMatch(/--board-width:\s*min\([^)]*vh/i);
   });
 });
+
+describe('Slim top bar + centered, taller board (#32)', () => {
+  const app = readFileSync(fileURLToPath(new URL('./App.tsx', import.meta.url)), 'utf8');
+
+  it('merges branding and nav into a single slim top bar (no stacked headers/subtitle)', () => {
+    // The big two-line marquee header is gone; the subtitle line is dropped.
+    expect(app).not.toMatch(/app-header/);
+    expect(app).not.toMatch(/Train stacking judgment/i);
+    // A single slim top bar carries a small wordmark.
+    expect(css).toMatch(/\.top-bar\s*\{/);
+    expect(css).toMatch(/\.wordmark\s*\{/);
+  });
+
+  it('vertically centers the play area against the viewport height', () => {
+    expect(css).toMatch(/\.play-screen\s*\{[^}]*align-content:\s*center/i);
+    expect(css).toMatch(/\.play-screen\s*\{[^}]*min-height:[^;]*100vh/i);
+  });
+
+  it('caps the board height to the slim layout so the screen never scrolls', () => {
+    // The board hero reserves room for the slim bar via a 100vh-based cap.
+    expect(css).toMatch(/--board-width:[^;]*100vh/i);
+  });
+});

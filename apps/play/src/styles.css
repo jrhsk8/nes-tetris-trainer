@@ -70,23 +70,32 @@ main {
   display: block;
 }
 
-.app-header {
-  border: 4px solid var(--nes-white);
-  box-shadow: var(--shadow-hard);
-  background: var(--nes-field);
-  padding: clamp(18px, 3vw, 28px);
-  margin-bottom: calc(var(--space) * 1.75);
+/*
+ * Slim top bar (#32) — a single bar shared by the signed-out shell and the
+ * signed-in {@link Account}: a small wordmark on the left, the view nav /
+ * account actions clustered on the right. Replaces the old two-line marquee
+ * header + the separate nav header, so the play screen has no stacked chrome.
+ */
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+  flex-wrap: wrap;
+  border: 3px solid var(--panel-edge);
+  background: var(--panel);
+  padding: 10px 16px;
+  margin-bottom: var(--space);
   position: relative;
 }
 
-/* A red/white/blue arcade marquee rule along the top of the header. */
-.app-header::before {
+/* A thin red/white/blue arcade marquee rule along the top of the bar. */
+.top-bar::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 6px;
+  height: 4px;
   background: repeating-linear-gradient(
     90deg,
     var(--nes-red) 0,
@@ -98,23 +107,24 @@ main {
   );
 }
 
-h1 {
+.wordmark {
   font-family: var(--font-pixel);
-  font-size: clamp(15px, 3.4vw, 26px);
-  line-height: 1.5;
+  font-size: clamp(10px, 2vw, 15px);
+  line-height: 1.4;
   letter-spacing: 1px;
-  margin: 6px 0 10px;
   color: var(--nes-white);
-  text-shadow:
-    3px 3px 0 var(--nes-blue),
-    6px 6px 0 var(--nes-red);
+  text-shadow: 2px 2px 0 var(--nes-blue);
+  white-space: nowrap;
+  /* Pushes the nav / account cluster to the right edge of the bar. */
+  margin-right: auto;
 }
 
-.app-header p {
-  margin: 0;
-  color: var(--ink-dim);
-  font-size: 0.95rem;
-  max-width: 60ch;
+/* The right-hand cluster: view nav + account email + sign out. */
+.top-bar-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space);
+  flex-wrap: wrap;
 }
 
 h2 {
@@ -131,18 +141,6 @@ h2 {
 .account {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space) * 1.5);
-}
-
-.account-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space);
-  flex-wrap: wrap;
-  border: 3px solid var(--panel-edge);
-  background: var(--panel);
-  padding: 12px 16px;
 }
 
 /* In-app view nav (Play / History / Controls) — no router (#22). */
@@ -169,7 +167,13 @@ h2 {
   display: grid;
   grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 260px);
   gap: calc(var(--space) * 1.5);
-  align-items: start;
+  align-items: center;
+  /* Vertically centre the board hero in the space left under the slim top bar,
+   * so it is the dominant element and never moves between phases (#32). The
+   * min-height reserves the bar + page padding so the page itself never
+   * scrolls on desktop/tablet. */
+  align-content: center;
+  min-height: calc(100vh - 9rem);
 }
 
 .flank-left {
@@ -203,15 +207,22 @@ h2 {
   color: var(--ink);
 }
 
-/* The board hero: scales with the viewport height, preserving its 1:2 aspect
- * (10 wide cells → height = 2 × width). No fixed pixel cap (#22). */
+/* The board hero: scales with the viewport, preserving its 1:2 aspect (10 wide
+ * cells → height = 2 × width). No fixed pixel cap (#22). The board is now the
+ * dominant element (#32): width grows toward 36vh (≈ 72vh tall) but is also
+ * capped to half of the height left under the slim top bar (the `calc`) so the
+ * whole screen — board + flanking rails + feedback extras — fits without
+ * scrolling, even on short viewports. */
 .board {
-  --board-width: min(40vh, 86vw);
+  --board-width: min(86vw, 36vh, calc((100vh - 16rem) / 2));
 }
 
 @media (max-width: 900px) {
   .play-screen {
     grid-template-columns: minmax(0, 1fr);
+    /* Phones may collapse to a stacked, scrollable column (#32). */
+    min-height: 0;
+    align-content: start;
   }
   .flank-left,
   .play-center,

@@ -19,6 +19,7 @@ import { PuzzlePlay, type PlayDb } from '../session/index.js';
 import { Controls } from '../controls/index.js';
 import { History } from '../history/index.js';
 import { DEFAULT_BINDINGS, sanitizeBindings, type KeyBindings } from '../board/keybindings.js';
+import { WORDMARK } from '../branding.js';
 import type { AuthApi, AuthUser } from './auth.js';
 import { RatingHistory } from './RatingHistory.js';
 
@@ -95,24 +96,27 @@ export function Account({ db, user, auth }: AccountProps) {
 
   return (
     <div className="account">
-      <header className="account-header">
-        <nav className="app-nav" aria-label="views">
-          {NAV.map(({ view: v, label }) => (
-            <button
-              key={v}
-              type="button"
-              className={view === v ? 'nav-active' : undefined}
-              aria-current={view === v ? 'page' : undefined}
-              onClick={() => setView(v)}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-        <span data-testid="account-email">{user.email ?? 'Signed in'}</span>
-        <button type="button" onClick={() => void auth.signOut()}>
-          Sign out
-        </button>
+      <header className="top-bar">
+        <span className="wordmark">{WORDMARK}</span>
+        <div className="top-bar-end">
+          <nav className="app-nav" aria-label="views">
+            {NAV.map(({ view: v, label }) => (
+              <button
+                key={v}
+                type="button"
+                className={view === v ? 'nav-active' : undefined}
+                aria-current={view === v ? 'page' : undefined}
+                onClick={() => setView(v)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          <span data-testid="account-email">{user.email ?? 'Signed in'}</span>
+          <button type="button" onClick={() => void auth.signOut()}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       {view === 'play' ? (
