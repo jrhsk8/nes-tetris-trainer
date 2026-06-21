@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { decodeBoard } from '@trainer/core';
+import { COLS, ROWS, decodeBoard, decodeColors } from '@trainer/core';
 import type { AttemptHistoryEntry, DataAccess, Puzzle } from '@trainer/data';
 import { Feedback } from '../feedback/index.js';
 
@@ -131,6 +131,11 @@ export function History({ db, userId }: HistoryProps) {
           piece1={puzzle.piece1}
           piece2={puzzle.piece2}
           optimalLine={puzzle.optimalLine}
+          baseColors={
+            puzzle.colors && puzzle.colors.length === ROWS * COLS
+              ? decodeColors(puzzle.colors)
+              : undefined
+          }
           firstValues={puzzle.firstValues}
           secondValues={puzzle.secondValues}
           userLine={attempt.userLine}

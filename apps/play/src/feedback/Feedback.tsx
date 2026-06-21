@@ -20,12 +20,12 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { type Grid, type Line, type Piece, type Placement } from '@trainer/core';
+import { type ColorGrid, type Grid, type Line, type Piece, type Placement } from '@trainer/core';
 import type { PlacementValue } from '@trainer/data';
 import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
 import { SolutionsChart } from './SolutionsChart.js';
-import { buildReplay, finalBoard, type Keyframe, type ReplayOverlay } from './replay.js';
+import { buildReplay, type Keyframe, type ReplayOverlay } from './replay.js';
 
 /** A player rating change to surface alongside the outcome. */
 export interface RatingChange {
@@ -41,6 +41,12 @@ export interface FeedbackProps {
   piece2: Piece;
   /** The stored optimal two-ply line. */
   optimalLine: Line;
+  /**
+   * The starting board's colour grid (#31). When present the replay keeps the
+   * existing stack's NES colours and paints each dropped piece its own group,
+   * so the board never reverts to white. Absent → white-group fallback.
+   */
+  baseColors?: ColorGrid;
   /** Value table for piece 1 — every legal placement + engine value (#29). */
   firstValues: readonly PlacementValue[];
   /** Value table for piece 2, on the post-optimal-first-move board (#29). */
@@ -134,6 +140,7 @@ export function Feedback({
   piece1,
   piece2,
   optimalLine,
+  baseColors,
   firstValues,
   secondValues,
   userLine,
@@ -145,13 +152,14 @@ export function Feedback({
   const [reduced] = useState(prefersReducedMotion);
 
   const timeline = useMemo<Keyframe[]>(() => {
-    const keyframes = buildReplay(board0, piece1, piece2, optimalLine);
-    // Reduced motion: jump straight to the settled board, no falling/flash.
+    const keyframes = buildReplay(board0, piece1, piece2, optimalLine, baseColors);
+    // Reduced motion: jump straight to the settled board (the last, fully
+    // collapsed keyframe — colours and all), no falling/flash.
     if (reduced) {
-      return [{ grid: finalBoard(board0, piece1, piece2, optimalLine), label: 'Optimal line' }];
+      return [keyframes[keyframes.length - 1]];
     }
     return keyframes;
-  }, [board0, piece1, piece2, optimalLine, reduced]);
+  }, [board0, piece1, piece2, optimalLine, baseColors, reduced]);
 
   const [step, setStep] = useState(0);
 
@@ -172,6 +180,7 @@ export function Feedback({
         <p className="play-instruction">The optimal line:</p>
         <Board
           grid={frame.grid}
+          colorGrid={frame.colorGrid}
           overlay={
             <>
               {frame.overlay ? (
