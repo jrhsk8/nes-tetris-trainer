@@ -11,6 +11,12 @@
 # Result flow: leaves all work on WSL `main` (sandcastle auto-merges via
 # merge-to-head). It does NOT push — review/push manually when back.
 #
+# Memory hygiene: sandcastle leaves its sandbox container running `sleep
+# infinity` after a run; left alone it pins its working set and the run's page
+# cache in the WSL VM until autoMemoryReclaim slowly drains it. This wrapper
+# reaps the container between launches and on exit, then drops the page cache,
+# so Windows gets the RAM back promptly instead of hours later.
+#
 # Usage:   bash .sandcastle/run-afk.sh
 # Tunables (env): MAX_RESTARTS (default 6), MAX_CONSEC_FAIL (default 3)
 set -uo pipefail
@@ -27,6 +33,40 @@ mkdir -p "$LOG_DIR"
 SUMMARY="$LOG_DIR/afk-$RUN_TS.summary.log"
 
 log() { echo "[afk $(date +%H:%M:%S)] $*" | tee -a "$SUMMARY"; }
+
+# --- memory hygiene -------------------------------------------------------
+# Reap any sandcastle sandbox container(s) left running. Best-effort: a zombie
+# left by a prior hard VM kill refuses `docker rm -f` ("did not receive an exit
+# event"), but its RAM is already freed and it clears on a Docker Desktop
+# restart — so we note it and move on rather than failing the run.
+reap_sandcastle_containers() {
+  local ids
+  ids=$(docker ps -aq --filter "name=^sandcastle-" 2>/dev/null) || return 0
+  [ -n "$ids" ] || return 0
+  log "reaping leftover sandcastle container(s): $(echo "$ids" | tr '\n' ' ')"
+  # shellcheck disable=SC2086
+  docker rm -f $ids >>"$SUMMARY" 2>&1 \
+    || log "  note: a container would not die (zombie from a prior hard kill); its RAM is already freed — clears on a Docker Desktop restart."
+}
+
+# Drop the WSL VM's page cache so the freed RAM returns to Windows now rather
+# than on autoMemoryReclaim's slow schedule. dev has no passwordless sudo, so
+# do it from a throwaway privileged root container that shares the VM kernel.
+reclaim_wsl_memory() {
+  local img="sandcastle:nes-tetris-trainer"
+  docker image inspect "$img" >/dev/null 2>&1 || return 0
+  if docker run --rm --privileged --user 0 --entrypoint sh "$img" \
+       -c 'sync; echo 3 > /proc/sys/vm/drop_caches' >>"$SUMMARY" 2>&1; then
+    log "dropped page cache — WSL will hand the freed RAM back to Windows."
+  fi
+}
+
+cleanup() {
+  reap_sandcastle_containers
+  git -C "$REPO" worktree prune 2>>"$SUMMARY" || true
+  reclaim_wsl_memory
+}
+trap cleanup EXIT
 
 # Best-effort count of open GitHub issues, for final status labelling only.
 # Returns -1 if it can't determine (no token/network) — never blocks the run.
@@ -53,6 +93,10 @@ log "HEAD before: $(git -C "$REPO" log --oneline -1)"
 
 while (( launches < MAX_RESTARTS )); do
   launches=$((launches+1))
+
+  # Reap any sandcastle container left over from a prior launch/session before
+  # starting a fresh sandbox, so they don't accumulate and pin memory.
+  reap_sandcastle_containers
 
   # Prune worktrees orphaned by a previous crashed launch (safe). Skip first.
   if (( launches > 1 )); then
@@ -107,6 +151,7 @@ git -C "$REPO" log --oneline -10 | tee -a "$SUMMARY"
 log "Summary: $SUMMARY"
 
 # COMPLETE and NO_PROGRESS both mean "nothing actionable left" → success.
+# (cleanup() runs on EXIT — reaps the container and drops the page cache.)
 case "$status" in
   COMPLETE|NO_PROGRESS) exit 0 ;;
   *) exit 1 ;;

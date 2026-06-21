@@ -28,17 +28,13 @@ treat the issues that need them as blocked.
 
 ## Run scope (this run)
 
-This is the **Phase 2+3 batch — issues #27, #28, #29** (the remaining work of the 2026-06-20 UX overhaul). All three are IN SCOPE for this run. The earlier "deferred to a supervised pass" comments on #27/#28/#29 are **superseded** (see the issue comments and `HANDOFF-bank-regen.md`) — do not re-defer them.
+This is the **2026-06-20 combo-grading overhaul batch — issues #31, #32, #33, #34, #35** (tracking epic #36). Full detail: `HANDOFF-combo-overhaul.md` and `docs/decisions.md` (2026-06-20 "Combo-grading overhaul" entry). The previous batch (#27–#29) is complete and closed — do not revisit it.
 
-- **Order:** work **#27 first**. #28 and #29 carry a `Blocked by #27` line and must not start until #27 is closed. Once #27 closes they unblock; do them next, one per iteration.
-- **#27 (bank regen + schema migration) IS in scope now.** The StackRabbit engine and Supabase are provisioned (see *Environment / resources available* above): use `DATABASE_URL` for the DDL migration and `SUPABASE_SERVICE_ROLE_KEY` for REST writes. For #27 specifically:
-  - Apply the migration **additively** — `alter table puzzles add column if not exists colors text, add column if not exists first_values jsonb, add column if not exists second_values jsonb`. Do not drop or rename existing columns.
-  - Regenerate the **full bank** to **at least the current puzzle count (303)** via self-play; for each puzzle compute the 200-char `colors` grid (`'0'` empty, `'1'/'2'/'3'` NES colour group), the `first_values` (every legal piece-1 placement + engine value), and `second_values` (piece-2 placements after the optimal first move).
-  - **Replace** the bank, do not append: clear the old `puzzles` rows and write the new ones, so the app never loads a mix of old colour-less and new puzzles. Deleting old `puzzles` rows cascade-deletes `attempts` by design — that is expected and accepted by the spec (a full backup was taken before this run).
-  - Update `packages/data` domain/row types and mappers for the new columns. Keep the binary `Grid` in `packages/core` colour-blind (metrics/checker/placement unchanged).
-- **#28 / #29** are client-only work in `apps/play` that consume #27's new data and reuse the Phase-1 components (Board, Feedback, History). Start them only after #27 is closed.
+- **Order:** **#31 → #32 → #33 → #34 → #35.** #31 and #32 are client-only with no dependencies (RALPH's bug-first priority picks #31 first). #33 is the offline regen + schema migration and **blocks #34 and #35** (both carry a `Blocked by` line). #35 also depends on #34.
+- **#33 (combo bank regen + schema) IS in scope now.** The StackRabbit engine and Supabase are provisioned (see *Environment / resources available* above): use `DATABASE_URL` for the DDL migration and `SUPABASE_SERVICE_ROLE_KEY` for REST writes. Specifics — back up the bank first; `alter table puzzles add column if not exists combos jsonb`; a min-over-7-pieces StackRabbit board-health floor (moderate, tunable FLOOR) + cheap geometric pre-filter; full cross-product sweep, field-normalize 0–100, store the **top-30** combos (`{rot1,col1,rot2,col2,score}` + total ranked count); **drop** the unambiguity gate; **retarget** Hz-invariance to the best combo; **replace** the bank — are in `HANDOFF-combo-overhaul.md` → "#33 specifics".
+- Keep the binary `Grid` in `packages/core` colour-blind (metrics/placement stay colour-blind; #34 grades against the stored combo table).
 - **Do NOT deploy or host.** The GitHub Pages redeploy stays a manual step after this run.
-- When #27, #28, and #29 are all closed, every remaining open issue is done — output the completion signal.
+- When #31–#35 are all closed, every remaining open issue is done — output the completion signal.
 
 # Task
 
