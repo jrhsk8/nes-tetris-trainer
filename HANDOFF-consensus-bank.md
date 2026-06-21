@@ -2,8 +2,10 @@
 
 > Output of a `/grill-with-docs` session that followed the **BetaTetris cross-check spike**
 > (`FINDINGS-betatetris-spike.md`). Design rationale recorded in `docs/decisions.md`
-> (*2026-06-21 — Consensus bank*). Four issues filed: **#51–#53 are RALPH/sandcastle-ready;
-> #54 is supervised.**
+> (*2026-06-21 — Consensus bank*). Four issues filed — **all four (#51–#54) are now
+> RALPH/sandcastle-ready**: BetaTetris was baked into the sandcastle image (2026-06-21),
+> so #54 no longer needs a supervised session. *(Original plan kept #54 supervised; updated
+> below.)*
 
 ## The goal (owner's words, distilled)
 
@@ -24,28 +26,34 @@ from a **deeper search of our own engine** instead.
 | **#51** | `[play]` | Graded reward curve — `scoreToOutcome(score)` replaces binary `solved?0:1` (95 neutral, convex to 100, steep-below to 0.10 floor); persist `attempts.score`; graded UI feedback | RALPH |
 | **#52** | `[generator]` | Difficulty bands enforced by `acceptCount` (hard = ≤~2 accepts); bank spans easy→hard | RALPH (regen) |
 | **#53** | `[generator]` | Deeper-StackRabbit best-confirm (`playoutCount>0`) re-ranks/rejects eval-only quirks | RALPH (regen) |
-| **#54** | `[supervised]` | BetaTetris true-consensus filter — keep only puzzles whose optimal BetaTetris *also* rates highly; **Phase 1 = measure keep-rate** | **Supervised — not sandcastle** |
+| **#54** | `[generator]` | BetaTetris true-consensus filter — keep only puzzles whose optimal BetaTetris *also* rates highly; **Phase 1 = measure keep-rate** | RALPH (last; after #53) |
 
 ## Sandcastle run — prep status
 
-- ✅ Issues #51–#54 filed on GitHub. ✅ `.sandcastle/prompt.md` **Run scope** updated for this batch (work #51→#53; **skip #54**; back up bank before the #52/#53 regen; complete when #51–#53 are closed). ✅ ADR in `docs/decisions.md`.
+- ✅ Issues #51–#54 filed on GitHub (#54 reclassified `supervised`→`generator`/autonomous, 2026-06-21). ✅ `.sandcastle/prompt.md` **Run scope** updated for this batch (work #51→#54; back up bank before the #52/#53 regen; #54 last; complete when #51–#54 are closed). ✅ ADR in `docs/decisions.md`. ✅ BetaTetris baked into `.sandcastle/Dockerfile` (offline, CPU) + adapters parameterized.
 - **Remaining manual steps to launch** (the prompt forbids auto push/deploy; the WSL canonical repo is the one RALPH runs in):
-  1. Push this prep to `origin/main` (issues are already live on GitHub; the WSL repo needs the updated `prompt.md` + `docs/decisions.md`).
+  1. Push this prep to `origin/main` (issues are already live on GitHub; the WSL repo needs the updated `prompt.md` + `docs/decisions.md` + `Dockerfile` + `betatetris-spike/`).
   2. Sync the WSL canonical repo (`/home/dev/nes-tetris-trainer`) to `origin/main` (the loop reads `prompt.md` from its working tree; the open-issues list is a live `gh` query, so #51–#54 show up automatically).
-  3. Launch `.sandcastle/run-afk.ps1` (Windows launcher → WSL loop → `wsl --shutdown`).
+  3. **Rebuild the sandcastle image** so it contains the BetaTetris stage (as `dev`, in WSL): `npx sandcastle docker build-image --dockerfile .sandcastle/Dockerfile`. *(Adds ~1.2–1.5 GB + several minutes; one-time. Without this rebuild, #54's env smoke-check fails and RALPH will skip #54 with a blocker comment.)*
+  4. Launch `.sandcastle/run-afk.ps1` (Windows launcher → WSL loop → `wsl --shutdown`).
 - After the run: review, then push + redeploy via the **/push-deploy-sandcastle** flow (manual).
 
-## Supervised follow-up (#54)
+## #54 — now sandcastle-runnable (was supervised)
 
-Run from a supervised session, **not** the sandbox (needs the offline BetaTetris build):
+BetaTetris is baked into the sandcastle image (`.sandcastle/Dockerfile`, offline/CPU), so #54
+runs autonomously like StackRabbit-backed issues. Mechanics:
 
-- Build + adapters already exist: repo `betatetris-spike/` (scripts + reproduce README) and WSL
-  `~/bt-spike/` (clone of `BetaTetris/betatetris-tablebase` + `micromamba` env `bt`:
-  `~/.local/bin/micromamba run -r ~/micromamba -n bt python …`). Models in `~/bt-spike/models/`.
+- **In sandcastle:** the env `bt` + the built `tetris` extension + the v1.0.0 weights are in the
+  image; run scripts with the `bt-run` wrapper (`bt-run python betatetris-spike/pull.py`, then
+  `bt-run python betatetris-spike/compare.py`). Paths via env (`BT_HOME`/`BT_REPO_PY`/`BT_MODELS`);
+  `DATABASE_URL` is in the process env. **Order: do #54 last** — it consumes the deeper-confirmed
+  optimal (#53) and difficulty bands (#52).
+- **Supervised fallback (unchanged):** the same adapters also run in WSL `~/bt-spike/`
+  (`~/.local/bin/micromamba run -r ~/micromamba -n bt python …`, models in `~/bt-spike/models/`).
 - **Phase 1 (do first):** measure the keep-rate — for each puzzle compute whether our
   deeper-confirmed optimal is high in BetaTetris's policy (reuse `betatetris-spike/compare.py`).
   That fraction decides whether a consensus bank is viable and how many candidates we burn per
-  keep. Only build the Phase-2 generation gate if the keep-rate is workable (owner accepted a
+  keep. Build the Phase-2 generation gate only if the keep-rate is workable (owner accepted a
   small, more tactical bank).
 
 ## Pointers

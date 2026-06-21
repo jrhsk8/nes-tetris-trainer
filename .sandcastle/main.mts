@@ -58,6 +58,15 @@ await run({
             "for i in $(seq 1 90); do curl -fsS http://127.0.0.1:3000/ping >/dev/null 2>&1 && { echo 'StackRabbit engine ready on :3000'; exit 0; }; sleep 1; done; " +
             "echo 'WARN: StackRabbit engine not ready after 90s; see /tmp/stackrabbit.log'; tail -n 20 /tmp/stackrabbit.log 2>/dev/null || true",
         },
+        // Smoke-check the offline BetaTetris env (baked into the image; issue #54).
+        // On demand only — not a server — so this just verifies torch + the C++
+        // `tetris` extension import. Non-fatal: only the BetaTetris-dependent issue
+        // (#54) is affected if it fails; the rest of the backlog still proceeds.
+        {
+          command:
+            "micromamba run -n \"${BT_ENV:-bt}\" python -c \"import os,sys; os.chdir(os.environ['BT_REPO_PY']); sys.path.insert(0,'.'); import torch, tetris; print('BetaTetris env ready: torch', torch.__version__)\" " +
+            "|| echo 'WARN: BetaTetris env not ready (issue #54 only; rebuild the sandcastle image with the BetaTetris stage)'",
+        },
       ],
     },
   },

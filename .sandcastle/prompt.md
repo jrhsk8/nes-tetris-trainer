@@ -25,21 +25,25 @@ treat the issues that need them as blocked.
   - Reachable at `STACKRABBIT_URL` (`http://127.0.0.1:3000`). Health: `GET /ping`.
   - Move endpoints take query-string args (`board`, `currentPiece`, `nextPiece`, `level`, `lines`, `inputFrameTimeline`, …); e.g. `GET /get-move-cpp?...`, `GET /rate-move-cpp?...`.
   - Per CLAUDE.md, the engine is **offline/generator-only** — wrap it behind the typed client in `src/generator`; never call it from the play app.
+- **BetaTetris cross-check engine (issue #54)** — now baked into the image (offline, CPU):
+  - A userspace micromamba env `bt` (python 3.12 + pytorch-cpu) + the built `tetris` C++ extension + the v1.0.0 perfect/normal weights. Run scripts inside it with the `bt-run` wrapper, e.g. `bt-run python betatetris-spike/pull.py && bt-run python betatetris-spike/compare.py`.
+  - Paths are in the env: `BT_HOME`, `BT_REPO_PY`, `BT_MODELS`, `BT_OUT`. Method/verdict: `FINDINGS-betatetris-spike.md`; harness + paths table: `betatetris-spike/README.md`.
+  - Same guardrail as StackRabbit: **offline / generator-only** (and GPLv3 — never link it into or ship it with the play app).
 
 ## Run scope (this run)
 
-This is the **2026-06-21 consensus-bank batch** — three issues (#51–#53) from a `/grill-with-docs` design session that followed the BetaTetris cross-check spike. They move the bank toward *quality-graded rating + difficulty-by-tightness + a deeper-confirmed optimal*. Rationale: `docs/decisions.md` (2026-06-21 — Consensus bank) + `FINDINGS-betatetris-spike.md`. All prior batches (#1–#50) are **closed**.
+This is the **2026-06-21 consensus-bank batch** — four issues (#51–#54) from a `/grill-with-docs` design session that followed the BetaTetris cross-check spike. They move the bank toward *quality-graded rating + difficulty-by-tightness + a deeper-confirmed optimal + a BetaTetris-blessed consensus filter*. Rationale: `docs/decisions.md` (2026-06-21 — Consensus bank) + `FINDINGS-betatetris-spike.md`. All prior batches (#1–#50) are **closed**.
 
 - **Issues (this batch — work top-to-bottom):**
   - **#51** `[play]` — graded reward curve: replace the binary `solved?0:1` Glicko outcome with a quality-graded `scoreToOutcome(score)` (95 = neutral, convex up to 100, steep-below to a 0.10 floor) in `packages/rating` (live + offline `tally.ts`); persist a numeric `attempts.score` (additive migration); the play UI shows graded credit. Detail in the issue body.
   - **#52** `[generator]` — enforce difficulty bands by measured `acceptCount` (hard = ≤ ~2 acceptable answers); generation deliberately spans easy→hard. Reshapes the bank → **regen**.
   - **#53** `[generator]` — deeper-StackRabbit best-confirm gate (`playoutCount>0`) that re-ranks/rejects eval-only-quirk optimals. Reshapes the bank → **regen**.
-- **⚠️ #54 `[supervised]` is NOT for this run — SKIP IT.** It needs the offline BetaTetris build, which is not provisioned in this sandbox. Do not attempt it and do not comment-and-move-on past it as "blocked" — just leave it open for a supervised session. (It appears in the open-issues list above; ignore it entirely.)
+  - **#54** `[generator]` — BetaTetris true-consensus filter. The offline BetaTetris build is **now provisioned in this sandbox** (baked into the image; see the resources section above), so this is **in scope** for autonomous work. **Do #54 last**, after #51–#53 close — it depends on the deeper-confirmed optimal (#53) and the difficulty bands (#52). **Phase 1 first: measure the keep-rate** (reuse `betatetris-spike/{pull,compare}.py` via `bt-run`) and post the number on the issue; only build the Phase-2 generation gate if the keep-rate is workable (a smaller, more tactical bank is acceptable). If the BetaTetris env smoke-check failed at sandbox start, leave a blocker comment and move on rather than thrashing.
 - **Bank regen — #52 AND #53 reshape which candidates survive + `combos`/difficulty.** **Back up first** (`create table if not exists puzzles_bak_<date> as select * from puzzles`). Regen is additive in form — `boardKey`s and placements are unchanged; only which candidates survive + their scores/difficulty change. If both run in one launch, the later regen incorporates both. The live bank is currently **309**. **Do NOT drop any `*_bak_*` or `*_quarantine_*` table.**
 - **#51's migration is additive** — `alter table public.attempts add column if not exists score double precision`; re-running `schema.sql` stays safe.
 - **Engine stays OFFLINE / generator-only** (StackRabbit at `$STACKRABBIT_URL`); never call it from the play app. Supabase **anonymous sign-ins are ENABLED** (not a blocker).
 - **Do NOT deploy, push, or host.** The push + GitHub Pages redeploy stay a manual step after this run.
-- When **#51–#53** are all closed, output the completion signal — the still-open supervised **#54** is **not** remaining work; do not let it block completion.
+- When **#51–#54** are all closed (or you are blocked on the remaining one and have left a comment), output the completion signal.
 
 # Task
 

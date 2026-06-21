@@ -6,7 +6,13 @@ resulting board, compare to our stored optimal + top-K combos, and characterise
 towers / hole-burying with the #50 audit metric. Runs the perfect + normal nets.
 Writes results_<model>.json and prints a summary."""
 import sys, os, re, json, time
-REPO_PY = '/home/dev/bt-spike/betatetris-tablebase/python'
+# Paths come from the env (sandcastle image bakes BT_HOME/BT_REPO_PY/BT_MODELS);
+# the WSL `~/bt-spike` layout is the supervised-reproduction fallback. BT_OUT is
+# where sample.json + results_*.json are read/written (defaults to BT_HOME).
+BT_HOME = os.environ.get('BT_HOME', '/home/dev/bt-spike')
+REPO_PY = os.environ.get('BT_REPO_PY', os.path.join(BT_HOME, 'betatetris-tablebase', 'python'))
+BT_MODELS = os.environ.get('BT_MODELS', os.path.join(BT_HOME, 'models'))
+BT_OUT = os.environ.get('BT_OUT', BT_HOME)
 sys.path.insert(0, REPO_PY)
 os.chdir(REPO_PY)
 import numpy as np, torch
@@ -139,7 +145,8 @@ def run(mname, mpath, sample):
             "bt_max_range": [min(x["max"] for x in per_next), max(x["max"] for x in per_next)],
             "per_next": per_next})
         print(f"  [{mname}] {i+1}/{len(sample)} done", flush=True)
-    json.dump(results, open(f'/home/dev/bt-spike/results_{mname}.json', 'w'))
+    os.makedirs(BT_OUT, exist_ok=True)
+    json.dump(results, open(os.path.join(BT_OUT, f'results_{mname}.json'), 'w'))
     summarize(results, mname)
     print(f"[{mname}] elapsed {int(time.time()-t0)}s", flush=True)
     return results
@@ -171,8 +178,8 @@ def summarize(results, mname):
         print(f"   agree-our-optimal: any-of-7 {agree_any}/{n}  majority>=4/7 {agree_maj}/{n}  lands-in-topK(any) {topk_any}/{n}")
 
 if __name__ == "__main__":
-    sample = json.load(open('/home/dev/bt-spike/sample.json'))
-    MODELS = {"perfect": "/home/dev/bt-spike/models/model-v1.0.0-perfect.pth",
-              "normal": "/home/dev/bt-spike/models/model-v1.0.0-normal.pth"}
+    sample = json.load(open(os.path.join(BT_OUT, 'sample.json')))
+    MODELS = {"perfect": os.path.join(BT_MODELS, 'model-v1.0.0-perfect.pth'),
+              "normal": os.path.join(BT_MODELS, 'model-v1.0.0-normal.pth')}
     for mname, mpath in MODELS.items():
         run(mname, mpath, sample)

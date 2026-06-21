@@ -1,9 +1,26 @@
-# betatetris-spike (throwaway)
+# betatetris-spike (BetaTetris cross-check adapters)
 
-Adapter scripts for the BetaTetris cross-check feasibility spike. **Not part of the
-build** — they depend on the external GPLv3 repo `BetaTetris/betatetris-tablebase` and
-a CPU PyTorch env, both kept offline (per the engine-offline guardrail). Verdict and
-analysis: `../FINDINGS-betatetris-spike.md`. Brief: `../HANDOFF-betatetris-spike.md`.
+Adapter scripts for the BetaTetris cross-check — born as a feasibility spike, now also
+the harness for the **#54 true-consensus filter**. They depend on the external GPLv3
+repo `BetaTetris/betatetris-tablebase` + a CPU PyTorch env, both kept **offline /
+generator-only** (per the engine-offline guardrail) — never linked into the play app.
+Verdict and analysis: `../FINDINGS-betatetris-spike.md`. Brief: `../HANDOFF-betatetris-spike.md`.
+
+## Where the engine lives (paths are env-driven)
+
+The scripts read these env vars, defaulting to the WSL `~/bt-spike` supervised layout:
+
+| var | sandcastle image | WSL fallback |
+|---|---|---|
+| `BT_HOME` | `/home/agent/betatetris` | `/home/dev/bt-spike` |
+| `BT_REPO_PY` | `…/betatetris-tablebase/python` | derived from `BT_HOME` |
+| `BT_MODELS` | `…/models` (perfect + normal `.pth`) | derived from `BT_HOME` |
+| `BT_OUT` | `BT_HOME` (sample.json, results_*.json) | `BT_HOME` |
+| `BT_ENV_FILE` | unused — creds are in the process env | `…/.sandcastle/.env` |
+
+**In sandcastle** (the engine + env are baked into the image by `.sandcastle/Dockerfile`):
+run inside the `bt` env via the `bt-run` wrapper — e.g. `bt-run python betatetris-spike/pull.py`
+then `bt-run python betatetris-spike/compare.py`. `DATABASE_URL` is already in the env.
 
 ## Files
 - `pull.py` — pull the sample from Supabase (13 quarantined + 20 current) → `sample.json`.

@@ -1,5 +1,9 @@
 import sys, os, re, time
-REPO_PY = '/home/dev/bt-spike/betatetris-tablebase/python'
+# Paths come from the env (sandcastle image bakes BT_HOME/BT_REPO_PY/BT_MODELS);
+# the WSL `~/bt-spike` layout is the supervised-reproduction fallback.
+BT_HOME = os.environ.get('BT_HOME', '/home/dev/bt-spike')
+REPO_PY = os.environ.get('BT_REPO_PY', os.path.join(BT_HOME, 'betatetris-tablebase', 'python'))
+BT_MODELS = os.environ.get('BT_MODELS', os.path.join(BT_HOME, 'models'))
 sys.path.insert(0, REPO_PY)
 os.chdir(REPO_PY)  # ev_var.py loads ev_var.npz via a relative path
 import numpy as np
@@ -42,7 +46,7 @@ def load_model(path):
     m.eval()
     return m
 
-m = load_model('/home/dev/bt-spike/models/model-v1.0.0-perfect.pth')
+m = load_model(os.path.join(BT_MODELS, 'model-v1.0.0-perfect.pth'))
 g = tetris.Tetris()
 g.Reset(0, 1, lines=0, adj_delay=18, aggression_level=0)  # empty board, now=T next=J, level18 lines0
 t = time.time()
