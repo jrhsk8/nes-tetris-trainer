@@ -32,35 +32,27 @@ treat the issues that need them as blocked.
 
 ## Run scope (this run)
 
-This is the **grill-with-docs #5 batch** (2026-06-22): ten owner-decided issues, **#58-#67**, all settled in a `/grill-with-docs` session and specced in `docs/decisions.md` -> "2026-06-22 ... (grill-with-docs #5)". **Read that decisions entry first** -- every issue body points there for the full spec/rationale. All prior batches (#1-#57) are closed. Work in RALPH priority order (bug -> polish/enhancement), respecting the dependencies and the **single re-bank** coordination below.
+This is the **grill-with-docs #6 batch** (2026-06-22): six owner-decided issues, **#68-#73**, all settled in a `/grill-with-docs` session and specced in `docs/decisions.md` -> "2026-06-22 ... (grill-with-docs #6)". **Read that decisions entry first** -- every issue body points there for the full spec/rationale. All prior batches (#1-#67) are closed. This batch is **all enhancement (no bugs)**, so work the **dependency order below**, not just label priority.
 
-**Bugs first**
+**Dependency blocks (respect these):** treat **#69 as blocked until #68 closes** (drag reuses #68's ride-up rule) and **#73 as blocked until #71 closes** (the additive run needs #71's 4-band + tetris logic).
 
-- **#58** [bug][play] -- bar appears to cross the right wall *while placing*. The model is already correct (`PlacementInput` gates moves+rotations against the reachable set), so this is **prove + guard**: add a property test (no reachable state renders an out-of-bounds cell, all 7 pieces x sampled boards) + a defensive render guard in `Board` (never draw a cell outside the grid). Autonomous. Redeploy/retest is manual. Files: `apps/play/src/board/{PlacementInput,Board}.tsx`, `packages/core/src/placement.ts`.
-- **#59** [bug][generator] -- puzzle 436 rank-1 (bar-right) likely worse than rank-2 (bar-left). **Diagnose on the real board** (pull 436 from `DATABASE_URL`; re-eval both placements with deeper StackRabbit + BetaTetris `bt-run`), identify the failure class (well-preservation vs mirror near-tie), then **add a generator gate** that catches the class. The re-bank (#66) applies it bank-wide -- no per-puzzle surgery. **LONG DATA-OP** (offline engines): poll-until-done, do NOT detach-and-exit. Files: `generator/src/pipeline/{combo,deeper,consensus}.ts`, `betatetris-spike/`.
+**Play input + layout (client-only -- these three do NOT touch the bank)**
 
-**Grading + feedback**
+- **#68** [play] -- **free lateral movement (do FIRST; #69 builds on it).** L/R must always move unless the piece would go off-screen. `PlacementInput.moveLeft/moveRight` gate on the reachable set at the *current* row; change to: move at the current row if it fits (this still covers sliding into an open pocket = a tuck), else **ride up** to the highest fitting row in the target column. Blocked only when the column is full to the very top. Tucks preserved (soft-drop-first under solid ledges). Keep/add a property test for the superset invariant. Autonomous. Files: `apps/play/src/board/PlacementInput.tsx`, `packages/core/src/placement.ts`.
+- **#69** [play] -- **mobile drag (BLOCKED until #68).** Drag anywhere on the board -> column (same free/ride-up rule); ▲/▼ buttons for tuck depth (NOT vertical drag); explicit Confirm to commit (NOT lift-to-place). Desktop keyboard/buttons unchanged. Autonomous. Files: `apps/play/src/board/PlacementInput.tsx`.
+- **#70** [play] -- **mobile fixed-board layout** (independent). Board is a fixed anchor (never moves/resizes between solving + feedback); a fixed bottom zone = controls (solving) / **compact zero-scroll combo list** (feedback, deeper ranks behind a "more" expand); collapse chrome (nav/account behind a menu, rating -> one-line chip); next box stays visible; shrink the board only as a last resort; no page scroll. Autonomous. Files: `apps/play/src/styles.css`, `feedback/Feedback.tsx`, `feedback/ComboList.tsx`.
 
-- **#60** [core][play] -- letter grades + A+ win line at 97. Move `CORRECT_SCORE_THRESHOLD`/`NEUTRAL_SCORE` 95->97 (curve + slope k=0.625 unchanged); make `ComboEntry.score` a **float** (generator drops `round()`); display **letter + one-decimal** (12-band, A+ = [97,100]). **Code only -- do NOT re-bank here** (the float scores land in #66). Files: `packages/core/src/combo.ts`, `packages/rating/src/glicko.ts`, `apps/play/src/feedback/*`.
-- **#61** [play] -- grade banner on the **board top** (green A+/red below, letter + decimal) + NES chiptune (arpeggio A+/blip below) + mute toggle; slim the rail to the rating line. **Depends on #60.** Files: `apps/play/src/feedback/Feedback.tsx`, `board/Board.tsx`, controls/prefs.
+**Difficulty + curation + bank**
 
-**Play UI polish**
+- **#71** [generator] -- **difficulty: very-easy band + tetris cap (do before #73).** Add a 4th `very-easy` band by `acceptCount` (seeded below `EASY_SEED` 1300). Cap any puzzle where an acceptable combo (score >= 97) clears a **tetris** (a single 4-row clear by one of the two placements) to `easy` -- never medium/hard; `acceptCount` picks easy vs very-easy under the cap; seed capped. **Re-band migration** over the existing bank, recomputed from each puzzle's stored `combos` (replay placements, count cleared rows -- **no StackRabbit, no new IDs, attempts preserved**). Autonomous. Files: `generator/src/pipeline/difficulty.ts`, a re-band script, the bank write path.
+- **#72** [play][infra] -- **dev in-play curation.** Allowlist-gated (auth UID/email) **in Supabase RLS** (NOT client-trusted -- delete mutates the shared bank): **flag** (free-text comment -> new append-only `puzzle_flags` log, action `flag`) + **soft-delete** (`cull` row + new `puzzles.active boolean default true` set false; matchmaking filters `active = true`). Mirror the `submissions` allowlist/own-row RLS pattern. **Autonomous CODE, but the curator allowlist identity is OWNER-CONFIG (read from env) -- do NOT hardcode a UID;** leave a clear setup note + close with that note. Files: `packages/data/{schema.sql, src/data-access.ts}`, a dev curation UI in `apps/play`.
+- **#73** [generator] -- **larger ADDITIVE bank (BLOCKED until #71; LONG DATA-OP).** Append NEW puzzles via the current pipeline (cleaner boards #66 + #55 BetaTetris consensus) using #71's 4-band + tetris logic; existing puzzles/attempts **preserved** (additive append, NOT a destructive re-bank). **Target size is OWNER-CONFIG (`BANK_TARGET` env) -- do NOT generate unbounded; if `BANK_TARGET` is unset, leave #73 open with a comment and do not start the run.** Run the generation **directly** (`docker run -d` outside the loop), poll-until-done, do NOT detach-and-exit; verify against the live DB before closing.
 
-- **#62** [play] -- remove the replay step-counter line under the board (`feedback-step` in `Feedback.tsx`). Tiny.
-- **#63** [play] -- NES next box: fixed recessed black box, centered piece, constant footprint, tiny "NEXT". Files: `board/NextPieceBox.tsx`, `styles.css`.
-- **#64** [play] -- keyboard loop: rebindable `next-puzzle`(N)/`replay`(R) (N is deliberately NOT Enter/Space), auto-focus the board on load. Files: `board/keybindings.ts`, `board/PlacementInput.tsx`, session loader.
-- **#65** [play] -- swap Next(->center, under board)/Replay(->rail) in `Feedback.tsx`. Tiny; pairs with #64.
-
-**Generator + security**
-
-- **#66** [generator] -- **cleaner boards + THE single re-bank.** Tighten default accept (holes <= 1, bump <= ~12, h <= ~12) + a ~20% variety lane (holes <= 2, bump <= ~20); self-play noise 0.12 -> 0.08; finalize thresholds from one calibration run. This re-bank **also folds in** #60's float scores, #59's gate, and a fresh #55 BetaTetris consensus pass -- so do the other generator code (#59, #60) FIRST, then run **one** regen here. **LONG DATA-OP** (~50min+): poll-until-done, do NOT detach-and-exit; verify against the live DB before closing.
-- **#67** [generator][play] -- harden screenshot uploads: bucket mime/size/private, per-user path policy, server-gen path/type, magic-byte check, per-user quota, require non-anon to submit, sandbox the offline parser. Files: `packages/data/{schema.sql, src/data-access.ts}`, submission UI.
-
-**Bank regen + backup (REQUIRED -- exactly one re-bank, in #66; #59 and #60 feed it).** **Back up first:** `create table puzzles_bak_20260622_grill5 as select * from puzzles;`. **Never drop** any `*_bak_*` / `*_quarantine_*` table. Verify against the live DB (count + disagreer/quality spot-checks) before closing #66.
+**Bank backup (REQUIRED -- #71 re-bands existing rows + #73 appends).** **Back up first:** `create table if not exists puzzles_bak_20260622_grill6 as select * from puzzles;`. **Never drop** any `*_bak_*` / `*_quarantine_*` table. Verify against the live DB (counts + spot-checks) before closing #71 / #73.
 
 **Engine stays OFFLINE / generator-only** (StackRabbit at `$STACKRABBIT_URL`; BetaTetris via `bt-run`) -- never called from `apps/play`. **Do NOT deploy, push, or host** -- the push + GitHub Pages redeploy stay a manual step after this run (`/push-deploy-sandcastle`).
 
-When **#58-#67** are all closed (the bank re-banked + verified) -- or you are genuinely blocked and have left a comment on the remaining ones -- output the completion signal.
+When **#68-#73** are all closed (the bank re-banded + the additive run verified) -- or you are genuinely blocked and have left a comment on the remaining ones (e.g. #72 awaiting the allowlist identity, #73 awaiting `BANK_TARGET`) -- output the completion signal.
 
 # Task
 
