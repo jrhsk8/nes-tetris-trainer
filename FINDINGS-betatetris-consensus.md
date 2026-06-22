@@ -2,6 +2,8 @@
 
 **Date:** 2026-06-22 · **Status:** Phase 1 (MEASURE) complete · **Bank:** 280 puzzles (post #52/#53 regen).
 
+> **Superseded headline (#55, 2026-06-22).** The settled production gate is **normal-net exact top-1**, not the both-net top-3 figure below: keep a puzzle iff the BetaTetris *normal* net's #1 piece-1 move matches our stored optimal (≈**61%**, 170/280 keep-rate). The **perfect net is dropped** from the standard path — it is trained for maxout/killscreen tetris-only play, off-objective for a general stacking trainer. The top-3/both-net numbers here were the Phase-1 *measurement*; the methodology (adjustment-phase policy, convention-free outcome keys, "0/33 was an artifact") still holds and is what the top-1 gate is built on. See `docs/decisions.md` (2026-06-22 — *normal-net top-1 consensus is a standard generation gate*).
+
 ## TL;DR
 
 Measuring whether BetaTetris's **policy** blesses our stored optimal — the right

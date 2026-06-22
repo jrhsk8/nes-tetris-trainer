@@ -2,7 +2,21 @@
 
 Lightweight log of decisions not captured in [PRD-v1.md](PRD-v1.md) (the PRD owns product/architecture decisions; this owns tooling, repo, and doc choices). Newest first.
 
+### 2026-06-22 — BetaTetris normal-net top-1 consensus is a standard generation gate (#55)
+
+Builds on the #54 Phase-1 measurement below (now superseded as the *headline*): the owner settled the gate design in a 2026-06-21 grilling session and chose to make a BetaTetris consensus check **the usual puzzle-creation path going forward**, plus a one-time live-bank repair.
+
+- **Agreement rule — normal net, exact top-1.** Keep a puzzle iff the BetaTetris **normal** net's #1 piece-1 policy move lands the SAME board as our stored optimal's piece-1 placement (matched by the canonical 200-char outcome key — convention-free; see `bt-bank-keys.ts`). This is **stricter** than the #54 *top-3, both-net* measurement; measured top-1 keep-rate on the live bank ≈ **61% (170/280)**.
+- **Normal net only; the `perfect` net is dropped from the standard path.** It is trained for maxout/killscreen play (tetris-only, aggressive well management) — off-objective for a general stacking trainer. So the standard gate consults the normal net alone.
+- **Post-generation filter, not an inline TS gate.** Generation stays TS/StackRabbit (`generate.ts`); the consensus check is a **final stage** that batches TS survivors and runs the Python BT-normal adapter (`betatetris-spike/consensus.py`) over them, dropping non-agreers and topping the cull back up. Reusable stage: `generator/src/pipeline/consensus.ts` (`filterByConsensus` + injectable `ConsensusJudge`; `betaTetrisJudge` is the production shell-out). BetaTetris stays **offline / generator-only** (the StackRabbit guardrail; GPLv3 — never shipped to `apps/play`).
+- **Fail-closed.** A candidate BetaTetris cannot cleanly judge (engine error, unreachable outcome, odd-parity board, inject mismatch) is **rejected**, and the `bt-error` count is logged apart from genuine disagreement so flakiness never silently inflates the cull.
+- **Filter, not re-rank.** Disagreers are **dropped**, never relabelled with BetaTetris's move — adopting BT's pick would orphan the StackRabbit-derived combo table and the graded-reward scores (#51) and break the "optimal is StackRabbit-confirmed" invariant.
+- **Live-bank repair.** `generator/src/repair-bank.ts` self-backs-up the bank (`puzzles_bak_pre55_*`; no `*_bak_*` table is dropped), drops the top-1 disagreers, and backfills via generate→filter to restore each difficulty band's pre-repair count (#52 spread preserved). It asserts the shipped bank is **100% top-1-consensus**.
+
 ### 2026-06-22 — BetaTetris consensus keep-rate measured; spike's 0/33 was an artifact (#54 Phase 1)
+
+**Superseded as the headline by the #55 entry above (2026-06-22).** The *both-net top-3 = 72%* figure was the Phase-1 *measurement*; the settled gate is the **normal-net exact top-1** rule (≈61% keep-rate), and the **perfect net is dropped** as off-objective. The measurement methodology and the "0/33 was an artifact" finding below remain valid and are what the top-1 gate is built on.
+
 
 Phase 1 of #54 (MEASURE the keep-rate) is **done** — and it **overturns the *Consensus bank* premise below**. Full report: [FINDINGS-betatetris-consensus.md](../FINDINGS-betatetris-consensus.md). Tooling: `generator/src/bt-bank-keys.ts` (exports each puzzle's after-piece-1 outcome key in the production convention) + `betatetris-spike/keeprate.py` (reads BetaTetris's piece-1 policy, ranks our optimal in it). Measured over the whole 280-puzzle bank on both v1.0.0 nets.
 

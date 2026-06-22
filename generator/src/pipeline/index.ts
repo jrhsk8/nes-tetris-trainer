@@ -35,3 +35,14 @@ export {
 } from './difficulty.js';
 export { boardHamming, isNearDuplicate, type BankKey } from './dedup.js';
 export { tallyBankRatings, type TallyDeps, type TallyResult } from './tally.js';
+export {
+  consensusKeys,
+  filterByConsensus,
+  betaTetrisJudge,
+  type ConsensusPuzzle,
+  type ConsensusKeyRow,
+  type ConsensusJudge,
+  type ConsensusVerdict,
+  type ConsensusReason,
+  type ConsensusResult,
+} from './consensus.js';

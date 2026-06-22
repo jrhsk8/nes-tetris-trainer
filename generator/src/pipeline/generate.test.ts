@@ -16,6 +16,7 @@ import {
   DEFAULT_GENERATION_CONFIG,
   type GeneratorEngine,
 } from './generate.js';
+import type { ConsensusJudge, ConsensusVerdict } from './consensus.js';
 import { EASY_SEED, HARD_SEED, HARD_MAX_ACCEPTS } from './difficulty.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
 import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
@@ -462,6 +463,63 @@ describe('generateBank (deterministic)', () => {
     expect(result.byBand).toEqual({ easy: 1, medium: 0, hard: 1 });
     expect(stored).toHaveLength(2);
     expect(result.rejections['band-full:easy']).toBe(1);
+  });
+
+  it('drops BetaTetris disagreers and tops up to target, storing only consensus puzzles (#55)', async () => {
+    const { db, stored } = recordingDb();
+    // The judge "disagrees" with any puzzle whose first piece is I (drops it),
+    // blesses the rest. With one I in the source, the run must reach past it to
+    // hit the target — i.e. the cull is topped up, not left short.
+    const judge: ConsensusJudge = async (rows) =>
+      rows.map<ConsensusVerdict>((r) => {
+        const keep = r.piece1 !== 'I';
+        return { number: r.number, id: r.id, keep, reason: keep ? null : 'disagree', rank: keep ? 1 : 2 };
+      });
+
+    const result = await generateBank(
+      {
+        source: new FixedSource([
+          candidateWith('O', 'O'),
+          candidateWith('I', 'O'), // BetaTetris disagrees → dropped
+          candidateWith('T', 'O'),
+          candidateWith('S', 'O'),
+        ]),
+        engine: comboEngine(),
+        db,
+        consensusJudge: judge,
+      },
+      { targetCount: 3, maxCandidates: 20 },
+    );
+
+    // Exactly the three blessed puzzles are stored; the I disagreer never is.
+    expect(stored).toHaveLength(3);
+    expect(result.stored).toHaveLength(3);
+    expect(stored.map((p) => p.piece1).sort()).toEqual(['O', 'S', 'T']);
+    expect(stored.some((p) => p.piece1 === 'I')).toBe(false);
+    // The disagree is recorded apart from a TS-gate rejection, and the run had to
+    // try the 4th candidate to top the cull back up to 3.
+    expect(result.rejections['consensus:disagree']).toBe(1);
+    expect(result.candidatesTried).toBe(4);
+  });
+
+  it('fail-closed: a bt-error verdict drops the puzzle and never stores it (#55)', async () => {
+    const { db, stored } = recordingDb();
+    const judge: ConsensusJudge = async (rows) =>
+      rows.map<ConsensusVerdict>((r) => ({
+        number: r.number,
+        id: r.id,
+        keep: false,
+        reason: 'bt-error',
+        rank: null,
+      }));
+
+    const result = await generateBank(
+      { source: new FixedSource([candidateWith('O', 'O')]), engine: comboEngine(), db, consensusJudge: judge },
+      { targetCount: 1, maxCandidates: 3 },
+    );
+
+    expect(stored).toHaveLength(0);
+    expect(result.rejections['consensus:bt-error']).toBe(1);
   });
 });
 

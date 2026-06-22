@@ -48,6 +48,7 @@ import {
   type DifficultyBand,
 } from './difficulty.js';
 import { isNearDuplicate, type BankKey } from './dedup.js';
+import { filterByConsensus, type ConsensusJudge } from './consensus.js';
 
 /** The engine surface the pipeline needs (best move + move rating). */
 export interface GeneratorEngine {
@@ -252,7 +253,25 @@ export interface GenerateBankDeps {
    * usually empty; appends pass the current bank's keys.
    */
   existingKeys?: BankKey[];
+  /**
+   * Optional BetaTetris normal-net consensus judge (#55) — the standard *final*
+   * stage of generation. When set, TS survivors are batched and checked against
+   * BetaTetris; only puzzles whose stored optimal is BetaTetris's top-1 piece-1
+   * move are kept (the rest are dropped, never re-ranked), and the run keeps
+   * generating to top up the cull, so the stored bank is 100% top-1-consensus.
+   * Fail-closed: a puzzle BetaTetris cannot cleanly judge is dropped, its
+   * `bt-error` count surfaced apart from genuine disagreement.
+   */
+  consensusJudge?: ConsensusJudge;
 }
+
+/**
+ * How many TS survivors to accumulate before running one BetaTetris consensus
+ * batch (#55). The net pays a fixed model-load per invocation, so larger batches
+ * amortise it; small enough that the cull-and-top-up loop converges without
+ * overshooting the target by much.
+ */
+const CONSENSUS_BATCH = 16;
 
 /** Options controlling a bank-generation run. */
 export interface GenerateBankOptions {
@@ -310,7 +329,10 @@ export async function generateBank(
 ): Promise<BankResult> {
   const config = { ...DEFAULT_GENERATION_CONFIG, ...options.config };
   const onProgress = options.onProgress ?? (() => {});
+  const judge = deps.consensusJudge;
   const survivors: NewPuzzle[] = [];
+  // TS survivors awaiting a BetaTetris consensus batch (#55); empty without a judge.
+  const pending: NewPuzzle[] = [];
   const rejections: Record<string, number> = {};
   const byBand: Record<DifficultyBand, number> = { easy: 0, medium: 0, hard: 0 };
   // Dedup keys: the existing bank plus every survivor accepted so far.
@@ -327,6 +349,38 @@ export async function generateBank(
   const bandsFilled = () => DIFFICULTY_BANDS.every((b) => byBand[b] >= quotaFor(b));
   const done = () => (quotas ? bandsFilled() : survivors.length >= target);
 
+  // Admit a freshly-blessed survivor: enforce the per-band quota (#52) here too,
+  // so a band a BetaTetris cull re-opened can refill. Returns whether it counted.
+  const admit = (puzzle: NewPuzzle): boolean => {
+    const band = bandFor(puzzle.acceptCount ?? 0);
+    if (quotas && byBand[band] >= quotaFor(band)) {
+      rejections[`band-full:${band}`] = (rejections[`band-full:${band}`] ?? 0) + 1;
+      return false;
+    }
+    survivors.push(puzzle);
+    byBand[band]++;
+    return true;
+  };
+
+  // Run one BetaTetris consensus batch (#55) over the pending TS survivors: keep
+  // the top-1 agreers, drop the rest (recording disagree vs bt-error apart).
+  const flushConsensus = async (): Promise<void> => {
+    if (!judge || pending.length === 0) return;
+    const batch = pending.splice(0, pending.length);
+    const result = await filterByConsensus(batch, judge);
+    for (const { reason } of result.dropped) {
+      rejections[`consensus:${reason}`] = (rejections[`consensus:${reason}`] ?? 0) + 1;
+    }
+    let admitted = 0;
+    for (const puzzle of result.kept) if (admit(puzzle)) admitted++;
+    onProgress(
+      `consensus batch: kept ${result.kept.length}/${batch.length} ` +
+        `(admitted ${admitted}, bt-errors ${result.btErrors}); ` +
+        `bank ${survivors.length}/${target} ` +
+        `[easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard}]`,
+    );
+  };
+
   while (!done() && candidatesTried < options.maxCandidates) {
     const candidate = await deps.source.next();
     if (!candidate) break;
@@ -340,9 +394,11 @@ export async function generateBank(
 
     // Bucket by the measured acceptCount (#52). In quota mode, a survivor whose
     // band is already full is rejected so the run keeps hunting for the bands
-    // that still need filling (notably the rare, tight hard band).
+    // that still need filling (notably the rare, tight hard band). With a
+    // consensus judge we over-generate instead and apply the band gate AFTER the
+    // BetaTetris cull (in `admit`), so a culled puzzle frees its band slot.
     const band = bandFor(result.puzzle.acceptCount ?? 0);
-    if (quotas && byBand[band] >= quotaFor(band)) {
+    if (!judge && quotas && byBand[band] >= quotaFor(band)) {
       rejections[`band-full:${band}`] = (rejections[`band-full:${band}`] ?? 0) + 1;
       continue;
     }
@@ -356,16 +412,22 @@ export async function generateBank(
       rejections['duplicate'] = (rejections['duplicate'] ?? 0) + 1;
       continue;
     }
-
-    survivors.push(result.puzzle);
-    byBand[band]++;
     acceptedKeys.push(key);
-    onProgress(
-      `accepted ${survivors.length}/${target} [${band}] ` +
-        `(easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard}; ` +
-        `after ${candidatesTried} tried)`,
-    );
+
+    if (judge) {
+      pending.push(result.puzzle);
+      if (pending.length >= CONSENSUS_BATCH) await flushConsensus();
+    } else {
+      admit(result.puzzle);
+      onProgress(
+        `accepted ${survivors.length}/${target} [${band}] ` +
+          `(easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard}; ` +
+          `after ${candidatesTried} tried)`,
+      );
+    }
   }
+  // Judge the final partial batch (#55).
+  await flushConsensus();
 
   if (options.replace) {
     if (!deps.db.deleteAllPuzzles) {

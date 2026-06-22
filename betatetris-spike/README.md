@@ -23,6 +23,12 @@ run inside the `bt` env via the `bt-run` wrapper — e.g. `bt-run python betatet
 then `bt-run python betatetris-spike/compare.py`. `DATABASE_URL` is already in the env.
 
 ## Files
+- `consensus.py` — **#55 standard gate**: per-puzzle BetaTetris **normal-net top-1**
+  keep/drop verdict (the production consensus filter `generator/src/pipeline/consensus.ts`
+  shells to this). Reuses `keeprate.py`'s machinery but runs the **normal net only**
+  (the `perfect` net is off-objective and dropped) and is **fail-closed** (a puzzle BT
+  cannot cleanly judge is dropped; `bt-error` counted apart from genuine disagree).
+  Run: `bt-run python betatetris-spike/consensus.py [keys.json] [out.json] [limit]`.
 - `keeprate.py` — **#54 Phase-1 keep-rate harness** (the current one). Reads
   `bank_keys.json` (written by `generator/src/bt-bank-keys.ts`), injects each board0,
   and ranks our stored optimal's after-piece-1 outcome in BetaTetris's *adjustment-phase*
