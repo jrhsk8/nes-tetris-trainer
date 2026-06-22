@@ -34,6 +34,7 @@ export {
   applyRestingPlacement,
   reachableStates,
   enumerateResting,
+  moveToColumn,
   lateralMove,
   boardKey,
 } from './placement.js';

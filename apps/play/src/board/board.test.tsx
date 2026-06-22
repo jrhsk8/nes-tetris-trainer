@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyBoard, emptyColorGrid, restingCells, type Grid, type Placement } from '@trainer/core';
 import { Board } from './Board.js';
@@ -257,6 +257,75 @@ describe('PlacementInput', () => {
     // Seated on top of the wall, not stranded in the col-8 well.
     expect(keysOf(landed)).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
     expect(keysOf(landed)).toEqual(ghostKeys());
+  });
+
+  // jsdom has no PointerEvent (and drops clientX from a synthetic one). A
+  // MouseEvent typed as a pointer event carries clientX/button and fires the
+  // React onPointer* handlers, so it stands in for a finger drag here.
+  const ptr = (type: string, clientX: number) =>
+    new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX });
+  const mockGrid = (container: HTMLElement) => {
+    const gridEl = container.querySelector('.board') as HTMLElement;
+    gridEl.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 320, height: 640, right: 320, bottom: 640, x: 0, y: 0 }) as DOMRect;
+  };
+
+  it('positions the piece by dragging on the board, committing only on Confirm (#69)', async () => {
+    const user = userEvent.setup();
+    const board = emptyBoard();
+    const onConfirm = vi.fn<(p: Placement) => void>();
+    const { container } = render(
+      <PlacementInput board={board} piece="O" onConfirm={onConfirm} />,
+    );
+    mockGrid(container); // 10 columns × 32px starting at x=0
+
+    const surface = screen.getByLabelText('board drag surface');
+    // Drag to near the right wall (x≈300 → finger col 9). The O (2 wide) centers
+    // there and clamps to col 8 (cols 8,9), resting on the floor (rows 18,19).
+    fireEvent(surface, ptr('pointerdown', 300));
+    fireEvent(surface, ptr('pointermove', 300));
+
+    // Lift-to-place must NOT commit — only the explicit Confirm button does.
+    fireEvent(surface, ptr('pointerup', 300));
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const landed = restingCells(board, 'O', onConfirm.mock.calls[0][0])!;
+    expect(keysOf(landed)).toEqual(new Set(['18-8', '18-9', '19-8', '19-9']));
+    expect(keysOf(landed)).toEqual(ghostKeys());
+  });
+
+  it('drag positions against a wall by the same free/ride-up rule as L/R (#69)', () => {
+    const board = emptyBoard();
+    for (let r = 8; r < 20; r++) board[r][9] = 1; // wall in col 9
+    const onConfirm = vi.fn<(p: Placement) => void>();
+    const { container } = render(
+      <PlacementInput board={board} piece="I" onConfirm={onConfirm} />,
+    );
+    mockGrid(container);
+
+    const surface = screen.getByLabelText('board drag surface');
+    // Drag the horizontal I toward the wall column — it rests ON top of the wall
+    // (right end on col 9 at row 7), never off-board, never below the wall.
+    fireEvent(surface, ptr('pointerdown', 315));
+
+    const ghost = ghostKeys();
+    expect([...ghost].every((k) => Number(k.split('-')[0]) <= 7)).toBe(true);
+    expect(ghost.has('7-9')).toBe(true);
+  });
+
+  it('a board drag only moves while the pointer is down, not after release (#69)', () => {
+    const board = emptyBoard();
+    const { container } = render(<PlacementInput board={board} piece="O" onConfirm={vi.fn()} />);
+    mockGrid(container);
+    const surface = screen.getByLabelText('board drag surface');
+
+    fireEvent(surface, ptr('pointerdown', 30)); // left side
+    const afterLeft = ghostKeys();
+    fireEvent(surface, ptr('pointerup', 30));
+    fireEvent(surface, ptr('pointermove', 300)); // move after release — ignored
+    expect(ghostKeys()).toEqual(afterLeft);
   });
 
   it('recovers from a soft-drop overshoot by raising back up to seat a tuck/spin (#56)', async () => {

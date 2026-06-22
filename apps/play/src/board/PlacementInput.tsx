@@ -30,6 +30,7 @@ import {
   ORIENTATIONS,
   fitsAt,
   lateralMove,
+  moveToColumn,
   pieceCells,
   reachableStates,
   type ColorGrid,
@@ -145,6 +146,63 @@ export function PlacementInput({
   const moveLeft = useCallback(() => lateral(-1), [lateral]);
   const moveRight = useCallback(() => lateral(1), [lateral]);
 
+  // Mobile drag-to-position (#69): the whole board is one control surface — drag
+  // anywhere and the piece's column follows the finger (no need to grab the few
+  // -cell piece), using the SAME free/ride-up rule as L/R (#68). Depth (tucks)
+  // stays on the ▲/▼ buttons and rotation on the rotate buttons — NOT vertical
+  // drag — so the gesture is unambiguous; commit is the explicit Confirm button,
+  // NOT lift-to-place, so a stray touch can never drop the piece. Desktop
+  // keyboard/buttons are untouched (this is an additional input).
+  const boardSurfaceRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  const dragToClientX = useCallback(
+    (clientX: number) => {
+      const gridEl = boardSurfaceRef.current?.querySelector('.board');
+      if (!gridEl) return;
+      const rect = gridEl.getBoundingClientRect();
+      if (rect.width === 0) return; // no layout (e.g. jsdom without a mocked rect)
+      const fingerCol = Math.floor(((clientX - rect.left) / rect.width) * COLS);
+      // Center the piece's column span on the finger cell, then clamp to the
+      // columns where the piece fits on the board so edge drags stay responsive.
+      const cols = ORIENTATIONS[piece][rotation].map(([, c]) => c);
+      const minC = Math.min(...cols);
+      const maxC = Math.max(...cols);
+      const lo = -minC;
+      const hi = COLS - 1 - maxC;
+      const targetCol = Math.min(hi, Math.max(lo, fingerCol - Math.round((minC + maxC) / 2)));
+      const next = moveToColumn(board, piece, rotation, row, targetCol);
+      if (next) {
+        setCol(next.col);
+        setRow(next.row);
+      }
+    },
+    [board, piece, rotation, row],
+  );
+
+  const onPointerDown = useCallback(
+    (event: React.PointerEvent) => {
+      if (event.button !== 0) return; // primary pointer / touch only
+      dragging.current = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      dragToClientX(event.clientX);
+    },
+    [dragToClientX],
+  );
+
+  const onPointerMove = useCallback(
+    (event: React.PointerEvent) => {
+      if (!dragging.current) return;
+      dragToClientX(event.clientX);
+    },
+    [dragToClientX],
+  );
+
+  const endDrag = useCallback((event: React.PointerEvent) => {
+    dragging.current = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
+
   const softDrop = useCallback(() => {
     setRow((r) => (canReach(rotation, r + 1, col) ? r + 1 : r));
   }, [canReach, rotation, col]);
@@ -220,7 +278,18 @@ export function PlacementInput({
       data-row={row}
     >
       {label ? <p className="placement-label">{label}</p> : null}
-      <Board grid={board} colorGrid={colorGrid} ghostCells={ghostCells} ghostPiece={piece} />
+      <div
+        ref={boardSurfaceRef}
+        className="placement-board-surface"
+        aria-label="board drag surface"
+        style={{ touchAction: 'none' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        <Board grid={board} colorGrid={colorGrid} ghostCells={ghostCells} ghostPiece={piece} />
+      </div>
       <div className="placement-controls" role="group" aria-label="placement controls">
         <button type="button" onClick={moveLeft} aria-label="Move left">
           ◀
