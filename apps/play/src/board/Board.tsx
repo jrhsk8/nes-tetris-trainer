@@ -13,7 +13,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { COLS, type ColorGrid, type Grid, type Piece } from '@trainer/core';
+import { COLS, ROWS, type ColorGrid, type Grid, type Piece } from '@trainer/core';
 import { PIECE_GROUP, blockBackground, type ColorGroup } from './nes.js';
 
 /** A `[row, col]` cell coordinate. */
@@ -46,6 +46,16 @@ export interface BoardProps {
 
 const keyOf = (r: number, c: number) => `${r}-${c}`;
 
+/**
+ * Defensive render guard (#58): drop any cell outside the 20×10 grid. The
+ * reachability model already proves no piece can reach past a wall (see
+ * `placement.test.ts`), so this never fires in practice — it is belt-and-
+ * suspenders against any future data/logic anomaly, so the board can never draw
+ * a block past the right wall (the reported symptom) regardless of input.
+ */
+const onBoard = (cells: readonly Cell[]): Cell[] =>
+  cells.filter(([r, c]) => r >= 0 && r < ROWS && c >= 0 && c < COLS);
+
 const WHITE_GROUP: ColorGroup = 1;
 
 export function Board({
@@ -57,8 +67,8 @@ export function Board({
   highlightPiece,
   overlay,
 }: BoardProps) {
-  const ghost = new Set(ghostCells.map(([r, c]) => keyOf(r, c)));
-  const highlight = new Set(highlightCells.map(([r, c]) => keyOf(r, c)));
+  const ghost = new Set(onBoard(ghostCells).map(([r, c]) => keyOf(r, c)));
+  const highlight = new Set(onBoard(highlightCells).map(([r, c]) => keyOf(r, c)));
   const ghostGroup = ghostPiece ? PIECE_GROUP[ghostPiece] : WHITE_GROUP;
   const highlightGroup = highlightPiece ? PIECE_GROUP[highlightPiece] : WHITE_GROUP;
 

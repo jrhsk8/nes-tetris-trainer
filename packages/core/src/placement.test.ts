@@ -7,9 +7,14 @@ import {
   fitsAt,
   isResting,
   applyRestingPlacement,
+  reachableStates,
   enumerateResting,
   boardKey,
+  ROWS,
+  COLS,
+  PIECES,
   type RestingPlacement,
+  type Grid,
 } from './index.js';
 
 describe('pieceCells / fitsAt / isResting', () => {
@@ -127,5 +132,67 @@ describe('boardKey (canonical outcome key)', () => {
     for (let r = 16; r <= 19; r++) manual[r][4] = 1;
 
     expect(boardKey(tucked)).toBe(boardKey(manual));
+  });
+});
+
+describe('reachable states never leave the board (#58 right-wall guard)', () => {
+  // A spread of game-realistic boards: empty, flat-with-ledges, wells, holes,
+  // tall stacks, and a pseudo-random fill. The right-wall report claimed a bar
+  // could reach past col 9; this proves the model can never produce an
+  // out-of-bounds cell for ANY piece on ANY of these boards.
+  function sampleBoards(): Grid[] {
+    const boards: Grid[] = [emptyBoard()];
+
+    // A right-edge well (the bar's natural home) — flush-right at cols 6..9 is
+    // legal, off-board is not.
+    const well = emptyBoard();
+    for (let r = 10; r < ROWS; r++) for (let c = 0; c < COLS - 1; c++) well[r][c] = 1;
+    boards.push(well);
+
+    // A left-edge well (mirror of the above).
+    const leftWell = emptyBoard();
+    for (let r = 10; r < ROWS; r++) for (let c = 1; c < COLS; c++) leftWell[r][c] = 1;
+    boards.push(leftWell);
+
+    // Overhang ledges that admit tucks at both walls.
+    const ledges = emptyBoard();
+    for (let c = 0; c <= 3; c++) ledges[12][c] = 1;
+    for (let c = 6; c < COLS; c++) ledges[12][c] = 1;
+    boards.push(ledges);
+
+    // Tall, bumpy, holey near-topout boards.
+    for (let seed = 1; seed <= 24; seed++) {
+      const g = emptyBoard();
+      let x = seed * 2654435761;
+      const next = () => {
+        x = (x ^ (x << 13)) >>> 0;
+        x = (x ^ (x >>> 17)) >>> 0;
+        x = (x ^ (x << 5)) >>> 0;
+        return x / 0xffffffff;
+      };
+      for (let c = 0; c < COLS; c++) {
+        const h = Math.floor(next() * 16); // up to 16 tall (near topout)
+        for (let r = ROWS - 1; r >= ROWS - h; r--) {
+          if (next() > 0.2) g[r][c] = 1; // ~20% holes
+        }
+      }
+      boards.push(g);
+    }
+    return boards;
+  }
+
+  it('every reachable state of every piece renders in-bounds', () => {
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        for (const { rotation, row, col } of reachableStates(grid, piece)) {
+          for (const [r, c] of pieceCells(piece, rotation, row, col)) {
+            expect(r, `${piece} rot${rotation} (${row},${col})`).toBeGreaterThanOrEqual(0);
+            expect(r).toBeLessThan(ROWS);
+            expect(c, `${piece} rot${rotation} (${row},${col})`).toBeGreaterThanOrEqual(0);
+            expect(c).toBeLessThan(COLS);
+          }
+        }
+      }
+    }
   });
 });

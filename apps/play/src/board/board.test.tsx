@@ -80,6 +80,31 @@ describe('Board', () => {
     expect(highlight.style.outline).toBe('');
   });
 
+  it('never draws a cell outside the grid, even given out-of-bounds cells (#58 guard)', () => {
+    // Belt-and-suspenders: the reachability model already proves no piece reaches
+    // past col 9 (placement.test.ts), but Board must never render OOB even if fed
+    // anomalous data. Past the right wall (col 10), the left wall (col -1), and
+    // below the floor (row 20) are all silently dropped.
+    render(
+      <Board
+        grid={emptyBoard()}
+        ghostCells={[
+          [5, 10], // past the right wall
+          [5, -1], // past the left wall
+          [20, 0], // below the floor
+        ]}
+        highlightCells={[[5, 99]]}
+      />,
+    );
+    // Exactly the 200 on-board cells, none more.
+    expect(screen.getAllByRole('gridcell')).toHaveLength(200);
+    expect(screen.queryByTestId('cell-5-10')).toBeNull();
+    expect(screen.queryByTestId('cell-5--1')).toBeNull();
+    expect(screen.queryByTestId('cell-20-0')).toBeNull();
+    // ...and no on-board cell was mistakenly painted by the OOB input.
+    expect(ghostKeys().size).toBe(0);
+  });
+
   it('colours filled cells by their colour group from the colour grid (#28)', () => {
     const grid: Grid = emptyBoard();
     const colorGrid = emptyColorGrid();
