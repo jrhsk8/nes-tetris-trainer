@@ -82,7 +82,7 @@ describe('RatingHistory', () => {
 
 describe('useAuth', () => {
   it('seeds from the anonymous session it establishes and updates on change', async () => {
-    const user: AuthUser = { id: 'u1', email: null };
+    const user: AuthUser = { id: 'u1', email: null, isAnonymous: false };
     let emit: (u: AuthUser | null) => void = () => {};
     const auth = fakeAuth({
       ensureAnonymousSession: vi.fn(async () => user),
@@ -136,7 +136,7 @@ describe('Account', () => {
       async upsertUserPrefs(p: { userId: string; bindings: Record<string, string> }) {
         return p;
       },
-      async uploadSubmissionImage() {},
+      async uploadSubmissionImage() { return ""; },
       async insertSubmission(s: { imagePath: string; submitter: string }) {
         return {
           id: 'sub-1',
@@ -150,7 +150,7 @@ describe('Account', () => {
       },
     };
 
-    render(<Account db={db} user={{ id: 'u1', email: 'me@example.com' }} auth={auth} />);
+    render(<Account db={db} user={{ id: 'u1', email: 'me@example.com', isAnonymous: false }} auth={auth} />);
 
     expect(screen.getByTestId('account-email')).toHaveTextContent('me@example.com');
     await waitFor(() => expect(screen.getByTestId('current-rating')).toHaveTextContent('1700'));

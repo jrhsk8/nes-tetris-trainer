@@ -197,14 +197,16 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(history[0].solved).toBe(false);
   });
 
-  it('uploads a submission image and enqueues + processes a submission (#45)', async () => {
+  it('uploads a submission image and enqueues + processes a submission (#45/#67)', async () => {
     const submitter = crypto.randomUUID();
-    const path = `${submitter}/${crypto.randomUUID()}.png`;
-    createdStoragePaths.push(path);
-    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    // Valid PNG magic so the magic-byte check (#67) passes.
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 
-    // Client side: upload the image, then enqueue the pending row.
-    await db!.uploadSubmissionImage(path, bytes);
+    // Client side: upload the image (the path is server-generated, #67), then
+    // enqueue the pending row pointing at the returned path.
+    const path = await db!.uploadSubmissionImage(submitter, bytes);
+    createdStoragePaths.push(path);
+    expect(path).toMatch(new RegExp(`^${submitter}/.+\\.png$`));
     const enqueued = await db!.insertSubmission({ imagePath: path, submitter });
     createdSubmissionIds.push(enqueued.id);
     expect(enqueued.status).toBe('pending');

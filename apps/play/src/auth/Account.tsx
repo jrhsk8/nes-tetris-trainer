@@ -171,7 +171,7 @@ export function Account({ db, user, auth }: AccountProps) {
           onMutedChange={changeMuted}
         />
       ) : (
-        <SubmitScreenshot db={db} userId={user.id} />
+        <SubmitScreenshot db={db} userId={user.id} isAnonymous={user.isAnonymous} />
       )}
     </div>
   );

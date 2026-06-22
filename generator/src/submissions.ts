@@ -11,7 +11,7 @@
  */
 
 import { encodeBoard } from '@trainer/core';
-import type { DataAccess } from '@trainer/data';
+import { sniffImageMime, MAX_UPLOAD_BYTES, type DataAccess } from '@trainer/data';
 import type { Candidate } from './selfplay/board-source.js';
 import { assemblePuzzle, type AssemblyResult, type GeneratorEngine } from './pipeline/generate.js';
 import { decodePng } from './ocr/png.js';
@@ -79,11 +79,34 @@ export async function processSubmissions(deps: ProcessDeps): Promise<ProcessResu
       onProgress(`rejected ${submission.id}: ${reason}`);
     };
 
+    // Untrusted-input handling (#67): download, then validate the ACTUAL bytes
+    // (size + magic number) BEFORE any decode. The image came from a public
+    // upload, so an SVG/polyglot, a non-image, or a decompression-bomb-sized
+    // file is rejected up front rather than fed to the PNG decoder.
+    let bytes: Uint8Array;
+    try {
+      bytes = await deps.db.downloadSubmissionImage(submission.imagePath);
+    } catch (err) {
+      await reject('image-download-failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    if (bytes.length > MAX_UPLOAD_BYTES) {
+      await reject('image-too-large', { bytes: bytes.length });
+      continue;
+    }
+    const mime = sniffImageMime(bytes);
+    if (!mime) {
+      await reject('not-an-image', {});
+      continue;
+    }
+
     let raster: Raster;
     try {
-      raster = decode(await deps.db.downloadSubmissionImage(submission.imagePath));
+      raster = decode(bytes);
     } catch (err) {
-      await reject('image-download-or-decode-failed', {
+      await reject('image-decode-failed', {
         error: err instanceof Error ? err.message : String(err),
       });
       continue;

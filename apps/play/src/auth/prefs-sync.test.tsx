@@ -55,7 +55,7 @@ function prefsDb(initial: UserPrefs | null, upserts: UserPrefs[]): AccountDb {
       upserts.push(p);
       return p;
     },
-    async uploadSubmissionImage() {},
+    async uploadSubmissionImage() { return ""; },
     async insertSubmission(s) {
       return {
         id: 'sub-1',
@@ -76,7 +76,7 @@ describe('Controls prefs sync (#24)', () => {
     const upserts: UserPrefs[] = [];
     const db = prefsDb({ userId: 'u1', bindings: { 'rotate-cw': 'k' } }, upserts);
 
-    render(<Account db={db} user={{ id: 'u1', email: 'me@example.com' }} auth={fakeAuth()} />);
+    render(<Account db={db} user={{ id: 'u1', email: 'me@example.com', isAnonymous: false }} auth={fakeAuth()} />);
 
     await user.click(screen.getByRole('button', { name: 'Controls' }));
 
@@ -101,7 +101,7 @@ describe('Controls prefs sync (#24)', () => {
     const upserts: UserPrefs[] = [];
     const db = prefsDb({ userId: 'u1', bindings: { 'rotate-cw': 'k' }, muted: true }, upserts);
 
-    render(<Account db={db} user={{ id: 'u1', email: 'me@example.com' }} auth={fakeAuth()} />);
+    render(<Account db={db} user={{ id: 'u1', email: 'me@example.com', isAnonymous: false }} auth={fakeAuth()} />);
     await user.click(screen.getByRole('button', { name: 'Controls' }));
 
     // The saved mute loaded: the sound toggle is unchecked (muted).

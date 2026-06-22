@@ -7,6 +7,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isPiece, type Piece } from '@trainer/core';
+import { sniffImageMime, extensionFor, MAX_UPLOAD_BYTES } from './image-sniff.js';
 import { selectMatchmadePuzzle, type MatchmakeOptions } from './matchmaking.js';
 import type {
   Attempt,
@@ -147,8 +148,14 @@ export interface DataAccess {
   getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]>;
   getUserPrefs(userId: string): Promise<UserPrefs | null>;
   upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs>;
-  /** Upload a submission screenshot to Storage (client, #45). */
-  uploadSubmissionImage(path: string, bytes: Uint8Array, contentType?: string): Promise<void>;
+  /**
+   * Upload a submission screenshot to Storage (client, #45/#67). The storage
+   * path and content-type are SERVER-generated here, not chosen by the caller: a
+   * per-user-prefixed `${userId}/<uuid>.<ext>` path with the content-type sniffed
+   * from the bytes' magic number. Rejects anything over {@link MAX_UPLOAD_BYTES}
+   * or that is not a PNG/JPEG. Returns the generated path to enqueue.
+   */
+  uploadSubmissionImage(userId: string, bytes: Uint8Array): Promise<string>;
   /** Download a submission screenshot from Storage (offline pipeline, #45). */
   downloadSubmissionImage(path: string): Promise<Uint8Array>;
   /** Enqueue a screenshot submission as `pending` (client, #45). */
@@ -401,15 +408,24 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return rowToUserPrefs(data as UserPrefsRow);
   }
 
-  async function uploadSubmissionImage(
-    path: string,
-    bytes: Uint8Array,
-    contentType = 'image/png',
-  ): Promise<void> {
+  async function uploadSubmissionImage(userId: string, bytes: Uint8Array): Promise<string> {
+    // Hardening (#67): reject oversize/non-image bytes BEFORE upload, and
+    // server-generate the path + content-type so a client can neither choose its
+    // storage location (it is pinned under its own `auth.uid()` prefix, which the
+    // storage policy enforces) nor mislabel the content-type.
+    if (bytes.length > MAX_UPLOAD_BYTES) {
+      throw new Error(`uploadSubmissionImage failed: image exceeds ${MAX_UPLOAD_BYTES} bytes`);
+    }
+    const mime = sniffImageMime(bytes);
+    if (!mime) {
+      throw new Error('uploadSubmissionImage failed: not a PNG or JPEG image');
+    }
+    const path = `${userId}/${crypto.randomUUID()}.${extensionFor(mime)}`;
     const { error } = await client.storage
       .from(SUBMISSIONS_BUCKET)
-      .upload(path, bytes, { contentType, upsert: false });
+      .upload(path, bytes, { contentType: mime, upsert: false });
     if (error) throw new Error(`uploadSubmissionImage failed: ${error.message}`);
+    return path;
   }
 
   async function downloadSubmissionImage(path: string): Promise<Uint8Array> {

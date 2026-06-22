@@ -53,7 +53,7 @@ function emptyDb(): AccountDb {
     async upsertUserPrefs(p) {
       return p;
     },
-    async uploadSubmissionImage() {},
+    async uploadSubmissionImage() { return ""; },
     async insertSubmission(s) {
       return {
         id: 'sub-1',
@@ -71,7 +71,7 @@ function emptyDb(): AccountDb {
 describe('Header nav + view switching (#22)', () => {
   it('defaults to Play and toggles to History and Controls without a router', async () => {
     const user = userEvent.setup();
-    render(<Account db={emptyDb()} user={{ id: 'u1', email: 'me@example.com' }} auth={fakeAuth()} />);
+    render(<Account db={emptyDb()} user={{ id: 'u1', email: 'me@example.com', isAnonymous: false }} auth={fakeAuth()} />);
 
     const nav = screen.getByRole('navigation');
 

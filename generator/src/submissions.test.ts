@@ -135,4 +135,38 @@ describe('processSubmissions (#45)', () => {
     expect(rejected!.patch.status).toBe('rejected');
     expect(rejected!.patch.reason).toBe('solve:no-rateable-combos');
   });
+
+  it('rejects a non-image (SVG/polyglot) by magic bytes before any decode (#67)', async () => {
+    // An SVG/text payload — no PNG/JPEG signature. The processor must reject it
+    // up front, never feeding it to the image decoder.
+    const svg = new TextEncoder().encode('<svg onload="alert(1)"></svg>');
+    const decode = vi.fn(); // must NOT be called
+    const { db, updates, inserted } = fakeDb({ 'user-1/x': svg }, [submission('s4', 'user-1/x')]);
+
+    const result = await processSubmissions({ db, decode, solve: vi.fn() });
+
+    expect(result).toMatchObject({ banked: 0, rejected: 1 });
+    expect(inserted).toHaveLength(0);
+    expect(decode).not.toHaveBeenCalled();
+    expect(updates.find((u) => u.id === 's4')!.patch.reason).toBe('not-an-image');
+  });
+
+  it('rejects a decompression-bomb PNG (huge declared dimensions) (#67)', async () => {
+    // A valid PNG signature + IHDR declaring 99999×99999 — a tiny file that would
+    // decode to a multi-GB raster. The dimension guard in decodePng refuses it.
+    const bomb = new Uint8Array(24);
+    bomb.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); // PNG magic
+    bomb.set([0x49, 0x48, 0x44, 0x52], 12); // "IHDR"
+    new DataView(bomb.buffer).setUint32(16, 99999); // width
+    new DataView(bomb.buffer).setUint32(20, 99999); // height
+    const { db, updates, inserted } = fakeDb({ 'user-1/bomb.png': bomb }, [
+      submission('s5', 'user-1/bomb.png'),
+    ]);
+
+    const result = await processSubmissions({ db, solve: vi.fn() });
+
+    expect(result).toMatchObject({ banked: 0, rejected: 1 });
+    expect(inserted).toHaveLength(0);
+    expect(updates.find((u) => u.id === 's5')!.patch.reason).toBe('image-decode-failed');
+  });
 });

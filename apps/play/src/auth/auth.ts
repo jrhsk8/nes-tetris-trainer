@@ -13,6 +13,8 @@ export type OAuthProvider = 'google' | 'discord';
 export interface AuthUser {
   id: string;
   email: string | null;
+  /** True for an anonymous session (#39/#67) — blocked from submitting boards. */
+  isAnonymous: boolean;
 }
 
 /** The auth operations the play app needs. */
@@ -37,7 +39,9 @@ export interface AuthApi {
 }
 
 function toAuthUser(user: User | null | undefined): AuthUser | null {
-  return user ? { id: user.id, email: user.email ?? null } : null;
+  return user
+    ? { id: user.id, email: user.email ?? null, isAnonymous: user.is_anonymous ?? false }
+    : null;
 }
 
 /** Build an {@link AuthApi} over a Supabase client. */

@@ -148,11 +148,15 @@ create table if not exists public.submissions (
 
 create index if not exists submissions_status_idx on public.submissions (status);
 
--- Storage bucket for submission images (private; offline pipeline reads via the
--- service role). Created here so the migration is self-contained.
-insert into storage.buckets (id, name, public)
-values ('submissions', 'submissions', false)
-on conflict (id) do nothing;
+-- Storage bucket for submission images (#45/#67): PRIVATE (offline pipeline
+-- reads via the service role), restricted to PNG/JPEG up to 5 MB. The mime/size
+-- caps are enforced by Storage itself, before any byte reaches the bucket.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('submissions', 'submissions', false, 5242880, array['image/png', 'image/jpeg'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 -- Row-level security. Puzzles are public, read-only content; writes go through
 -- the service role (the offline generator), which bypasses RLS. The per-user
@@ -205,22 +209,53 @@ create policy user_prefs_update_own on public.user_prefs
 
 -- A submitter owns their submissions (insert + read; the offline pipeline uses
 -- the service role to read all pending rows and update status, bypassing RLS).
--- Anonymous sessions (#39) satisfy `auth.uid() = submitter` once enabled.
+-- Submitting requires a NON-anonymous account (#67): anonymous play can read its
+-- own rows but cannot enqueue a submission.
 drop policy if exists submissions_insert_own on public.submissions;
 create policy submissions_insert_own on public.submissions
-  for insert with check (auth.uid() = submitter);
+  for insert with check (
+    auth.uid() = submitter
+    and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
+  );
 
 drop policy if exists submissions_select_own on public.submissions;
 create policy submissions_select_own on public.submissions
   for select using (auth.uid() = submitter);
 
--- Storage policies for the submissions bucket: an authenticated (incl. anon)
--- session may upload images and read back its own. The offline pipeline reads
--- via the service role (bypasses these).
+-- Per-user PENDING-submission quota (#67): cap how many un-processed submissions
+-- one account can queue, so a single user cannot flood the offline pipeline. The
+-- count runs SECURITY DEFINER so it sees all of the submitter's rows past RLS.
+create or replace function public.enforce_submission_quota()
+returns trigger as $$
+declare
+  pending_count int;
+begin
+  select count(*) into pending_count
+    from public.submissions
+    where submitter = new.submitter and status = 'pending';
+  if pending_count >= 5 then
+    raise exception 'submission quota exceeded: at most 5 pending submissions per user';
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists submissions_quota on public.submissions;
+create trigger submissions_quota
+  before insert on public.submissions
+  for each row execute function public.enforce_submission_quota();
+
+-- Storage policies for the submissions bucket (#67): a NON-anonymous session may
+-- upload ONLY under its own `auth.uid()/` path prefix and read back only its own
+-- objects. The offline pipeline reads via the service role (bypasses these).
 drop policy if exists submissions_storage_insert on storage.objects;
 create policy submissions_storage_insert on storage.objects
   for insert to authenticated
-  with check (bucket_id = 'submissions');
+  with check (
+    bucket_id = 'submissions'
+    and name like (auth.uid()::text || '/%')
+    and coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
+  );
 
 drop policy if exists submissions_storage_select on storage.objects;
 create policy submissions_storage_select on storage.objects

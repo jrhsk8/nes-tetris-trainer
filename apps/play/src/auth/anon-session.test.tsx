@@ -69,7 +69,7 @@ describe('createAuth.ensureAnonymousSession (#39)', () => {
     } as any;
     const auth = createAuth(client);
     const user = await auth.ensureAnonymousSession();
-    expect(user).toEqual({ id: 'existing', email: 'a@b.com' });
+    expect(user).toEqual({ id: 'existing', email: 'a@b.com', isAnonymous: false });
     expect(signInAnonymously).not.toHaveBeenCalled();
   });
 
@@ -77,13 +77,16 @@ describe('createAuth.ensureAnonymousSession (#39)', () => {
     const client = {
       auth: {
         getUser: async () => ({ data: { user: null } }),
-        signInAnonymously: async () => ({ data: { user: { id: 'anon', email: null } }, error: null }),
+        signInAnonymously: async () => ({
+          data: { user: { id: 'anon', email: null, is_anonymous: true } },
+          error: null,
+        }),
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
     const auth = createAuth(client);
     const user = await auth.ensureAnonymousSession();
-    expect(user).toEqual({ id: 'anon', email: null });
+    expect(user).toEqual({ id: 'anon', email: null, isAnonymous: true });
   });
 
   it('returns null when anonymous sign-ins are disabled', async () => {
@@ -104,7 +107,7 @@ describe('createAuth.ensureAnonymousSession (#39)', () => {
 
 describe('Authenticated anonymous-session gating (#39)', () => {
   it('drops a visitor with an anonymous session straight into the app', async () => {
-    const auth = fakeAuth({ id: 'anon-1', email: null });
+    const auth = fakeAuth({ id: 'anon-1', email: null, isAnonymous: true });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     render(<Authenticated db={emptyDb() as any} auth={auth} />);
     await waitFor(() => expect(screen.getByTestId('account-email')).toBeInTheDocument());
