@@ -119,11 +119,16 @@ create index if not exists attempts_puzzle_id_idx on public.attempts (puzzle_id)
 
 -- Per-user preferences (one row per user): rebindable key bindings, synced
 -- across devices like the rating (#24). `bindings` is an action→key JSON map.
+-- `muted` toggles the NES result chiptune (#61); sound is on by default.
 create table if not exists public.user_prefs (
   user_id uuid primary key,
   bindings jsonb not null default '{}'::jsonb,
+  muted boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+-- #61: existing deployments add the sound-mute column (idempotent).
+alter table public.user_prefs add column if not exists muted boolean not null default false;
 
 -- Screenshot submission queue (#45, v2 overhaul issue I). The play app uploads a
 -- board screenshot to Storage and enqueues a row here (status 'pending'); the

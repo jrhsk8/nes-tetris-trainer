@@ -57,6 +57,7 @@ export function Account({ db, user, auth }: AccountProps) {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [rating, setRating] = useState<number>(seedRating().rating);
   const [bindings, setBindings] = useState<KeyBindings>(DEFAULT_BINDINGS);
+  const [muted, setMuted] = useState<boolean>(false); // sound on by default (#61)
   const [view, setView] = useState<View>('play');
   // A `?puzzle=N` share link (#49) opens that exact puzzle first; read once.
   const sharedPuzzleNumber = useMemo(
@@ -81,13 +82,16 @@ export function Account({ db, user, auth }: AccountProps) {
     void refresh();
   }, [refresh]);
 
-  // Load the player's saved key bindings once on sign-in; fall back to defaults.
+  // Load the player's saved prefs once on sign-in; fall back to defaults.
   useEffect(() => {
     let active = true;
     void (async () => {
       try {
         const prefs = await db.getUserPrefs(user.id);
-        if (active) setBindings(sanitizeBindings(prefs?.bindings));
+        if (active) {
+          setBindings(sanitizeBindings(prefs?.bindings));
+          setMuted(prefs?.muted ?? false);
+        }
       } catch {
         // Prefs unavailable — keep the defaults so play stays usable.
       }
@@ -97,15 +101,27 @@ export function Account({ db, user, auth }: AccountProps) {
     };
   }, [db, user.id]);
 
-  // Apply a rebind immediately and persist it (synced across devices).
+  // Apply a rebind immediately and persist it (synced across devices); the mute
+  // pref rides the same row, so persist it alongside.
   const changeBindings = useCallback(
     (next: KeyBindings) => {
       setBindings(next);
-      void db.upsertUserPrefs({ userId: user.id, bindings: next }).catch(() => {
+      void db.upsertUserPrefs({ userId: user.id, bindings: next, muted }).catch(() => {
         // Persistence failed — the in-memory binding still took effect.
       });
     },
-    [db, user.id],
+    [db, user.id, muted],
+  );
+
+  // Toggle the result-sound mute and persist it (alongside the bindings, #61).
+  const changeMuted = useCallback(
+    (next: boolean) => {
+      setMuted(next);
+      void db.upsertUserPrefs({ userId: user.id, bindings, muted: next }).catch(() => {
+        // Persistence failed — the in-memory toggle still took effect.
+      });
+    },
+    [db, user.id, bindings],
   );
 
   return (
@@ -142,12 +158,18 @@ export function Account({ db, user, auth }: AccountProps) {
             onAdvance={() => void refresh()}
             leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
             bindings={bindings}
+            muted={muted}
           />
         </div>
       ) : view === 'history' ? (
         <History db={db} userId={user.id} />
       ) : view === 'controls' ? (
-        <Controls bindings={bindings} onChange={changeBindings} />
+        <Controls
+          bindings={bindings}
+          onChange={changeBindings}
+          muted={muted}
+          onMutedChange={changeMuted}
+        />
       ) : (
         <SubmitScreenshot db={db} userId={user.id} />
       )}

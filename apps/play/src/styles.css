@@ -485,49 +485,43 @@ input:focus-visible {
   background: var(--nes-blue);
 }
 
-/* ---- Feedback verdict + ranked combo list (#35) ------------------------ */
+/* ---- Feedback grade banner (#61) -------------------------------------- */
 
-/* The Correct / Incorrect verdict banner — unmistakable after an attempt. */
-.verdict {
+/* A result banner across the TOP of the board well: big letter grade + score,
+   green for an A+ win, red for below. Overlays the cell area (the board grid is
+   the positioning context) and never intercepts pointer events. */
+.grade-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  border: 3px solid var(--panel-edge);
-  padding: 10px 14px;
-  margin: 0 0 var(--space);
-}
-
-.verdict.is-correct {
-  border-color: var(--nes-blue);
-  background: rgba(0, 88, 248, 0.16);
-}
-
-.verdict.is-incorrect {
-  border-color: var(--nes-red);
-  background: rgba(216, 40, 0, 0.16);
-}
-
-.verdict-outcome {
+  align-items: center;
+  justify-content: center;
+  padding: 8px 6px;
   font-family: var(--font-pixel);
-  font-size: 13px;
+  font-size: clamp(14px, 4.2vmin, 30px);
   letter-spacing: 1px;
-  text-transform: uppercase;
+  line-height: 1;
+  text-align: center;
+  color: #fff;
+  text-shadow: 2px 2px 0 #000;
+  border-bottom: 3px solid #000;
+  pointer-events: none;
 }
 
-.verdict.is-correct .verdict-outcome {
-  color: var(--nes-gold);
+.grade-banner.is-win {
+  background: rgba(0, 168, 0, 0.88); /* NES green — the A+ win */
 }
 
-.verdict.is-incorrect .verdict-outcome {
-  color: #ffb3a0;
+.grade-banner.is-below {
+  background: rgba(216, 40, 0, 0.88); /* NES red — below the win line */
 }
 
-.verdict-score {
-  font-family: var(--font-pixel);
-  font-size: 10px;
-  color: var(--ink-dim);
-}
+/* ---- Feedback ranked combo list (#35) --------------------------------- */
+/* (The rail verdict banner was retired in #61 — the grade now lives on the
+   board-top grade banner above; the rail carries only the rating-change line.) */
 
 /* The ranked top-5 list (replaces the strip-plot chart). */
 .combo-list {

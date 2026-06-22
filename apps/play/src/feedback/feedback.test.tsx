@@ -20,8 +20,10 @@ function table(entries: ComboTable['entries'], total = entries.length): ComboTab
 
 const rank1 = { rot1: 0, col1: 3, rot2: 0, col2: 6, score: 100 };
 
-describe('Feedback verdict banner (#35)', () => {
-  it('shows a Correct verdict with the combo score when the player plays the rank-1 combo', () => {
+describe('Feedback grade banner (#60/#61)', () => {
+  const noSound = () => {};
+
+  it('shows a green A+ banner with the score when the player plays the rank-1 combo', () => {
     render(
       <Feedback
         board0={emptyBoard()}
@@ -29,15 +31,16 @@ describe('Feedback verdict banner (#35)', () => {
         piece2="L"
         combos={table([rank1])}
         userLine={L([0, 3], [0, 6])}
+        playSound={noSound}
       />,
     );
-    const verdict = screen.getByTestId('verdict');
-    expect(verdict).toHaveTextContent('Correct');
-    expect(verdict).toHaveAttribute('data-correct', 'true');
-    expect(screen.getByTestId('verdict-score')).toHaveTextContent('A+ 100.0');
+    const banner = screen.getByTestId('grade-banner');
+    expect(banner).toHaveTextContent('A+ 100.0');
+    expect(banner).toHaveAttribute('data-correct', 'true'); // green / win
+    expect(banner).toHaveClass('is-win');
   });
 
-  it('shows an Incorrect, "too low to rank" verdict when the combo is beyond the top-K', () => {
+  it('shows a red "too low to rank" banner when the combo is beyond the top-K', () => {
     render(
       <Feedback
         board0={emptyBoard()}
@@ -45,15 +48,16 @@ describe('Feedback verdict banner (#35)', () => {
         piece2="L"
         combos={table([rank1], 40)}
         userLine={L([0, 0], [0, 5])} // legal, but not among the stored entries
+        playSound={noSound}
       />,
     );
-    const verdict = screen.getByTestId('verdict');
-    expect(verdict).toHaveTextContent('Incorrect');
-    expect(verdict).toHaveAttribute('data-correct', 'false');
-    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Too low to rank');
+    const banner = screen.getByTestId('grade-banner');
+    expect(banner).toHaveTextContent('Too low to rank');
+    expect(banner).toHaveAttribute('data-correct', 'false'); // red / below
+    expect(banner).toHaveClass('is-below');
   });
 
-  it('counts a ranked but sub-97 combo as Incorrect while still showing its grade (#60)', () => {
+  it('shows a red banner for a ranked but sub-97 combo, with letter + one decimal (#60)', () => {
     render(
       <Feedback
         board0={emptyBoard()}
@@ -61,11 +65,12 @@ describe('Feedback verdict banner (#35)', () => {
         piece2="L"
         combos={table([rank1, { rot1: 1, col1: 0, rot2: 0, col2: 4, score: 80 }])}
         userLine={L([1, 0], [0, 4])}
+        playSound={noSound}
       />,
     );
-    expect(screen.getByTestId('verdict')).toHaveTextContent('Incorrect');
-    // Letter grade + one decimal, no credit phrase (#60).
-    expect(screen.getByTestId('verdict-score')).toHaveTextContent('B- 80.0');
+    const banner = screen.getByTestId('grade-banner');
+    expect(banner).toHaveTextContent('B- 80.0'); // no credit phrase (#60)
+    expect(banner).toHaveClass('is-below');
   });
 
   it('shows the A+ grade with one decimal for a near-best score (#60)', () => {
@@ -76,9 +81,78 @@ describe('Feedback verdict banner (#35)', () => {
         piece2="L"
         combos={table([{ ...rank1, score: 97.6 }])}
         userLine={L([0, 3], [0, 6])}
+        playSound={noSound}
       />,
     );
-    expect(screen.getByTestId('verdict-score')).toHaveTextContent('A+ 97.6');
+    expect(screen.getByTestId('grade-banner')).toHaveTextContent('A+ 97.6');
+  });
+
+  it('slims the rail to the rating-change line — no duplicate grade (#61)', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        ratingChange={{ before: { rating: 1500 }, after: { rating: 1512 }, delta: 12 }}
+        playSound={noSound}
+      />,
+    );
+    // The old rail verdict (Correct/Incorrect + duplicate score) is gone…
+    expect(screen.queryByTestId('verdict')).toBeNull();
+    expect(screen.queryByTestId('verdict-score')).toBeNull();
+    // …and the rating-change line remains in the rail.
+    expect(screen.getByTestId('rating-change')).toHaveTextContent('+12');
+  });
+});
+
+describe('Feedback NES result sound (#61)', () => {
+  it('plays the win jingle for an A+ result', () => {
+    const playSound = vi.fn();
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        playSound={playSound}
+      />,
+    );
+    expect(playSound).toHaveBeenCalledTimes(1);
+    expect(playSound).toHaveBeenCalledWith(true);
+  });
+
+  it('plays the below jingle for a sub-A+ result', () => {
+    const playSound = vi.fn();
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1, { rot1: 1, col1: 0, rot2: 0, col2: 4, score: 80 }])}
+        userLine={L([1, 0], [0, 4])}
+        playSound={playSound}
+      />,
+    );
+    expect(playSound).toHaveBeenCalledWith(false);
+  });
+
+  it('stays silent when muted (#61)', () => {
+    const playSound = vi.fn();
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        muted
+        playSound={playSound}
+      />,
+    );
+    expect(playSound).not.toHaveBeenCalled();
   });
 });
 

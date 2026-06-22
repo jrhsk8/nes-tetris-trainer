@@ -98,7 +98,7 @@ function rowToAttempt(row: AttemptRow): Attempt {
 }
 
 function rowToUserPrefs(row: UserPrefsRow): UserPrefs {
-  return { userId: row.user_id, bindings: row.bindings };
+  return { userId: row.user_id, bindings: row.bindings, muted: row.muted ?? false };
 }
 
 function rowToSubmission(row: SubmissionRow): Submission {
@@ -390,6 +390,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
         {
           user_id: prefs.userId,
           bindings: prefs.bindings,
+          muted: prefs.muted ?? false,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' },

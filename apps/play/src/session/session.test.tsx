@@ -98,7 +98,7 @@ describe('PuzzleSession (headline play loop)', () => {
     await place(user, puzzle.optimalLine[0]); // correct first placement
     await place(user, puzzle.optimalLine[1]); // correct second placement
 
-    expect(await screen.findByTestId('verdict')).toHaveTextContent('Correct');
+    expect(await screen.findByTestId('grade-banner')).toHaveAttribute('data-correct', 'true');
     expect(screen.getByTestId('rating-change')).toHaveTextContent('(+');
 
     // The attempt was recorded with both placements and solved = true.
@@ -121,7 +121,7 @@ describe('PuzzleSession (headline play loop)', () => {
     expect(await screen.findByText(/Place the/)).toHaveTextContent('L');
     await place(user, { rotation: 0, col: 6 });
 
-    expect(await screen.findByTestId('verdict')).toHaveTextContent('Incorrect');
+    expect(await screen.findByTestId('grade-banner')).toHaveAttribute('data-correct', 'false');
     expect(screen.getByTestId('rating-change')).toHaveTextContent('(-');
 
     // Recorded as a two-placement, failed attempt.

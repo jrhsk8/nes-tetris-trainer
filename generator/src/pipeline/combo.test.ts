@@ -76,6 +76,19 @@ describe('normalizedScores / normalizeCombos — gap-from-best (#47)', () => {
     expect(table.entries.every((e) => typeof e.boardKey === 'string')).toBe(true);
   });
 
+  it('keeps rank-1 at 100 when the sanity re-rank seats a lower-value combo first (#50/#60)', () => {
+    // Post-#50 order can place a cleaner, slightly-lower-value combo at rank-1
+    // above a higher-value one. The score anchors on rank-1 (combos[0]), so it
+    // stays exactly 100 and the demoted higher-value combo clamps to 100 — never
+    // a rank-1 below 100 (the latent <100 bug the live-bank smoke test exposed).
+    const ordered = [combo(0, 0, 98, 'clean-rank1'), combo(1, 0, 100, 'demoted-higher-value')];
+    const scores = normalizedScores(ordered);
+    expect(scores[0]).toBe(100);
+    const table = normalizeCombos(ordered, 30);
+    expect(table.entries[0].score).toBe(100);
+    expect(table.entries[1].score).toBe(100); // higher value clamps to 100, non-increasing
+  });
+
   it('scores every combo 100 when they all tie', () => {
     const table = normalizeCombos([combo(0, 0, 7, 'a'), combo(1, 0, 7, 'b')], 30);
     expect(table.entries.every((e) => e.score === 100)).toBe(true);

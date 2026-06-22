@@ -140,6 +140,12 @@ export interface Attempt {
 export interface UserPrefs {
   userId: string;
   bindings: Record<string, string>;
+  /**
+   * Whether the NES result chiptune is muted (#61). Defaults to `false` (sound
+   * on) — omittable on write, always present on read. Persisted in prefs so it
+   * syncs across devices like the bindings.
+   */
+  muted?: boolean;
 }
 
 /**
@@ -214,6 +220,7 @@ export interface AttemptRow {
 export interface UserPrefsRow {
   user_id: string;
   bindings: Record<string, string>;
+  muted: boolean;
   updated_at: string;
 }
 

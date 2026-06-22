@@ -36,6 +36,7 @@ import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
 import { ComboList } from './ComboList.js';
 import { formatScore } from './grade.js';
+import { playResultSound } from './sound.js';
 import { buildReplay, type Keyframe, type ReplayOverlay } from './replay.js';
 import { PuzzleTitle } from '../session/PuzzleTitle.js';
 
@@ -65,6 +66,10 @@ export interface FeedbackProps {
   ratingChange?: RatingChange;
   /** Called when the player asks for the next puzzle (renders the button). */
   onNext?: () => void;
+  /** Mute the NES result chiptune (#61). Defaults to off (sound plays). */
+  muted?: boolean;
+  /** Injectable result-sound player (#61), for tests. Defaults to the real one. */
+  playSound?: (win: boolean) => void;
 }
 
 /** True if the user has asked for reduced motion (read once, at mount). */
@@ -161,6 +166,8 @@ export function Feedback({
   stepMs = 320,
   ratingChange,
   onNext,
+  muted = false,
+  playSound = playResultSound,
 }: FeedbackProps) {
   const [reduced] = useState(prefersReducedMotion);
 
@@ -200,8 +207,16 @@ export function Feedback({
 
   const frame = timeline[Math.min(step, timeline.length - 1)];
   // Letter grade + one-decimal score (#60), e.g. `A+ 97.6`; unranked combos have
-  // no numeric score and read as "too low to rank".
+  // no numeric score and read as "too low to rank". An A+ is the win (#61).
   const scoreText = verdict.score !== null ? formatScore(verdict.score) : 'Too low to rank';
+  const win = verdict.correct; // A+ (score ≥ 97) — the win line.
+
+  // Play the NES result chiptune once, when the verdict lands (#61). Feedback
+  // mounts fresh per puzzle (keyed in PuzzlePlay), so this fires exactly once;
+  // the mute pref gates it.
+  useEffect(() => {
+    if (!muted) playSound(win);
+  }, [muted, playSound, win]);
 
   return (
     <div className="feedback">
@@ -212,6 +227,16 @@ export function Feedback({
           colorGrid={frame.colorGrid}
           overlay={
             <>
+              {/* Grade banner across the top of the board well (#61): big letter
+                  grade + one-decimal score, green for an A+ win, red for below.
+                  Persists through feedback until the next puzzle unmounts it. */}
+              <div
+                data-testid="grade-banner"
+                data-correct={win}
+                className={`grade-banner ${win ? 'is-win' : 'is-below'}`}
+              >
+                {scoreText}
+              </div>
               {frame.overlay ? (
                 <FallingPiece
                   key={`falling-${frame.overlayKey}`}
@@ -232,17 +257,8 @@ export function Feedback({
       </div>
 
       <aside className="flank flank-right result-panel" aria-label="result">
-        <div
-          className={`verdict ${verdict.correct ? 'is-correct' : 'is-incorrect'}`}
-          data-testid="verdict"
-          data-correct={verdict.correct}
-        >
-          <strong className="verdict-outcome">{verdict.correct ? 'Correct' : 'Incorrect'}</strong>
-          <span className="verdict-score" data-testid="verdict-score">
-            {scoreText}
-          </span>
-        </div>
-
+        {/* Slimmed rail (#61): the grade now lives on the board banner; the rail
+            verdict is just the rating-change line (no duplicate grade). */}
         {ratingChange ? (
           <p data-testid="rating-change">
             Rating: {Math.round(ratingChange.before.rating)} →{' '}

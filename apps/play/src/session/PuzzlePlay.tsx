@@ -39,6 +39,8 @@ export interface PuzzlePlayProps {
   leftFlank?: ReactNode;
   /** Player key bindings, threaded to the placement input. */
   bindings?: KeyBindings;
+  /** Mute the NES result chiptune (#61); threaded to the session feedback. */
+  muted?: boolean;
 }
 
 export function PuzzlePlay({
@@ -48,6 +50,7 @@ export function PuzzlePlay({
   onAdvance,
   leftFlank,
   bindings,
+  muted,
 }: PuzzlePlayProps) {
   // undefined = loading, null = empty bank, Puzzle = ready.
   const [puzzle, setPuzzle] = useState<Puzzle | null | undefined>(undefined);
@@ -121,6 +124,7 @@ export function PuzzlePlay({
       onNext={() => void load()}
       leftFlank={leftFlank}
       bindings={bindings}
+      muted={muted}
     />
   );
 }

@@ -54,6 +54,8 @@ export interface PuzzleSessionProps {
   leftFlank?: ReactNode;
   /** Player key bindings (defaults to {@link DEFAULT_BINDINGS}). */
   bindings?: KeyBindings;
+  /** Mute the NES result chiptune (#61); defaults to off (sound plays). */
+  muted?: boolean;
 }
 
 interface RatingChange {
@@ -77,6 +79,7 @@ export function PuzzleSession({
   onNext,
   leftFlank,
   bindings = DEFAULT_BINDINGS,
+  muted = false,
 }: PuzzleSessionProps) {
   const board0 = useMemo(() => decodeBoard(puzzle.board), [puzzle.board]);
   // The puzzle's stored colour grid (#28), decoded once. Legacy puzzles carry
@@ -233,6 +236,7 @@ export function PuzzleSession({
         userLine={result!.userLine}
         ratingChange={result!.rating}
         onNext={onNext}
+        muted={muted}
       />
     </PlayScreen>
   );

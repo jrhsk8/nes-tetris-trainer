@@ -171,20 +171,24 @@ function clampScore(score: number): number {
 }
 
 /**
- * Score swept combos by their **gap from the best** (#47), in raw StackRabbit
- * eval units: `score = clamp(100 − k·(bestValue − value), 0, 100)`. The best
- * combo scores exactly 100; the worst-legal anchor is dropped entirely, so the
- * SAME absolute gap yields the SAME score on every puzzle (cross-puzzle
- * comparable) and a genuinely mediocre move no longer compresses into the 90s.
- * Scores are kept as **floats** (#60 — the round() is dropped so the player view
- * can show a one-decimal number behind the letter grade); `correct = score ≥
- * CORRECT_SCORE_THRESHOLD` is equivalent to `gap ≤ CORRECT_GAP_MARGIN`. Ties (or
- * a single combo) all score 100.
+ * Score ranked combos by their **gap from the rank-1 optimal** (#47), in raw
+ * StackRabbit eval units: `score = clamp(100 − k·(rank1Value − value), 0, 100)`.
+ * `combos` is the stored rank order (best-first), so the anchor is `combos[0]` —
+ * the optimal the player is graded against — NOT the raw max value. The two are
+ * identical in the common case (rank-1 is the value-best), but when the
+ * dominance-respecting re-rank (#50) seats a cleaner, slightly-lower-value combo
+ * at rank-1, anchoring on it keeps the **rank-1 score exactly 100** (a
+ * higher-value demoted combo clamps to 100, never above). The worst-legal anchor
+ * is dropped, so the SAME absolute gap yields the SAME score on every puzzle
+ * (cross-puzzle comparable). Scores are **floats** (#60 — the round() is dropped
+ * so the player view can show a one-decimal number behind the letter grade);
+ * `correct = score ≥ CORRECT_SCORE_THRESHOLD` is equivalent to `gap ≤
+ * CORRECT_GAP_MARGIN`. Ties (or a single combo) all score 100.
  */
 export function normalizedScores(combos: readonly ScoredCombo[]): number[] {
   if (combos.length === 0) return [];
-  const best = Math.max(...combos.map((c) => c.value));
-  return combos.map((c) => clampScore(100 - SCORE_SLOPE * (best - c.value)));
+  const rank1Value = combos[0].value;
+  return combos.map((c) => clampScore(100 - SCORE_SLOPE * (rank1Value - c.value)));
 }
 
 /**

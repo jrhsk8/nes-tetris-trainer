@@ -20,13 +20,17 @@ export interface ControlsProps {
   bindings: KeyBindings;
   /** Called with the new bindings when an action is successfully rebound. */
   onChange: (bindings: KeyBindings) => void;
+  /** Whether the NES result chiptune is muted (#61). */
+  muted: boolean;
+  /** Toggle the result-sound mute (persisted in prefs). */
+  onMutedChange: (muted: boolean) => void;
 }
 
 const LABELS: Record<RebindableAction, string> = Object.fromEntries(
   ACTIONS.map(({ action, label }) => [action, label]),
 ) as Record<RebindableAction, string>;
 
-export function Controls({ bindings, onChange }: ControlsProps) {
+export function Controls({ bindings, onChange, muted, onMutedChange }: ControlsProps) {
   const [listening, setListening] = useState<RebindableAction | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
 
@@ -89,6 +93,16 @@ export function Controls({ bindings, onChange }: ControlsProps) {
           })}
         </tbody>
       </table>
+
+      <h3 className="controls-subhead">Sound</h3>
+      <label className="controls-sound" data-testid="control-sound">
+        <input
+          type="checkbox"
+          checked={!muted}
+          onChange={(e) => onMutedChange(!e.target.checked)}
+        />
+        Result sound {muted ? 'off' : 'on'}
+      </label>
     </section>
   );
 }

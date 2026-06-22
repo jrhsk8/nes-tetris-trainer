@@ -95,4 +95,23 @@ describe('Controls prefs sync (#24)', () => {
     expect(upserts[0].bindings['rotate-cw']).toBe('k');
     expect(screen.getByLabelText('Rebind Move left')).toHaveTextContent('Q');
   });
+
+  it('loads the saved mute pref and persists a toggle, preserving bindings (#61)', async () => {
+    const user = userEvent.setup();
+    const upserts: UserPrefs[] = [];
+    const db = prefsDb({ userId: 'u1', bindings: { 'rotate-cw': 'k' }, muted: true }, upserts);
+
+    render(<Account db={db} user={{ id: 'u1', email: 'me@example.com' }} auth={fakeAuth()} />);
+    await user.click(screen.getByRole('button', { name: 'Controls' }));
+
+    // The saved mute loaded: the sound toggle is unchecked (muted).
+    const toggle = () => screen.getByTestId('control-sound').querySelector('input')!;
+    await waitFor(() => expect(toggle()).not.toBeChecked());
+
+    // Un-mute and confirm it persists alongside the loaded bindings.
+    await user.click(toggle());
+    await waitFor(() => expect(upserts).toHaveLength(1));
+    expect(upserts[0].muted).toBe(false);
+    expect(upserts[0].bindings['rotate-cw']).toBe('k');
+  });
 });
