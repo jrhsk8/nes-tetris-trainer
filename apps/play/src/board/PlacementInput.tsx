@@ -29,6 +29,7 @@ import {
   ROWS,
   ORIENTATIONS,
   fitsAt,
+  lateralMove,
   pieceCells,
   reachableStates,
   type ColorGrid,
@@ -125,13 +126,24 @@ export function PlacementInput({
     [piece, rotation, restRow, col],
   );
 
-  const moveLeft = useCallback(() => {
-    setCol((c) => (canReach(rotation, row, c - 1) ? c - 1 : c));
-  }, [canReach, rotation, row]);
+  // Free lateral movement (#68): a press moves to the target column at the
+  // current row if it fits (this still covers sliding into an open pocket = a
+  // tuck), otherwise the piece RIDES UP over the wall to the highest row that
+  // fits there. Blocked only when the target column is full to the top or the
+  // move would go off-screen. {@link lateralMove} guarantees the target is a
+  // BFS-reachable state, so the superset binding invariant holds.
+  const lateral = useCallback(
+    (dir: -1 | 1) => {
+      const next = lateralMove(board, piece, rotation, row, col, dir);
+      if (!next) return;
+      setCol(next.col);
+      setRow(next.row);
+    },
+    [board, piece, rotation, row, col],
+  );
 
-  const moveRight = useCallback(() => {
-    setCol((c) => (canReach(rotation, row, c + 1) ? c + 1 : c));
-  }, [canReach, rotation, row]);
+  const moveLeft = useCallback(() => lateral(-1), [lateral]);
+  const moveRight = useCallback(() => lateral(1), [lateral]);
 
   const softDrop = useCallback(() => {
     setRow((r) => (canReach(rotation, r + 1, col) ? r + 1 : r));

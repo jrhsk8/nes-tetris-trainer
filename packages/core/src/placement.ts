@@ -166,6 +166,41 @@ export function reachableStates(grid: Grid, piece: Piece): RestingPlacement[] {
 }
 
 /**
+ * The floating state a lateral press moves `piece` to from `(rotation, row, col)`
+ * in direction `dir` (`-1` left, `+1` right) under the **free lateral** rule (#68):
+ *
+ * - If the piece fits in the target column **at the current row**, slide there
+ *   (this still covers sliding *into* an open pocket = a tuck).
+ * - Otherwise **ride up** over the wall to the highest row that fits in the target
+ *   column — where the piece would rest if dropped from the top of that column.
+ *
+ * Returns `null` only when lateral is genuinely blocked: the target column is full
+ * to the very top, or the move would carry the piece off-screen. Every returned
+ * state is in {@link reachableStates} (the ride-up target rests from the top, the
+ * slide is one BFS step from a reachable state), so the superset binding invariant
+ * holds — lateral can never reach a placement the generator did not enumerate.
+ */
+export function lateralMove(
+  grid: Grid,
+  piece: Piece,
+  rotation: number,
+  row: number,
+  col: number,
+  dir: -1 | 1,
+): RestingPlacement | null {
+  const newCol = col + dir;
+  if (fitsAt(grid, piece, rotation, row, newCol)) {
+    return { rotation, row, col: newCol };
+  }
+  if (fitsAt(grid, piece, rotation, 0, newCol)) {
+    let r = 0;
+    while (fitsAt(grid, piece, rotation, r + 1, newCol)) r++;
+    return { rotation, row: r, col: newCol };
+  }
+  return null;
+}
+
+/**
  * Every collision-reachable **resting** placement of `piece` on `grid`: the
  * {@link reachableStates} that cannot fall one row further (the lock condition).
  * The result is a superset of every placement free-positioning input can reach

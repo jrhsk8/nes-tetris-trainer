@@ -34,6 +34,7 @@ export {
   applyRestingPlacement,
   reachableStates,
   enumerateResting,
+  lateralMove,
   boardKey,
 } from './placement.js';
 export type { RestingPlacement } from './placement.js';

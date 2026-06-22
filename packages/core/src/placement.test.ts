@@ -9,6 +9,7 @@ import {
   applyRestingPlacement,
   reachableStates,
   enumerateResting,
+  lateralMove,
   boardKey,
   ROWS,
   COLS,
@@ -111,6 +112,75 @@ describe('enumerateResting', () => {
   });
 });
 
+describe('lateralMove (free lateral movement #68)', () => {
+  it('slides at the current row when the target column fits there', () => {
+    // Empty board: moving right from a floating mid-board state just shifts column.
+    const grid = emptyBoard();
+    expect(lateralMove(grid, 'O', 0, 5, 3, 1)).toEqual({ rotation: 0, row: 5, col: 4 });
+    expect(lateralMove(grid, 'O', 0, 5, 3, -1)).toEqual({ rotation: 0, row: 5, col: 2 });
+  });
+
+  it('rides UP over a wall instead of silently doing nothing', () => {
+    // A tall wall fills col 9 from row 8 down. A vertical I resting deep in the
+    // open col 8 well (rows 16..19) presses RIGHT toward the wall: the old code
+    // gated on the current row and did nothing; now it rides up to rest ON the
+    // wall (rows 4..7), the highest position that fits in col 9.
+    const grid = emptyBoard();
+    for (let r = 8; r < ROWS; r++) grid[r][9] = 1;
+    const moved = lateralMove(grid, 'I', 1, 16, 8, 1);
+    expect(moved).toEqual({ rotation: 1, row: 4, col: 9 });
+    // The ride-up target genuinely rests on top of the wall.
+    expect(isResting(grid, 'I', moved!.rotation, moved!.row, moved!.col)).toBe(true);
+  });
+
+  it('blocks only when the target column is full to the very top', () => {
+    // Col 0 filled top-to-bottom: an O at col 1 cannot ride left into it.
+    const grid = emptyBoard();
+    for (let r = 0; r < ROWS; r++) grid[r][0] = 1;
+    expect(lateralMove(grid, 'O', 0, 18, 1, -1)).toBeNull();
+  });
+
+  it('blocks a move that would carry the piece off-screen', () => {
+    const grid = emptyBoard();
+    // O occupies cols 8,9 at col 8 — moving right would push col 10 off-board.
+    expect(lateralMove(grid, 'O', 0, 18, 8, 1)).toBeNull();
+    // ...and a piece at col 0 cannot move left off the left wall.
+    expect(lateralMove(grid, 'O', 0, 18, 0, -1)).toBeNull();
+  });
+
+  it('still slides into an open pocket at the current row (tuck preserved)', () => {
+    // A ledge across cols 4..7 at row 10; below it (rows 11..19) is open. A
+    // vertical I floating at row 16 in open col 3 slides RIGHT into the pocket
+    // under the ledge at the same row — a tuck, not a ride-up.
+    const grid = emptyBoard();
+    for (let c = 4; c <= 7; c++) grid[10][c] = 1;
+    expect(lateralMove(grid, 'I', 1, 16, 3, 1)).toEqual({ rotation: 1, row: 16, col: 4 });
+  });
+
+  it('every lateral move from a reachable state lands on a reachable state (superset invariant)', () => {
+    // Lateral movement must never escape the BFS-reachable set, or it could
+    // confirm a placement the generator never enumerated. Checked exhaustively
+    // over game-realistic boards, every piece, and both directions.
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        const reachable = new Set(
+          reachableStates(grid, piece).map(
+            (s) => (s.rotation * ROWS + s.row) * COLS + s.col,
+          ),
+        );
+        for (const s of reachableStates(grid, piece)) {
+          for (const dir of [-1, 1] as const) {
+            const next = lateralMove(grid, piece, s.rotation, s.row, s.col, dir);
+            if (next === null) continue;
+            const key = (next.rotation * ROWS + next.row) * COLS + next.col;
+            expect(reachable.has(key), `${piece} ${JSON.stringify(s)} dir ${dir}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+});
+
 describe('boardKey (canonical outcome key)', () => {
   it('two encodings landing the same cells produce the same key (acceptance b)', () => {
     const viaPlacement = applyRestingPlacement(emptyBoard(), 'O', { rotation: 0, row: 18, col: 0 });
@@ -135,52 +205,53 @@ describe('boardKey (canonical outcome key)', () => {
   });
 });
 
-describe('reachable states never leave the board (#58 right-wall guard)', () => {
-  // A spread of game-realistic boards: empty, flat-with-ledges, wells, holes,
-  // tall stacks, and a pseudo-random fill. The right-wall report claimed a bar
-  // could reach past col 9; this proves the model can never produce an
-  // out-of-bounds cell for ANY piece on ANY of these boards.
-  function sampleBoards(): Grid[] {
-    const boards: Grid[] = [emptyBoard()];
+// A spread of game-realistic boards: empty, flat-with-ledges, wells, holes,
+// tall stacks, and a pseudo-random fill. Shared by the reachability and
+// free-lateral invariant tests.
+function sampleBoards(): Grid[] {
+  const boards: Grid[] = [emptyBoard()];
 
-    // A right-edge well (the bar's natural home) — flush-right at cols 6..9 is
-    // legal, off-board is not.
-    const well = emptyBoard();
-    for (let r = 10; r < ROWS; r++) for (let c = 0; c < COLS - 1; c++) well[r][c] = 1;
-    boards.push(well);
+  // A right-edge well (the bar's natural home) — flush-right at cols 6..9 is
+  // legal, off-board is not.
+  const well = emptyBoard();
+  for (let r = 10; r < ROWS; r++) for (let c = 0; c < COLS - 1; c++) well[r][c] = 1;
+  boards.push(well);
 
-    // A left-edge well (mirror of the above).
-    const leftWell = emptyBoard();
-    for (let r = 10; r < ROWS; r++) for (let c = 1; c < COLS; c++) leftWell[r][c] = 1;
-    boards.push(leftWell);
+  // A left-edge well (mirror of the above).
+  const leftWell = emptyBoard();
+  for (let r = 10; r < ROWS; r++) for (let c = 1; c < COLS; c++) leftWell[r][c] = 1;
+  boards.push(leftWell);
 
-    // Overhang ledges that admit tucks at both walls.
-    const ledges = emptyBoard();
-    for (let c = 0; c <= 3; c++) ledges[12][c] = 1;
-    for (let c = 6; c < COLS; c++) ledges[12][c] = 1;
-    boards.push(ledges);
+  // Overhang ledges that admit tucks at both walls.
+  const ledges = emptyBoard();
+  for (let c = 0; c <= 3; c++) ledges[12][c] = 1;
+  for (let c = 6; c < COLS; c++) ledges[12][c] = 1;
+  boards.push(ledges);
 
-    // Tall, bumpy, holey near-topout boards.
-    for (let seed = 1; seed <= 24; seed++) {
-      const g = emptyBoard();
-      let x = seed * 2654435761;
-      const next = () => {
-        x = (x ^ (x << 13)) >>> 0;
-        x = (x ^ (x >>> 17)) >>> 0;
-        x = (x ^ (x << 5)) >>> 0;
-        return x / 0xffffffff;
-      };
-      for (let c = 0; c < COLS; c++) {
-        const h = Math.floor(next() * 16); // up to 16 tall (near topout)
-        for (let r = ROWS - 1; r >= ROWS - h; r--) {
-          if (next() > 0.2) g[r][c] = 1; // ~20% holes
-        }
+  // Tall, bumpy, holey near-topout boards.
+  for (let seed = 1; seed <= 24; seed++) {
+    const g = emptyBoard();
+    let x = seed * 2654435761;
+    const next = () => {
+      x = (x ^ (x << 13)) >>> 0;
+      x = (x ^ (x >>> 17)) >>> 0;
+      x = (x ^ (x << 5)) >>> 0;
+      return x / 0xffffffff;
+    };
+    for (let c = 0; c < COLS; c++) {
+      const h = Math.floor(next() * 16); // up to 16 tall (near topout)
+      for (let r = ROWS - 1; r >= ROWS - h; r--) {
+        if (next() > 0.2) g[r][c] = 1; // ~20% holes
       }
-      boards.push(g);
     }
-    return boards;
+    boards.push(g);
   }
+  return boards;
+}
 
+describe('reachable states never leave the board (#58 right-wall guard)', () => {
+  // The right-wall report claimed a bar could reach past col 9; this proves the
+  // model can never produce an out-of-bounds cell for ANY piece on these boards.
   it('every reachable state of every piece renders in-bounds', () => {
     for (const grid of sampleBoards()) {
       for (const piece of PIECES) {

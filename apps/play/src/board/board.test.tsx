@@ -232,6 +232,33 @@ describe('PlacementInput', () => {
     expect(keysOf(landed)).toEqual(ghostKeys());
   });
 
+  it('rides up over a wall on a lateral press instead of doing nothing (#68)', async () => {
+    const user = userEvent.setup();
+    // A tall wall fills col 9 from row 8 down; col 8 is an open well. Soft-drop a
+    // vertical I to the floor of col 8, then press RIGHT toward the wall. The old
+    // code gated on the current (deep) row and the press silently did nothing;
+    // now the piece rides up to rest ON the wall (rows 4..7 of col 9).
+    const board = emptyBoard();
+    for (let r = 8; r < 20; r++) board[r][9] = 1;
+    const onConfirm = vi.fn<(p: Placement) => void>();
+    render(<PlacementInput board={board} piece="I" onConfirm={onConfirm} />);
+
+    await user.click(screen.getByLabelText('placement input'));
+    await user.keyboard('x'); // vertical I
+    for (let i = 0; i < 5; i++) await user.keyboard('{ArrowRight}'); // walk to col 8 well
+    for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop to the floor
+    await user.keyboard('{ArrowRight}'); // press toward the wall — rides up
+    await user.keyboard('{Enter}');
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const emitted = onConfirm.mock.calls[0][0];
+    const landed = restingCells(board, 'I', emitted)!;
+    expect(landed).not.toBeNull();
+    // Seated on top of the wall, not stranded in the col-8 well.
+    expect(keysOf(landed)).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
+    expect(keysOf(landed)).toEqual(ghostKeys());
+  });
+
   it('recovers from a soft-drop overshoot by raising back up to seat a tuck/spin (#56)', async () => {
     const user = userEvent.setup();
     // An overhang caps col 2 at row 11; a shelf at row 16 floors a 4-tall pocket
