@@ -530,6 +530,20 @@ input:focus-visible {
   background: rgba(216, 40, 0, 0.88); /* NES red — below the win line */
 }
 
+/* The primary "Next puzzle" action, centred directly under the board (#65). */
+.next-puzzle-btn {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 10px 20px;
+  color: #000;
+  background: var(--nes-gold);
+  border: 3px solid var(--panel-edge);
+  box-shadow: var(--shadow-hard);
+  cursor: pointer;
+}
+
 /* ---- Feedback ranked combo list (#35) --------------------------------- */
 /* (The rail verdict banner was retired in #61 — the grade now lives on the
    board-top grade banner above; the rail carries only the rating-change line.) */

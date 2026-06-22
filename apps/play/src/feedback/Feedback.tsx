@@ -271,9 +271,13 @@ export function Feedback({
             </>
           }
         />
-        <button type="button" onClick={() => setStep(0)}>
-          Replay
-        </button>
+        {/* Next puzzle is the primary action (#65): centred directly under the
+            board (Replay moves to the right rail). */}
+        {onNext ? (
+          <button type="button" className="next-puzzle-btn" onClick={onNext}>
+            Next puzzle
+          </button>
+        ) : null}
       </div>
 
       <aside className="flank flank-right result-panel" aria-label="result">
@@ -297,11 +301,10 @@ export function Feedback({
           onSelect={setSelected}
         />
 
-        {onNext ? (
-          <button type="button" onClick={onNext}>
-            Next puzzle
-          </button>
-        ) : null}
+        {/* Replay moves to the right rail (#65): the secondary action. */}
+        <button type="button" onClick={() => setStep(0)}>
+          Replay
+        </button>
       </aside>
     </div>
   );

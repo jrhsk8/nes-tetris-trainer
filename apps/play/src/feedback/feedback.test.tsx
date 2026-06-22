@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyBoard, type ComboTable, type Grid, type Line } from '@trainer/core';
 import { Feedback } from './Feedback.js';
@@ -85,6 +85,29 @@ describe('Feedback grade banner (#60/#61)', () => {
       />,
     );
     expect(screen.getByTestId('grade-banner')).toHaveTextContent('A+ 97.6');
+  });
+
+  it('puts Next puzzle under the board (primary) and Replay in the rail (#65)', () => {
+    const onNext = () => {};
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        onNext={onNext}
+        playSound={() => {}}
+      />,
+    );
+    // Next puzzle is the primary action under the board (centre column).
+    const center = screen.getByTestId('board-center');
+    expect(within(center).getByRole('button', { name: 'Next puzzle' })).toBeInTheDocument();
+    expect(within(center).queryByRole('button', { name: 'Replay' })).toBeNull();
+    // Replay moved to the right rail (result panel).
+    const rail = screen.getByRole('complementary', { name: 'result' });
+    expect(within(rail).getByRole('button', { name: 'Replay' })).toBeInTheDocument();
+    expect(within(rail).queryByRole('button', { name: 'Next puzzle' })).toBeNull();
   });
 
   it('slims the rail to the rating-change line — no duplicate grade (#61)', () => {
