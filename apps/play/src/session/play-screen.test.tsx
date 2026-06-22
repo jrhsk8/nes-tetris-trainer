@@ -42,6 +42,12 @@ const noopDb: SessionDb = {
   async insertAttempt() {
     throw new Error('not used');
   },
+  async isCurator() {
+    return false;
+  },
+  async flagPuzzle() {},
+  async cullPuzzle() {},
+  async setPuzzleActive() {},
 };
 
 describe('Authentic stack colours (#28)', () => {

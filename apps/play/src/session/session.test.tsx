@@ -66,6 +66,12 @@ function fakeDb() {
         score: attempt.score ?? null,
       };
     },
+    async isCurator() {
+      return false;
+    },
+    async flagPuzzle() {},
+    async cullPuzzle() {},
+    async setPuzzleActive() {},
   };
   return { db, ratings, attempts };
 }

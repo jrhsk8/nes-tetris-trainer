@@ -167,6 +167,33 @@ export interface DataAccess {
     id: string,
     patch: { status: SubmissionStatus; reason?: string | null; parsed?: unknown },
   ): Promise<void>;
+  /**
+   * Dev curation (#72): is this user an allowlisted curator? Self-detected via
+   * the `curators` table under RLS (a user reads only their own row). Returns
+   * false when not allowlisted (the empty-safe default), so the UI hides the
+   * curation controls for everyone until a curator is configured.
+   *
+   * ADD A CURATOR LATER — a pure data step, NO code change and NO deploy: insert
+   * one row into `public.curators` keyed by the account's `auth.uid()` (see
+   * schema.sql for the exact SQL). The allowlist is the only thing to edit; no
+   * UID is hardcoded. With the table empty, `isCurator` is false for everyone and
+   * every curation write is RLS-denied, so the rest of the app is unaffected.
+   */
+  isCurator(userId: string): Promise<boolean>;
+  /**
+   * Flag a puzzle with a free-text comment (#72): appends a `flag` row to the
+   * append-only `puzzle_flags` log for later pattern-mining. The puzzle stays
+   * live. RLS rejects non-curators regardless of client.
+   */
+  flagPuzzle(input: { puzzleId: string; userId: string; comment: string }): Promise<void>;
+  /**
+   * Soft-delete (cull) a puzzle (#72): appends a `cull` row (optional reason) and
+   * sets `active = false`, so matchmaking stops serving it. Reversible via
+   * {@link setPuzzleActive}; the row, combos, and attempts survive.
+   */
+  cullPuzzle(input: { puzzleId: string; userId: string; reason?: string }): Promise<void>;
+  /** Restore (un-cull) or re-hide a puzzle by setting `active` (#72 undo). */
+  setPuzzleActive(puzzleId: string, active: boolean): Promise<void>;
 }
 
 function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
@@ -222,6 +249,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     const { data, error } = await client
       .from('puzzles')
       .select('*')
+      .eq('active', true) // skip soft-deleted (culled) puzzles (#72)
       .order('created_at', { ascending: true })
       .range(offset, offset);
     if (error) throw new Error(`getRandomPuzzle failed: ${error.message}`);
@@ -232,7 +260,12 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
   async function getMatchmadePuzzle(opts: MatchmakeOptions): Promise<Puzzle | null> {
     const exclude = opts.recentIds ?? [];
     return selectMatchmadePuzzle(async (min, max) => {
-      let query = client.from('puzzles').select('*').gte('rating', min).lte('rating', max);
+      let query = client
+        .from('puzzles')
+        .select('*')
+        .eq('active', true) // skip soft-deleted (culled) puzzles (#72)
+        .gte('rating', min)
+        .lte('rating', max);
       // One query delivers rating-match + anti-repeat: drop the cooldown ids
       // in-band too (the helper re-filters as a safety net).
       if (exclude.length > 0) query = query.not('id', 'in', `(${exclude.join(',')})`);
@@ -469,6 +502,52 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     if (error) throw new Error(`updateSubmission failed: ${error.message}`);
   }
 
+  async function isCurator(userId: string): Promise<boolean> {
+    const { data, error } = await client
+      .from('curators')
+      .select('user_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    // Empty-safe: no row (or an RLS-denied read) ⇒ not a curator. A genuine error
+    // is swallowed to a `false` so a curation-table hiccup never breaks play.
+    if (error) return false;
+    return data !== null;
+  }
+
+  async function flagPuzzle(input: {
+    puzzleId: string;
+    userId: string;
+    comment: string;
+  }): Promise<void> {
+    const { error } = await client.from('puzzle_flags').insert({
+      puzzle_id: input.puzzleId,
+      user_id: input.userId,
+      action: 'flag',
+      comment: input.comment,
+    });
+    if (error) throw new Error(`flagPuzzle failed: ${error.message}`);
+  }
+
+  async function setPuzzleActive(puzzleId: string, active: boolean): Promise<void> {
+    const { error } = await client.from('puzzles').update({ active }).eq('id', puzzleId);
+    if (error) throw new Error(`setPuzzleActive failed: ${error.message}`);
+  }
+
+  async function cullPuzzle(input: {
+    puzzleId: string;
+    userId: string;
+    reason?: string;
+  }): Promise<void> {
+    const { error } = await client.from('puzzle_flags').insert({
+      puzzle_id: input.puzzleId,
+      user_id: input.userId,
+      action: 'cull',
+      comment: input.reason ?? null,
+    });
+    if (error) throw new Error(`cullPuzzle failed: ${error.message}`);
+    await setPuzzleActive(input.puzzleId, false);
+  }
+
   return {
     getPuzzle,
     getPuzzleByNumber,
@@ -494,5 +573,9 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     insertSubmission,
     listPendingSubmissions,
     updateSubmission,
+    isCurator,
+    flagPuzzle,
+    cullPuzzle,
+    setPuzzleActive,
   };
 }

@@ -37,11 +37,21 @@ import { PlacementInput } from '../board/PlacementInput.js';
 import { NextPieceBox } from '../board/NextPieceBox.js';
 import { DEFAULT_BINDINGS, type KeyBindings } from '../board/keybindings.js';
 import { Feedback } from '../feedback/index.js';
+import { Curation } from '../curation/index.js';
 import { PlayScreen } from './PlayScreen.js';
 import { PuzzleTitle } from './PuzzleTitle.js';
 
-/** The persistence the session needs (rating read/write + attempt insert). */
-export type SessionDb = Pick<DataAccess, 'getUserRating' | 'upsertUserRating' | 'insertAttempt'>;
+/** The persistence the session needs (rating read/write + attempt insert + curation). */
+export type SessionDb = Pick<
+  DataAccess,
+  | 'getUserRating'
+  | 'upsertUserRating'
+  | 'insertAttempt'
+  | 'isCurator'
+  | 'flagPuzzle'
+  | 'cullPuzzle'
+  | 'setPuzzleActive'
+>;
 
 export interface PuzzleSessionProps {
   puzzle: Puzzle;
@@ -144,6 +154,16 @@ export function PuzzleSession({
     [db, userId, puzzle.glicko, puzzle.id],
   );
 
+  // The left rail carries the rating plus the dev curation controls (#72). The
+  // curation block renders nothing for non-curators (everyone, until a curator is
+  // allowlisted), so it has no layout effect in normal play.
+  const flank = (
+    <>
+      {leftFlank}
+      <Curation db={db} userId={userId} puzzleId={puzzle.id} />
+    </>
+  );
+
   const onConfirm1 = useCallback((p1: Placement) => {
     // Always advance to placement 2 — both pieces are played even if the first
     // is weak; the combo is graded as a whole (#35).
@@ -168,7 +188,7 @@ export function PuzzleSession({
 
   if (phase === 'place1') {
     return (
-      <PlayScreen leftFlank={leftFlank}>
+      <PlayScreen leftFlank={flank}>
         <div className="play-center" data-testid="board-center">
           <PuzzleTitle number={puzzle.number} />
           <p className="play-instruction">
@@ -191,7 +211,7 @@ export function PuzzleSession({
 
   if (phase === 'place2' && board1) {
     return (
-      <PlayScreen leftFlank={leftFlank}>
+      <PlayScreen leftFlank={flank}>
         <div className="play-center" data-testid="board-center">
           <PuzzleTitle number={puzzle.number} />
           <p className="play-instruction">
@@ -214,7 +234,7 @@ export function PuzzleSession({
 
   if (phase === 'grading') {
     return (
-      <PlayScreen leftFlank={leftFlank}>
+      <PlayScreen leftFlank={flank}>
         <div className="play-center" data-testid="board-center">
           <PuzzleTitle number={puzzle.number} />
           <p role="status">Grading…</p>
@@ -225,7 +245,7 @@ export function PuzzleSession({
 
   // phase === 'done'
   return (
-    <PlayScreen leftFlank={leftFlank}>
+    <PlayScreen leftFlank={flank}>
       <Feedback
         number={puzzle.number}
         board0={board0}

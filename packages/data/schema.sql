@@ -148,6 +148,47 @@ create table if not exists public.submissions (
 
 create index if not exists submissions_status_idx on public.submissions (status);
 
+-- Dev in-play curation (#72) ------------------------------------------------
+--
+-- Curator allowlist. This table IS the allowlist: a row grants its `user_id`
+-- the curator controls (flag + soft-delete) — enforced in RLS below, NOT trusted
+-- from the client (a cull mutates the shared bank). It is the ONLY thing a future
+-- owner edits to grant access, with ZERO code change.
+--
+--   ADD A CURATOR LATER (one data step, no deploy):
+--     insert into public.curators (user_id, note)
+--     values ('<the auth.uid() of the account>', 'me');
+--   (find the uid in Supabase Auth, or via select auth.uid() while signed in.)
+--   Remove access with a matching delete. No UID is hardcoded anywhere.
+--
+-- EMPTY-SAFE: with no rows, every curator-gated policy below evaluates to false,
+-- so the curation UI/actions are simply inert/hidden and normal play is wholly
+-- unaffected (no errors, no broken RLS).
+create table if not exists public.curators (
+  user_id uuid primary key,
+  email text,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+-- Soft-delete flag (#72): culled puzzles set this false; matchmaking filters
+-- `active = true`. Additive + idempotent; existing rows backfill to true.
+alter table public.puzzles add column if not exists active boolean not null default true;
+
+-- Append-only curation log (#72): a flag (free-text comment, for later pattern
+-- mining of "what makes puzzles boring") or a cull (soft-delete). No update/
+-- delete policy ⇒ append-only.
+create table if not exists public.puzzle_flags (
+  id uuid primary key default gen_random_uuid(),
+  puzzle_id uuid not null references public.puzzles (id) on delete cascade,
+  user_id uuid not null,
+  -- 'flag' (keep live, note it) | 'cull' (soft-delete, set active=false).
+  action text not null check (action in ('flag', 'cull')),
+  comment text,
+  created_at timestamptz not null default now()
+);
+create index if not exists puzzle_flags_puzzle_idx on public.puzzle_flags (puzzle_id);
+
 -- Storage bucket for submission images (#45/#67): PRIVATE (offline pipeline
 -- reads via the service role), restricted to PNG/JPEG up to 5 MB. The mime/size
 -- caps are enforced by Storage itself, before any byte reaches the bucket.
@@ -167,10 +208,45 @@ alter table public.user_ratings enable row level security;
 alter table public.attempts enable row level security;
 alter table public.user_prefs enable row level security;
 alter table public.submissions enable row level security;
+alter table public.curators enable row level security;
+alter table public.puzzle_flags enable row level security;
 
 drop policy if exists puzzles_public_read on public.puzzles;
 create policy puzzles_public_read on public.puzzles
   for select using (true);
+
+-- Curation (#72): an allowlisted curator (a row in `curators`) may soft-delete a
+-- puzzle (update `active`) and append to the flag log; everyone else is denied by
+-- RLS regardless of client. The allowlist subquery is empty-safe — with no
+-- curators it is false for all, so curation is inert and play is unaffected.
+-- Mirrors the submissions allowlist/own-row pattern above.
+
+-- A user can read their OWN curator row, so the client can self-detect whether to
+-- reveal the dev controls (no row ⇒ not a curator ⇒ controls hidden).
+drop policy if exists curators_select_own on public.curators;
+create policy curators_select_own on public.curators
+  for select using (auth.uid() = user_id);
+
+-- A curator may update puzzles (used to set active=false on a cull). The service
+-- role (generator) bypasses RLS as before.
+drop policy if exists puzzles_curator_update on public.puzzles;
+create policy puzzles_curator_update on public.puzzles
+  for update
+  using (auth.uid() in (select user_id from public.curators))
+  with check (auth.uid() in (select user_id from public.curators));
+
+-- A curator may append to the flag log (own user_id) and read it back.
+drop policy if exists puzzle_flags_curator_insert on public.puzzle_flags;
+create policy puzzle_flags_curator_insert on public.puzzle_flags
+  for insert
+  with check (
+    auth.uid() = user_id
+    and auth.uid() in (select user_id from public.curators)
+  );
+
+drop policy if exists puzzle_flags_curator_select on public.puzzle_flags;
+create policy puzzle_flags_curator_select on public.puzzle_flags
+  for select using (auth.uid() in (select user_id from public.curators));
 
 -- A user owns their rating row.
 drop policy if exists user_ratings_select_own on public.user_ratings;

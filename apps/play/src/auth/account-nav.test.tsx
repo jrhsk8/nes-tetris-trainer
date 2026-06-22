@@ -26,6 +26,12 @@ function emptyDb(): AccountDb {
     async getUserAttempts() {
       return [];
     },
+    async isCurator() {
+      return false;
+    },
+    async flagPuzzle() {},
+    async cullPuzzle() {},
+    async setPuzzleActive() {},
     async getUserRating() {
       return null;
     },

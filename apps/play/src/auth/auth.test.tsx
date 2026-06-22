@@ -109,6 +109,12 @@ describe('Account', () => {
       async getUserAttempts() {
         return [];
       },
+      async isCurator() {
+        return false;
+      },
+      async flagPuzzle() {},
+      async cullPuzzle() {},
+      async setPuzzleActive() {},
       async getUserRating() {
         return { userId: 'u1', rating: 1700, deviation: 200, volatility: 0.06 };
       },

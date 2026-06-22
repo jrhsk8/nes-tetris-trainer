@@ -48,6 +48,12 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
       ratings.set(rating.userId, rating);
       return rating;
     },
+    async isCurator() {
+      return false;
+    },
+    async flagPuzzle() {},
+    async cullPuzzle() {},
+    async setPuzzleActive() {},
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
       return {
         id: 'a1',
@@ -97,6 +103,12 @@ function trackingDb() {
       ratings.set(rating.userId, rating);
       return rating;
     },
+    async isCurator() {
+      return false;
+    },
+    async flagPuzzle() {},
+    async cullPuzzle() {},
+    async setPuzzleActive() {},
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
       return {
         id: 'a1',

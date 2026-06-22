@@ -13,7 +13,15 @@ import { type KeyBindings } from '../board/keybindings.js';
 /** The persistence the loader + session need. */
 export type PlayDb = Pick<
   DataAccess,
-  'getMatchmadePuzzle' | 'getPuzzleByNumber' | 'getUserRating' | 'upsertUserRating' | 'insertAttempt'
+  | 'getMatchmadePuzzle'
+  | 'getPuzzleByNumber'
+  | 'getUserRating'
+  | 'upsertUserRating'
+  | 'insertAttempt'
+  | 'isCurator'
+  | 'flagPuzzle'
+  | 'cullPuzzle'
+  | 'setPuzzleActive'
 >;
 
 /**

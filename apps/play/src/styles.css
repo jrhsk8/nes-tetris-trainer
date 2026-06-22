@@ -767,6 +767,47 @@ input:focus-visible {
   box-shadow: none;
 }
 
+/* ---- Dev curation (#72) ------------------------------------------------ */
+/* Hidden entirely for non-curators (the component renders nothing), so this
+   only ever styles the allowlisted dev's flag/cull controls. */
+.curation {
+  border: 3px dashed var(--panel-edge);
+  background: var(--panel);
+  padding: 10px;
+  margin-top: var(--space);
+}
+.curation-label {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--nes-gold);
+  margin: 0 0 8px;
+}
+.curation-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.curation .curation-cull {
+  background: var(--nes-red);
+}
+.curation-flag input {
+  width: 100%;
+  margin-top: 4px;
+}
+.curation-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.curation-status {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-dim);
+}
+
 /* ---- Controls panel (#24) ---------------------------------------------- */
 
 .controls-hint {
