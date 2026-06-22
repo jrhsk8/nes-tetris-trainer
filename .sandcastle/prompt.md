@@ -27,12 +27,12 @@ treat the issues that need them as blocked.
   - Per CLAUDE.md, the engine is **offline/generator-only** — wrap it behind the typed client in `src/generator`; never call it from the play app.
 - **BetaTetris cross-check engine (issue #54)** — now baked into the image (offline, CPU):
   - A userspace micromamba env `bt` (python 3.12 + pytorch-cpu) + the built `tetris` C++ extension + the v1.0.0 perfect/normal weights. Run scripts inside it with the `bt-run` wrapper, e.g. `bt-run python betatetris-spike/pull.py && bt-run python betatetris-spike/compare.py`.
-  - Paths are in the env: `BT_HOME`, `BT_REPO_PY`, `BT_MODELS`, `BT_OUT`. Method/verdict: `FINDINGS-betatetris-spike.md`; harness + paths table: `betatetris-spike/README.md`.
+  - Paths are in the env: `BT_HOME`, `BT_REPO_PY`, `BT_MODELS`, `BT_OUT`. Method/verdict: `docs/decisions.md` (2026-06-21 — Consensus bank); harness + paths table + board-injection gotchas: `betatetris-spike/README.md`.
   - Same guardrail as StackRabbit: **offline / generator-only** (and GPLv3 — never link it into or ship it with the play app).
 
 ## Run scope (this run)
 
-This is the **2026-06-21 consensus-bank batch** — four issues (#51–#54) from a `/grill-with-docs` design session that followed the BetaTetris cross-check spike. They move the bank toward *quality-graded rating + difficulty-by-tightness + a deeper-confirmed optimal + a BetaTetris-blessed consensus filter*. Rationale: `docs/decisions.md` (2026-06-21 — Consensus bank) + `FINDINGS-betatetris-spike.md`. All prior batches (#1–#50) are **closed**.
+This is the **2026-06-21 consensus-bank batch** — four issues (#51–#54) from a `/grill-with-docs` design session that followed the BetaTetris cross-check spike. They move the bank toward *quality-graded rating + difficulty-by-tightness + a deeper-confirmed optimal + a BetaTetris-blessed consensus filter*. Rationale: `docs/decisions.md` (2026-06-21 — Consensus bank). All prior batches (#1–#50) are **closed**.
 
 - **Issues (this batch — work top-to-bottom):**
   - **#51** `[play]` — graded reward curve: replace the binary `solved?0:1` Glicko outcome with a quality-graded `scoreToOutcome(score)` (95 = neutral, convex up to 100, steep-below to a 0.10 floor) in `packages/rating` (live + offline `tally.ts`); persist a numeric `attempts.score` (additive migration); the play UI shows graded credit. Detail in the issue body.

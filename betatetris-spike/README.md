@@ -4,7 +4,7 @@ Adapter scripts for the BetaTetris cross-check — born as a feasibility spike, 
 the harness for the **#54 true-consensus filter**. They depend on the external GPLv3
 repo `BetaTetris/betatetris-tablebase` + a CPU PyTorch env, both kept **offline /
 generator-only** (per the engine-offline guardrail) — never linked into the play app.
-Verdict and analysis: `../FINDINGS-betatetris-spike.md`.
+Verdict and analysis: `../docs/decisions.md` (2026-06-21 — *Consensus bank* and *BetaTetris baked into the sandcastle image*).
 
 ## Where the engine lives (paths are env-driven)
 
