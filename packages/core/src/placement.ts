@@ -119,16 +119,19 @@ function stateKey(rotation: number, row: number, col: number): number {
 }
 
 /**
- * Every collision-reachable **resting** placement of `piece` on `grid`.
+ * Every collision-reachable **floating state** `(rotation, row, col)` of `piece`
+ * on `grid` — the full visited set of the maneuver BFS, not just the resting
+ * ones.
  *
- * A BFS over the player's four inputs — left, right, rotate (cw/ccw), and
- * soft-drop — seeded from the spawn row (every rotation/column that fits at the
- * top of the board, where pieces enter). A reached state is a resting placement
- * when the piece can no longer move down. The result is a superset of every
- * placement free-positioning input can reach (the binding invariant), so it
- * includes plain hard drops as well as tucks and spins.
+ * A BFS over the player's inputs — left, right, rotate (cw/ccw), and soft-drop
+ * (down) — seeded from the spawn row (every rotation/column that fits at the top
+ * of the board, where pieces enter). The free-positioning input (#43, #56) gates
+ * its ghost on exactly this set, so the placements the player can manoeuvre into
+ * and confirm match the generator's reachability model cell-for-cell (the
+ * generator↔play parity invariant). {@link enumerateResting} is this set
+ * narrowed to the states that cannot fall further.
  */
-export function enumerateResting(grid: Grid, piece: Piece): RestingPlacement[] {
+export function reachableStates(grid: Grid, piece: Piece): RestingPlacement[] {
   const rotations = ORIENTATIONS[piece].length;
   const seen = new Set<number>();
   const queue: RestingPlacement[] = [];
@@ -148,7 +151,6 @@ export function enumerateResting(grid: Grid, piece: Piece): RestingPlacement[] {
     }
   }
 
-  const resting: RestingPlacement[] = [];
   for (let i = 0; i < queue.length; i++) {
     const { rotation, row, col } = queue[i];
     // Player moves: translate, rotate, soft-drop. `visit` enqueues legal states.
@@ -159,12 +161,21 @@ export function enumerateResting(grid: Grid, piece: Piece): RestingPlacement[] {
       visit(normRotation(piece, rotation + 1), row, col);
       visit(normRotation(piece, rotation - 1), row, col);
     }
-    // Resting if it cannot fall further.
-    if (!fitsAt(grid, piece, rotation, row + 1, col)) {
-      resting.push({ rotation, row, col });
-    }
   }
-  return resting;
+  return queue;
+}
+
+/**
+ * Every collision-reachable **resting** placement of `piece` on `grid`: the
+ * {@link reachableStates} that cannot fall one row further (the lock condition).
+ * The result is a superset of every placement free-positioning input can reach
+ * (the binding invariant), so it includes plain hard drops as well as tucks and
+ * spins.
+ */
+export function enumerateResting(grid: Grid, piece: Piece): RestingPlacement[] {
+  return reachableStates(grid, piece).filter(
+    ({ rotation, row, col }) => !fitsAt(grid, piece, rotation, row + 1, col),
+  );
 }
 
 /**

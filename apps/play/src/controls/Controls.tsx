@@ -12,8 +12,8 @@ import {
   findConflict,
   keyLabel,
   rebind,
-  type Action,
   type KeyBindings,
+  type RebindableAction,
 } from '../board/keybindings.js';
 
 export interface ControlsProps {
@@ -22,12 +22,12 @@ export interface ControlsProps {
   onChange: (bindings: KeyBindings) => void;
 }
 
-const LABELS: Record<Action, string> = Object.fromEntries(
+const LABELS: Record<RebindableAction, string> = Object.fromEntries(
   ACTIONS.map(({ action, label }) => [action, label]),
-) as Record<Action, string>;
+) as Record<RebindableAction, string>;
 
 export function Controls({ bindings, onChange }: ControlsProps) {
-  const [listening, setListening] = useState<Action | null>(null);
+  const [listening, setListening] = useState<RebindableAction | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
 
   useEffect(() => {

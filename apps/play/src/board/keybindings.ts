@@ -3,8 +3,9 @@
  *
  * Five actions are rebindable: move left/right, rotate clockwise/counter-
  * clockwise, and confirm. Each maps to one primary key. Two fixed secondary
- * aliases ship out of the box — Space confirms and ArrowUp is a rotate-CW alias
- * (NES "up = rotate") — and apply only when that key is not a primary binding.
+ * aliases ship out of the box — Space confirms and ArrowUp is a "move up" alias
+ * (the inverse of ArrowDown soft-drop, so a soft-drop overshoot can be undone to
+ * seat a tuck/spin, #56) — and apply only when that key is not a primary binding.
  *
  * No DOM here: {@link PlacementInput} resolves keydown events through
  * `resolveAction`, and the Controls panel edits bindings with `findConflict` /
@@ -12,17 +13,21 @@
  * across devices like the rating.
  */
 
-/** A rebindable placement action. */
+/**
+ * A placement action. The first six are rebindable (see {@link ACTIONS});
+ * `move-up` is a fixed positioning aid bound only to the ArrowUp alias (#56).
+ */
 export type Action =
   | 'move-left'
   | 'move-right'
   | 'rotate-cw'
   | 'rotate-ccw'
   | 'soft-drop'
+  | 'move-up'
   | 'confirm';
 
-/** The actions in display order, with human labels for the Controls panel. */
-export const ACTIONS: ReadonlyArray<{ action: Action; label: string }> = [
+/** The rebindable actions in display order, with human labels for the Controls panel. */
+export const ACTIONS: ReadonlyArray<{ action: RebindableAction; label: string }> = [
   { action: 'move-left', label: 'Move left' },
   { action: 'move-right', label: 'Move right' },
   { action: 'rotate-ccw', label: 'Rotate counter-clockwise' },
@@ -31,8 +36,11 @@ export const ACTIONS: ReadonlyArray<{ action: Action; label: string }> = [
   { action: 'confirm', label: 'Confirm placement' },
 ];
 
-/** A primary key per action (the value is a normalized `KeyboardEvent.key`). */
-export type KeyBindings = Record<Action, string>;
+/** The rebindable actions — every {@link Action} except the fixed `move-up` aid. */
+export type RebindableAction = Exclude<Action, 'move-up'>;
+
+/** A primary key per rebindable action (value is a normalized `KeyboardEvent.key`). */
+export type KeyBindings = Record<RebindableAction, string>;
 
 /** The out-of-the-box bindings: arrows move, z/x rotate CCW/CW, ↓ soft-drops, Enter confirms. */
 export const DEFAULT_BINDINGS: KeyBindings = {
@@ -47,7 +55,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
 /** Fixed secondary aliases; active only when the key isn't a primary binding. */
 const ALIASES: Readonly<Record<string, Action>> = {
   ' ': 'confirm',
-  ArrowUp: 'rotate-cw',
+  ArrowUp: 'move-up',
 };
 
 /**
@@ -62,7 +70,7 @@ export function normalizeKey(key: string): string {
 /** The action a key triggers under `bindings`, or null if it is unbound. */
 export function resolveAction(bindings: KeyBindings, key: string): Action | null {
   const k = normalizeKey(key);
-  const direct = (Object.keys(bindings) as Action[]).find(
+  const direct = (Object.keys(bindings) as RebindableAction[]).find(
     (action) => normalizeKey(bindings[action]) === k,
   );
   if (direct) return direct;
@@ -73,16 +81,20 @@ export function resolveAction(bindings: KeyBindings, key: string): Action | null
  * The OTHER action already bound to `key`, or null. Used to surface a conflict
  * before applying a rebind (no silent double-binding).
  */
-export function findConflict(bindings: KeyBindings, action: Action, key: string): Action | null {
+export function findConflict(
+  bindings: KeyBindings,
+  action: RebindableAction,
+  key: string,
+): RebindableAction | null {
   const k = normalizeKey(key);
-  const owner = (Object.keys(bindings) as Action[]).find(
+  const owner = (Object.keys(bindings) as RebindableAction[]).find(
     (a) => a !== action && normalizeKey(bindings[a]) === k,
   );
   return owner ?? null;
 }
 
 /** A copy of `bindings` with `action` bound to `key`. */
-export function rebind(bindings: KeyBindings, action: Action, key: string): KeyBindings {
+export function rebind(bindings: KeyBindings, action: RebindableAction, key: string): KeyBindings {
   return { ...bindings, [action]: normalizeKey(key) };
 }
 

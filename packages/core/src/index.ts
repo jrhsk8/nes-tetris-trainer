@@ -32,6 +32,7 @@ export {
   fitsAt,
   isResting,
   applyRestingPlacement,
+  reachableStates,
   enumerateResting,
   boardKey,
 } from './placement.js';

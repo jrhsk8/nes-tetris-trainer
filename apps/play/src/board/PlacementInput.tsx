@@ -1,10 +1,20 @@
 /**
- * Free-positioning ghost input (#10, #43) — the player manoeuvres a ghost of
- * `piece` to any collision-reachable resting position and confirms it. Unlike
+ * Free-positioning ghost input (#10, #43, #56) — the player manoeuvres a ghost
+ * of `piece` to any collision-reachable resting position and confirms it. Unlike
  * the old column-only ghost this can express **tucks and spins**: there is no
- * timer, but the four real inputs (left, right, rotate, soft-drop) are
- * collision-aware, so the player can soft-drop into an open well and slide the
- * piece UNDER an overhang before locking.
+ * timer, and the moves (left, right, rotate, soft-drop, and the soft-drop
+ * inverse "move up") are gated on the engine-shared reachability model, so the
+ * player can soft-drop into an open well and slide the piece UNDER an overhang
+ * before locking.
+ *
+ * The reachable floating states come from {@link reachableStates} — the SAME BFS
+ * the generator enumerates placements with — so the set of positions the player
+ * can confirm matches the generator's reachability cell-for-cell (parity, #56).
+ * Crucially `move up` (the inverse of soft-drop) is included: soft-drop alone is
+ * irreversible, so overshooting the one row where a tuck/spin slides in used to
+ * strand the piece with no way back. Every move simply walks to an adjacent
+ * reachable state; it can never escape the reachable set, so it can never reach
+ * a placement the generator did not enumerate.
  *
  * The piece has a floating position `(rotation, row, col)`; the ghost is drawn
  * where it would currently land (the floating position dropped straight to
@@ -16,9 +26,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   COLS,
+  ROWS,
   ORIENTATIONS,
   fitsAt,
   pieceCells,
+  reachableStates,
   type ColorGrid,
   type Grid,
   type Piece,
@@ -26,6 +38,11 @@ import {
 } from '@trainer/core';
 import { Board } from './Board.js';
 import { DEFAULT_BINDINGS, resolveAction, type KeyBindings } from './keybindings.js';
+
+/** A packed key for a `(rotation, row, col)` floating state (mirrors the core BFS). */
+function stateKey(rotation: number, row: number, col: number): number {
+  return (rotation * ROWS + row) * COLS + col;
+}
 
 /** The row a piece at `(rotation, col)` settles to if dropped straight from `row`. */
 function settleRow(board: Grid, piece: Piece, rotation: number, row: number, col: number): number {
@@ -75,6 +92,20 @@ export function PlacementInput({
   const [col, setCol] = useState(() => spawnColumn(board, piece));
   const [row, setRow] = useState(0);
 
+  // Every floating state the player may manoeuvre into — the generator's
+  // reachability model (#56). A move is allowed iff its target state is in here,
+  // so the confirmable placements match the generator's cell-for-cell and a move
+  // can never escape onto a placement the generator did not enumerate.
+  const reachable = useMemo(() => {
+    const set = new Set<number>();
+    for (const s of reachableStates(board, piece)) set.add(stateKey(s.rotation, s.row, s.col));
+    return set;
+  }, [board, piece]);
+  const canReach = useCallback(
+    (rot: number, r: number, c: number) => reachable.has(stateKey(rot, r, c)),
+    [reachable],
+  );
+
   // Where the piece would land from its current floating position — what the
   // ghost shows and what `confirm` emits (the displayed rest, pinned by `row`).
   const restRow = useMemo(
@@ -87,26 +118,34 @@ export function PlacementInput({
   );
 
   const moveLeft = useCallback(() => {
-    setCol((c) => (fitsAt(board, piece, rotation, row, c - 1) ? c - 1 : c));
-  }, [board, piece, rotation, row]);
+    setCol((c) => (canReach(rotation, row, c - 1) ? c - 1 : c));
+  }, [canReach, rotation, row]);
 
   const moveRight = useCallback(() => {
-    setCol((c) => (fitsAt(board, piece, rotation, row, c + 1) ? c + 1 : c));
-  }, [board, piece, rotation, row]);
+    setCol((c) => (canReach(rotation, row, c + 1) ? c + 1 : c));
+  }, [canReach, rotation, row]);
 
   const softDrop = useCallback(() => {
-    setRow((r) => (fitsAt(board, piece, rotation, r + 1, col) ? r + 1 : r));
-  }, [board, piece, rotation, col]);
+    setRow((r) => (canReach(rotation, r + 1, col) ? r + 1 : r));
+  }, [canReach, rotation, col]);
+
+  // The inverse of soft-drop (#56): step the floating piece UP one row so an
+  // overshoot can be undone to reach a tuck/spin row. Gated on the reachable set,
+  // so it can only revisit a genuinely reachable state — never lift the piece
+  // into an isolated pocket the generator never enumerated.
+  const raise = useCallback(() => {
+    setRow((r) => (canReach(rotation, r - 1, col) ? r - 1 : r));
+  }, [canReach, rotation, col]);
 
   // Rotate by `delta` orientation steps (+1 = clockwise, -1 = counter-clockwise),
-  // in place — only if the rotated piece still fits at the current position.
+  // in place — only if the rotated piece is reachable at the current position.
   const rotateBy = useCallback(
     (delta: number) => {
       if (rotationCount < 2) return;
       const next = (rotation + delta + rotationCount) % rotationCount;
-      if (fitsAt(board, piece, next, row, col)) setRotation(next);
+      if (canReach(next, row, col)) setRotation(next);
     },
-    [board, piece, rotation, row, col, rotationCount],
+    [canReach, rotation, row, col, rotationCount],
   );
 
   const rotateCw = useCallback(() => rotateBy(1), [rotateBy]);
@@ -138,12 +177,15 @@ export function PlacementInput({
         case 'soft-drop':
           softDrop();
           break;
+        case 'move-up':
+          raise();
+          break;
         case 'confirm':
           confirm();
           break;
       }
     },
-    [bindings, moveLeft, moveRight, rotateCw, rotateCcw, softDrop, confirm],
+    [bindings, moveLeft, moveRight, rotateCw, rotateCcw, softDrop, raise, confirm],
   );
 
   return (
@@ -183,9 +225,17 @@ export function PlacementInput({
         </button>
         <button
           type="button"
+          onClick={raise}
+          aria-label="Move up"
+          disabled={!canReach(rotation, row - 1, col)}
+        >
+          ▲
+        </button>
+        <button
+          type="button"
           onClick={softDrop}
           aria-label="Soft drop"
-          disabled={!fitsAt(board, piece, rotation, row + 1, col)}
+          disabled={!canReach(rotation, row + 1, col)}
         >
           ▼
         </button>

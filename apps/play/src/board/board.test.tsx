@@ -186,7 +186,7 @@ describe('PlacementInput', () => {
     render(<PlacementInput board={board} piece="I" onConfirm={onConfirm} />);
 
     await user.click(screen.getByLabelText('placement input'));
-    await user.keyboard('{ArrowUp}'); // rotate the I to vertical (rotation 1) at col 3
+    await user.keyboard('x'); // rotate the I to vertical (rotation 1) at col 3
     for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop below the ledge
     await user.keyboard('{ArrowRight}'); // slide under the ledge into the pocket
     await user.keyboard('{Enter}');
@@ -199,6 +199,35 @@ describe('PlacementInput', () => {
     const landed = restingCells(board, 'I', emitted)!;
     expect(landed).not.toBeNull();
     expect(keysOf(landed)).toEqual(new Set(['16-4', '17-4', '18-4', '19-4']));
+    expect(keysOf(landed)).toEqual(ghostKeys());
+  });
+
+  it('recovers from a soft-drop overshoot by raising back up to seat a tuck/spin (#56)', async () => {
+    const user = userEvent.setup();
+    // An overhang caps col 2 at row 11; a shelf at row 16 floors a 4-tall pocket
+    // (col 2, rows 12-15) UNDER the overhang. The only way in is to soft-drop the
+    // vertical I down the open col-3 well to floating row 12 and slide left — one
+    // row too far (row 13+) and col 2 is blocked, so the piece can't seat. Before
+    // #56 soft-drop was irreversible: overshoot stranded the piece on the floor.
+    const board = emptyBoard();
+    board[11][2] = 1; // overhang over the pocket
+    board[16][2] = 1; // shelf the tuck rests on
+    const onConfirm = vi.fn<(p: Placement) => void>();
+    render(<PlacementInput board={board} piece="I" onConfirm={onConfirm} />);
+
+    await user.click(screen.getByLabelText('placement input'));
+    await user.keyboard('x'); // rotate the I to vertical (rotation 1) at col 3
+    for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // OVERSHOOT to the floor
+    for (let i = 0; i < 4; i++) await user.keyboard('{ArrowUp}'); // raise back up to the tuck row
+    await user.keyboard('{ArrowLeft}'); // slide under the overhang into the pocket
+    await user.keyboard('{Enter}');
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const emitted = onConfirm.mock.calls[0][0];
+    const landed = restingCells(board, 'I', emitted)!;
+    expect(landed).not.toBeNull();
+    // Seated in the covered pocket — not stranded on the col-3 floor.
+    expect(keysOf(landed)).toEqual(new Set(['12-2', '13-2', '14-2', '15-2']));
     expect(keysOf(landed)).toEqual(ghostKeys());
   });
 });

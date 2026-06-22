@@ -16,9 +16,11 @@ describe('key bindings', () => {
     expect(resolveAction(DEFAULT_BINDINGS, 'Enter')).toBe('confirm');
   });
 
-  it('honors the fixed aliases: Space confirms, ArrowUp rotates CW', () => {
+  it('honors the fixed aliases: Space confirms, ArrowUp raises (#56)', () => {
     expect(resolveAction(DEFAULT_BINDINGS, ' ')).toBe('confirm');
-    expect(resolveAction(DEFAULT_BINDINGS, 'ArrowUp')).toBe('rotate-cw');
+    // ArrowUp is the "move up" alias (the inverse of ArrowDown soft-drop), so a
+    // soft-drop overshoot can be undone to seat a tuck/spin. Rotate stays on z/x.
+    expect(resolveAction(DEFAULT_BINDINGS, 'ArrowUp')).toBe('move-up');
   });
 
   it('ignores Shift by folding single keys to lower case', () => {
