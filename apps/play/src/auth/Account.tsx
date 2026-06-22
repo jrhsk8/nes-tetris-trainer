@@ -59,6 +59,10 @@ export function Account({ db, user, auth }: AccountProps) {
   const [bindings, setBindings] = useState<KeyBindings>(DEFAULT_BINDINGS);
   const [muted, setMuted] = useState<boolean>(false); // sound on by default (#61)
   const [view, setView] = useState<View>('play');
+  // The top-bar nav/account cluster collapses behind a menu button on phones
+  // (#70), so the play screen keeps a slim single-line header. Open by default is
+  // irrelevant on desktop (the toggle is hidden and the cluster always shows).
+  const [menuOpen, setMenuOpen] = useState(false);
   // A `?puzzle=N` share link (#49) opens that exact puzzle first; read once.
   const sharedPuzzleNumber = useMemo(
     () => (typeof window !== 'undefined' ? parsePuzzleParam(window.location.search) : null),
@@ -128,7 +132,18 @@ export function Account({ db, user, auth }: AccountProps) {
     <div className="account">
       <header className="top-bar">
         <span className="wordmark">{WORDMARK}</span>
-        <div className="top-bar-end">
+        {/* Collapses the nav + account actions behind a menu on phones (#70). The
+            toggle is hidden on desktop, where the cluster always shows. */}
+        <button
+          type="button"
+          className="nav-toggle"
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          ☰
+        </button>
+        <div className={`top-bar-end${menuOpen ? ' is-open' : ''}`}>
           <nav className="app-nav" aria-label="views">
             {NAV.map(({ view: v, label }) => (
               <button
@@ -136,7 +151,10 @@ export function Account({ db, user, auth }: AccountProps) {
                 type="button"
                 className={view === v ? 'nav-active' : undefined}
                 aria-current={view === v ? 'page' : undefined}
-                onClick={() => setView(v)}
+                onClick={() => {
+                  setView(v);
+                  setMenuOpen(false);
+                }}
               >
                 {label}
               </button>

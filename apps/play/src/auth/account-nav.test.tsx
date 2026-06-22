@@ -93,4 +93,20 @@ describe('Header nav + view switching (#22)', () => {
     await user.click(within(nav).getByRole('button', { name: 'Play' }));
     expect(screen.getByTestId('view-play')).toBeInTheDocument();
   });
+
+  it('exposes a phone menu toggle that collapses/opens the nav cluster (#70)', async () => {
+    const user = userEvent.setup();
+    render(<Account db={emptyDb()} user={{ id: 'u1', email: 'me@example.com', isAnonymous: false }} auth={fakeAuth()} />);
+
+    const toggle = screen.getByRole('button', { name: 'Menu' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    // Choosing a view closes the menu again (so the slim header returns).
+    const nav = screen.getByRole('navigation');
+    await user.click(within(nav).getByRole('button', { name: 'History' }));
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
 });

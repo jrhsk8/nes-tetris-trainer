@@ -40,6 +40,7 @@ import { formatScore } from './grade.js';
 import { playResultSound } from './sound.js';
 import { buildReplay, type Keyframe, type ReplayOverlay } from './replay.js';
 import { PuzzleTitle } from '../session/PuzzleTitle.js';
+import { useMediaQuery } from '../useMediaQuery.js';
 
 /** A player rating change to surface alongside the verdict. */
 export interface RatingChange {
@@ -174,6 +175,10 @@ export function Feedback({
   bindings = DEFAULT_BINDINGS,
 }: FeedbackProps) {
   const [reduced] = useState(prefersReducedMotion);
+  // The mobile fixed-board layout (#70): the result rail becomes a short,
+  // zero-scroll bottom zone, so the combo list collapses to its top ranks with a
+  // "More" expand. Desktop (and jsdom, which has no matchMedia) stays full.
+  const compact = useMediaQuery('(max-width: 900px)');
 
   const playerLine = useMemo(() => playerLineOf(userLine), [userLine]);
   // Grade the whole combo — no first-move short-circuit (#34).
@@ -299,6 +304,7 @@ export function Feedback({
           playerScore={verdict.score}
           selected={selected}
           onSelect={setSelected}
+          compact={compact}
         />
 
         {/* Replay moves to the right rail (#65): the secondary action. */}

@@ -127,6 +127,14 @@ main {
   flex-wrap: wrap;
 }
 
+/* The phone menu toggle (#70): hidden on desktop, where the cluster always
+   shows. Revealed in the mobile media query, where it collapses the cluster. */
+.nav-toggle {
+  display: none;
+  font-size: 14px;
+  padding: 6px 10px;
+}
+
 h2 {
   font-family: var(--font-pixel);
   font-size: clamp(11px, 2vw, 15px);
@@ -247,20 +255,149 @@ h2 {
 /* --board-width is set on .play-screen (hoisted for the next box, #63); the
    board grid inherits it. */
 
+/*
+ * Mobile fixed-board layout (#70). Supersedes the old "phones collapse to a
+ * stacked, scrollable column" rule. The whole play view is exactly one portrait
+ * screen with NO page scroll: a slim header, a fixed top strip (rating chip +
+ * next box), the board as a fixed anchor that never moves or resizes between
+ * solving and feedback, and a fixed bottom zone (controls while solving / a
+ * compact zero-scroll combo list while in feedback). The board shrinks only as
+ * much as needed to fit — the owner's last resort.
+ */
 @media (max-width: 900px) {
+  #root {
+    padding: 8px;
+  }
+  .account {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  /* Collapse the chrome: the nav + account actions hide behind the menu toggle
+     until opened, keeping the header a single slim line. */
+  .top-bar {
+    margin-bottom: 8px;
+  }
+  .nav-toggle {
+    display: inline-block;
+  }
+  .top-bar-end {
+    display: none;
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .top-bar-end.is-open {
+    display: flex;
+  }
+
+  /* The play view is a fixed three-region grid: [chip | next box] strip, board,
+     bottom zone. Grid rows give the board a constant offset in BOTH phases (the
+     strip row is a fixed height even when the next box is absent in feedback),
+     so the board never moves; --board-width is a single value, so it never
+     resizes either. */
   .play-screen {
-    grid-template-columns: minmax(0, 1fr);
-    /* Phones may collapse to a stacked, scrollable column (#32). */
-    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 4.6rem auto 1fr;
+    column-gap: 8px;
+    row-gap: 6px;
     align-content: start;
+    justify-items: center;
+    min-height: 0;
+    height: calc(100dvh - 4.5rem);
+    overflow: hidden;
+    /* Sized to fit strip + board + bottom zone on one portrait screen; capped
+       by width and by the height left for the board between the two zones. */
+    --board-width: min(58vw, calc((100dvh - 24rem) / 2));
   }
-  .flank-left,
-  .play-center,
-  .flank-right {
+
+  /* Top strip: rating chip on the left, next box on the right. */
+  .flank-left {
+    grid-row: 1;
     grid-column: 1;
+    justify-self: stretch;
+    overflow: hidden;
   }
-  .play-screen {
-    --board-width: min(78vw, 46vh);
+  .flank-right[aria-label='next piece'] {
+    grid-row: 1;
+    grid-column: 2;
+    overflow: hidden;
+  }
+
+  /* The board region — the fixed anchor. */
+  .play-center {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+  /* Move the instruction BELOW the board on mobile so only the (constant) title
+     sits above it — the board offset is then identical in both phases. */
+  .play-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .play-center .puzzle-title {
+    order: 0;
+  }
+  .play-center .placement-input {
+    order: 1;
+  }
+  .play-center .play-instruction {
+    order: 2;
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+  }
+
+  /* The feedback bottom zone: a fixed-height, zero-scroll result rail. The
+     compact combo list keeps its top ranks visible; deeper ranks expand via
+     "More". Replay/Next stay reachable without scrolling the page. */
+  .flank-right.result-panel {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    min-height: 0;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .result-panel .combo-list {
+    margin-top: 8px;
+    gap: 4px;
+  }
+  .result-panel .combo-row {
+    padding: 6px 8px;
+  }
+
+  /* Rating → a one-line chip: drop the attempt count and trend chart. */
+  .flank-left section[aria-label='rating'] {
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+  .flank-left section[aria-label='rating'] p {
+    margin: 0;
+  }
+  .flank-left [data-testid='attempt-count'],
+  .flank-left [data-testid='rating-trend'],
+  .flank-left section[aria-label='rating'] p:last-child:not(:first-child) {
+    display: none;
+  }
+  [data-testid='current-rating'] {
+    font-size: 14px;
+  }
+
+  /* Slim, compact next box so the top strip fits its fixed height. */
+  .next-box {
+    padding: 4px 6px;
+  }
+  .next-box-label {
+    margin: 0 0 4px;
+    font-size: 7px;
+  }
+  .next-piece-grid {
+    --next-cell: calc(var(--board-width, 220px) / 16);
   }
 }
 
@@ -618,6 +755,16 @@ input:focus-visible {
 .combo-row.combo-yours {
   margin-top: 6px;
   border-style: dashed;
+}
+
+/* "More" expand for deeper ranks in the compact mobile rail (#70). */
+.combo-more {
+  font-size: 8px;
+  padding: 6px 10px;
+  background: var(--nes-field);
+  border: 2px dashed var(--panel-edge);
+  color: var(--ink-dim);
+  box-shadow: none;
 }
 
 /* ---- Controls panel (#24) ---------------------------------------------- */
