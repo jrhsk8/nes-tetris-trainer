@@ -164,6 +164,10 @@ h2 {
  * phases. Below 900px it collapses to a single stacked column.
  */
 .play-screen {
+  /* The board cell scale, hoisted to the grid so BOTH the board (centre) and the
+   * next-piece box (right rail) can draw at the same cell size (#63). The board
+   * grid is 10 cells wide, so one cell = --board-width / 10. */
+  --board-width: min(86vw, 36vh, calc((100vh - 16rem) / 2));
   display: grid;
   grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 260px);
   gap: calc(var(--space) * 1.5);
@@ -240,9 +244,8 @@ h2 {
  * capped to half of the height left under the slim top bar (the `calc`) so the
  * whole screen — board + flanking rails + feedback extras — fits without
  * scrolling, even on short viewports. */
-.board {
-  --board-width: min(86vw, 36vh, calc((100vh - 16rem) / 2));
-}
+/* --board-width is set on .play-screen (hoisted for the next box, #63); the
+   board grid inherits it. */
 
 @media (max-width: 900px) {
   .play-screen {
@@ -256,7 +259,7 @@ h2 {
   .flank-right {
     grid-column: 1;
   }
-  .board {
+  .play-screen {
     --board-width: min(78vw, 46vh);
   }
 }
@@ -321,16 +324,29 @@ section[aria-label='controls'] {
   margin: 0 0 10px;
 }
 
-.next-box-piece {
-  margin: 0;
-  display: flex;
-  justify-content: center;
+/* A fixed-size recessed black well matching the board well's border/shadow
+ * (#63), centred in the card. Constant footprint — never resizes per piece. */
+.next-well {
+  display: inline-block;
+  margin: 0 auto;
+  padding: 6px;
+  background: #000;
+  border: 4px solid #bcbcbc;
+  box-shadow:
+    0 0 0 2px #000,
+    0 0 0 6px #6b6b6b;
+  line-height: 0;
 }
 
-/* Fixed-size NES blocks (--next-cell) so every piece draws at the same scale,
- * regardless of how wide its bounding box is. */
+/* The piece grid: a fixed FOOT_COLS × FOOT_ROWS (4 × 2) cell grid at the BOARD's
+ * cell scale (--board-width / 10), so the next piece draws at exactly the same
+ * block size as on the board (#63). Falls back to 22px when --board-width is
+ * absent (unit tests have no layout). */
 .next-piece-grid {
-  --next-cell: 22px;
+  --next-cell: calc(var(--board-width, 220px) / 10);
+  display: grid;
+  grid-template-columns: repeat(4, var(--next-cell));
+  grid-template-rows: repeat(2, var(--next-cell));
   gap: 0;
 }
 
@@ -345,11 +361,6 @@ section[aria-label='controls'] {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-.next-box-empty {
-  color: var(--ink-dim);
-  margin: 0;
 }
 
 [data-testid='current-rating'] {
