@@ -2,10 +2,12 @@
  * Generation pipeline (#9): candidate -> gates -> stored puzzle.
  */
 
-export { assemblePuzzle, generateBank, DEFAULT_GENERATION_CONFIG } from './generate.js';
+export { assemblePuzzle, classifyLane, generateBank, DEFAULT_GENERATION_CONFIG } from './generate.js';
 export type {
   GeneratorEngine,
   GenerationConfig,
+  VarietyLane,
+  BoardLane,
   AssemblyResult,
   GenerateBankDeps,
   GenerateBankOptions,

@@ -95,9 +95,9 @@ const DEFAULT_CONFIG: SelfPlayConfig = {
   level: 18,
   minDepth: 6,
   maxDepth: 24,
-  // Lowered from 0.15 (#33): cleaner candidates reach the combo gates, lifting
-  // yield without removing the imperfections that make interesting puzzles.
-  noiseRate: 0.12,
+  // Lowered 0.15 → 0.12 (#33) → 0.08 (#66): fewer random moves keep self-play
+  // candidates trending clean upstream, so more clear the strict geometric accept.
+  noiseRate: 0.08,
   inputFrameTimeline: 'X.....',
 };
 

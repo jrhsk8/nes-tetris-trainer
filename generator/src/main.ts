@@ -11,7 +11,7 @@
 import { createDataAccess, createSupabaseClient } from '@trainer/data';
 import { StackRabbitClient } from './engine/index.js';
 import { SelfPlayBoardSource } from './selfplay/index.js';
-import { generateBank } from './pipeline/index.js';
+import { betaTetrisJudge, generateBank } from './pipeline/index.js';
 import type { DifficultyBand } from './pipeline/index.js';
 
 interface CliArgs {
@@ -19,12 +19,14 @@ interface CliArgs {
   max: number;
   floor?: number;
   replace: boolean;
+  /** Run the BetaTetris normal-net top-1 consensus filter as the final stage (#55). */
+  consensus: boolean;
   /** Per-band survivor quotas (#52); when any is set the run spans bands. */
   bandQuotas?: Partial<Record<DifficultyBand, number>>;
 }
 
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { count: 20, max: 2000, replace: false };
+  const args: CliArgs = { count: 20, max: 2000, replace: false, consensus: false };
   const setQuota = (band: DifficultyBand, value: string) => {
     args.bandQuotas = { ...args.bandQuotas, [band]: Number.parseInt(value, 10) };
   };
@@ -48,6 +50,11 @@ function parseArgs(argv: string[]): CliArgs {
         // Replace the whole bank (delete existing puzzles + their attempts)
         // before inserting the freshly generated set.
         args.replace = true;
+        break;
+      case '--consensus':
+        // Final-stage BetaTetris normal-net top-1 consensus filter (#55). Run
+        // via `bt-run` so the net is reachable (offline / generator-only).
+        args.consensus = true;
         break;
       // Difficulty-band quotas (#52): deliberately span easy→hard.
       case '--easy':
@@ -84,16 +91,18 @@ async function main(): Promise<void> {
 
   const db = createDataAccess(createSupabaseClient(supabaseUrl, serviceKey));
   const source = new SelfPlayBoardSource(engine);
+  const consensusJudge = args.consensus ? betaTetrisJudge() : undefined;
 
   const target = args.bandQuotas
     ? `bands ${JSON.stringify(args.bandQuotas)}`
     : `up to ${args.count} puzzles`;
   console.log(
     `Generating ${target} (max ${args.max} candidates)` +
-      `${args.replace ? ', replacing the existing bank' : ''}...`,
+      `${args.replace ? ', replacing the existing bank' : ''}` +
+      `${args.consensus ? ', BetaTetris consensus filter ON' : ''}...`,
   );
   const result = await generateBank(
-    { source, engine, db },
+    { source, engine, db, consensusJudge },
     {
       targetCount: args.count,
       bandQuotas: args.bandQuotas,
@@ -110,6 +119,7 @@ async function main(): Promise<void> {
   console.log(
     `By difficulty band: easy ${result.byBand.easy} / medium ${result.byBand.medium} / hard ${result.byBand.hard}.`,
   );
+  console.log(`By cleanliness lane: strict ${result.byLane.strict} / variety ${result.byLane.variety}.`);
   console.log('Rejections by reason:');
   for (const [reason, count] of Object.entries(result.rejections).sort((a, b) => b[1] - a[1])) {
     console.log(`  ${reason}: ${count}`);

@@ -60,6 +60,27 @@ export interface GeneratorEngine {
   ): Promise<RateMoveResult>;
 }
 
+/**
+ * Which cleanliness lane a candidate's START board falls in (#66). The default
+ * accept is **strict** (clean, game-realistic boards); a small **variety** lane
+ * keeps some texture in the bank.
+ */
+export type BoardLane = 'strict' | 'variety';
+
+/**
+ * The relaxed variety lane (#66): a capped fraction of the bank may have looser
+ * geometry (more holes / more bumpiness) than the strict default, so a little
+ * texture survives. Start height is NOT relaxed — only holes and bumpiness.
+ */
+export interface VarietyLane {
+  /** Looser hole ceiling for variety-lane boards (≥ the strict `maxHoles`). */
+  maxHoles: number;
+  /** Looser bumpiness ceiling for variety-lane boards (≥ the strict `maxBumpiness`). */
+  maxBumpiness: number;
+  /** Fraction of the target bank (0–1) allowed to come from the variety lane. */
+  fraction: number;
+}
+
 /** Tuning for the v2 combo gates (#40). */
 export interface GenerationConfig {
   /** Top-K combos to store per puzzle. */
@@ -73,10 +94,21 @@ export interface GenerationConfig {
    * rest. Tunable via --floor.
    */
   healthFloor: number;
-  /** Geometric pre-filter: drop candidates with more holes than this. */
+  /**
+   * Strict-clean geometric pre-filter (#66): the DEFAULT accept. Drop candidates
+   * with more holes than this (the variety lane below relaxes it for a capped
+   * minority of the bank).
+   */
   maxHoles: number;
-  /** Geometric pre-filter: drop candidates bumpier than this. */
+  /** Strict-clean geometric pre-filter (#66): drop candidates bumpier than this. */
   maxBumpiness: number;
+  /**
+   * The relaxed variety lane (#66), or `null` to disable it (strict accept only,
+   * the behaviour used by most offline tests). When set, a board past the strict
+   * holes/bumpiness ceilings but within these looser ones is kept in the variety
+   * lane, capped at `fraction` of the bank by {@link generateBank}.
+   */
+  varietyLane: VarietyLane | null;
   /**
    * Re-tightened board-health floor (#50): reject a candidate whose tallest
    * START column exceeds this. Tall / near-topped-out board0s are what let
@@ -112,9 +144,13 @@ export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
   // when some piece has no legal placement (an unfair board); a finite floor far
   // below any real eval keeps every playable board and rejects only that garbage.
   healthFloor: -1_000_000,
-  // Holes ≤ 4 / bumpiness ≤ 32 keeps starting boards visibly clean.
-  maxHoles: 4,
-  maxBumpiness: 32,
+  // Strict-clean default (#66): holes ≤ 1, bumpiness ≤ 12 → clean, game-realistic
+  // starting boards. Lower yield is accepted; cleaner boards teach better.
+  maxHoles: 1,
+  maxBumpiness: 12,
+  // A small relaxed lane (#66): ~20% of the bank may run to holes ≤ 2 /
+  // bumpiness ≤ 20 so some texture survives. Height is not relaxed.
+  varietyLane: { maxHoles: 2, maxBumpiness: 20, fraction: 0.2 },
   // Re-tightened (#50): reject near-topout starts (well is 20 tall). 12 leaves
   // ample build room while excluding the tall boards that produce bad rank-1s.
   maxStartHeight: 12,
@@ -128,7 +164,19 @@ export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
 };
 
 /** Outcome of trying to assemble a puzzle from one candidate. */
-export type AssemblyResult = { ok: true; puzzle: NewPuzzle } | { ok: false; reason: string };
+export type AssemblyResult =
+  | { ok: true; puzzle: NewPuzzle; lane: BoardLane }
+  | { ok: false; reason: string };
+
+/**
+ * Which cleanliness lane a candidate's start board falls in (#66): `strict` when
+ * it is within the strict holes/bumpiness ceilings, else `variety`. Start height
+ * is gated separately for both lanes, so it does not enter the split.
+ */
+export function classifyLane(board: Grid, config: GenerationConfig): BoardLane {
+  const m = boardMetrics(board);
+  return m.holes <= config.maxHoles && m.bumpiness <= config.maxBumpiness ? 'strict' : 'variety';
+}
 
 /**
  * Build a stored puzzle from a candidate, or reject it with a reason (#40).
@@ -148,7 +196,12 @@ export async function assemblePuzzle(
   const { board, currentPiece, nextPiece, level, lines } = candidate;
 
   // 1. Cheap geometric pre-filter: drop obvious garbage before any engine call.
-  if (!passesGeometricPrefilter(board, config.maxHoles, config.maxBumpiness)) {
+  //    Accept up to the looser variety-lane bounds when that lane is enabled
+  //    (#66); the strict/variety split + cap is applied in generateBank.
+  const lane = config.varietyLane;
+  const acceptHoles = lane ? Math.max(config.maxHoles, lane.maxHoles) : config.maxHoles;
+  const acceptBumpiness = lane ? Math.max(config.maxBumpiness, lane.maxBumpiness) : config.maxBumpiness;
+  if (!passesGeometricPrefilter(board, acceptHoles, acceptBumpiness)) {
     return { ok: false, reason: 'geometry-prefilter' };
   }
 
@@ -227,6 +280,7 @@ export async function assemblePuzzle(
 
   return {
     ok: true,
+    lane: classifyLane(board, config),
     puzzle: {
       board: encodeBoard(board),
       piece1: currentPiece,
@@ -314,6 +368,8 @@ export interface BankResult {
   rejections: Record<string, number>;
   /** Survivors stored per difficulty band (#52) — the realized easy→hard spread. */
   byBand: Record<DifficultyBand, number>;
+  /** Survivors stored per cleanliness lane (#66) — strict-clean vs variety. */
+  byLane: Record<BoardLane, number>;
 }
 
 /**
@@ -335,6 +391,10 @@ export async function generateBank(
   const pending: NewPuzzle[] = [];
   const rejections: Record<string, number> = {};
   const byBand: Record<DifficultyBand, number> = { easy: 0, medium: 0, hard: 0 };
+  const byLane: Record<BoardLane, number> = { strict: 0, variety: 0 };
+  // Per-survivor cleanliness lane (#66), so the variety cap can be enforced at
+  // admit time (after the BetaTetris cull) without re-deriving board metrics.
+  const laneByPuzzle = new Map<NewPuzzle, BoardLane>();
   // Dedup keys: the existing bank plus every survivor accepted so far.
   const acceptedKeys: BankKey[] = [...(deps.existingKeys ?? [])];
   let candidatesTried = 0;
@@ -349,9 +409,22 @@ export async function generateBank(
   const bandsFilled = () => DIFFICULTY_BANDS.every((b) => byBand[b] >= quotaFor(b));
   const done = () => (quotas ? bandsFilled() : survivors.length >= target);
 
+  // Variety-lane cap (#66): at most this many survivors may come from the relaxed
+  // lane; once it is full, only strict-clean boards are admitted (the run keeps
+  // hunting for them). `null` (no variety lane) means no cap.
+  const varietyCap = config.varietyLane ? Math.round(target * config.varietyLane.fraction) : null;
+  const varietyFull = (lane: BoardLane) => lane === 'variety' && varietyCap !== null && byLane.variety >= varietyCap;
+
   // Admit a freshly-blessed survivor: enforce the per-band quota (#52) here too,
   // so a band a BetaTetris cull re-opened can refill. Returns whether it counted.
   const admit = (puzzle: NewPuzzle): boolean => {
+    const lane = laneByPuzzle.get(puzzle) ?? 'strict';
+    // Variety cap is authoritative here (post-cull) so the stored bank never
+    // exceeds it, even if in-flight batch puzzles overshot the inline check (#66).
+    if (varietyFull(lane)) {
+      rejections['variety-lane-full'] = (rejections['variety-lane-full'] ?? 0) + 1;
+      return false;
+    }
     const band = bandFor(puzzle.acceptCount ?? 0);
     if (quotas && byBand[band] >= quotaFor(band)) {
       rejections[`band-full:${band}`] = (rejections[`band-full:${band}`] ?? 0) + 1;
@@ -359,6 +432,7 @@ export async function generateBank(
     }
     survivors.push(puzzle);
     byBand[band]++;
+    byLane[lane]++;
     return true;
   };
 
@@ -389,6 +463,16 @@ export async function generateBank(
     const result = await assemblePuzzle(deps.engine, candidate, config);
     if (!result.ok) {
       rejections[result.reason] = (rejections[result.reason] ?? 0) + 1;
+      continue;
+    }
+
+    // Variety-lane cap (#66): once the relaxed lane is full, drop further variety
+    // survivors before any dedup/consensus work so the run keeps hunting for the
+    // strict-clean boards that fill the remaining 80%. (The admit-time check is
+    // still authoritative for the consensus path's in-flight batch.)
+    laneByPuzzle.set(result.puzzle, result.lane);
+    if (varietyFull(result.lane)) {
+      rejections['variety-lane-full'] = (rejections['variety-lane-full'] ?? 0) + 1;
       continue;
     }
 
@@ -440,7 +524,8 @@ export async function generateBank(
   const stored = await deps.db.insertPuzzles(survivors);
   onProgress(
     `stored ${stored.length} puzzles ` +
-      `(easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard})`,
+      `(easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard}; ` +
+      `strict ${byLane.strict} / variety ${byLane.variety})`,
   );
-  return { stored, candidatesTried, rejections, byBand };
+  return { stored, candidatesTried, rejections, byBand, byLane };
 }

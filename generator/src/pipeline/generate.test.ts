@@ -12,6 +12,7 @@ import {
 import type { NewPuzzle, Puzzle } from '@trainer/data';
 import {
   assemblePuzzle,
+  classifyLane,
   generateBank,
   DEFAULT_GENERATION_CONFIG,
   type GeneratorEngine,
@@ -215,6 +216,19 @@ const candidateWith = (piece1: Piece, piece2: Piece): Candidate => ({
 
 const sampleCandidate = (): Candidate => candidateWith('O', 'O');
 
+/**
+ * A clean, low candidate with EXACTLY `n` holes (and tiny bumpiness): a filled
+ * floor row with the leftmost `n` columns capped one row above an empty cell, so
+ * each capped column is one buried hole. Used to exercise the strict/variety
+ * lane split (#66) — n=0 is strict-clean, n=2 lands in the variety lane.
+ */
+function holesCandidate(n: number, piece1: Piece = 'O', piece2: Piece = 'O'): Candidate {
+  const board: Grid = emptyBoard();
+  for (let c = n; c < 10; c++) board[19][c] = 1; // floor under the un-holed columns
+  for (let c = 0; c < n; c++) board[18][c] = 1; // cap over an empty cell → a hole
+  return { ...sampleCandidate(), currentPiece: piece1, nextPiece: piece2, board };
+}
+
 /** A candidate whose board has many holes (fails the geometric pre-filter). */
 function holeyCandidate(): Candidate {
   const board: Grid = emptyBoard();
@@ -324,6 +338,35 @@ describe('assemblePuzzle combo pipeline (#40)', () => {
       deeperConfirm: null,
     });
     expect(result.ok).toBe(true);
+  });
+
+  it('classifies a strict-clean board (≤1 hole, low bumpiness) into the strict lane (#66)', async () => {
+    expect(classifyLane(emptyBoard(), DEFAULT_GENERATION_CONFIG)).toBe('strict');
+    const result = await assemblePuzzle(comboEngine(), holesCandidate(0));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.lane).toBe('strict');
+  });
+
+  it('routes a 2-hole board into the variety lane, not the strict default (#66)', async () => {
+    expect(classifyLane(holesCandidate(2).board, DEFAULT_GENERATION_CONFIG)).toBe('variety');
+    const result = await assemblePuzzle(comboEngine(), holesCandidate(2));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.lane).toBe('variety');
+  });
+
+  it('rejects a 2-hole board when no variety lane is configured (strict default, #66)', async () => {
+    const result = await assemblePuzzle(comboEngine(), holesCandidate(2), {
+      ...DEFAULT_GENERATION_CONFIG,
+      varietyLane: null,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('geometry-prefilter');
+  });
+
+  it('rejects a board past even the variety lane bounds (≥3 holes, #66)', async () => {
+    const result = await assemblePuzzle(comboEngine(), holesCandidate(3));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('geometry-prefilter');
   });
 });
 
@@ -463,6 +506,34 @@ describe('generateBank (deterministic)', () => {
     expect(result.byBand).toEqual({ easy: 1, medium: 0, hard: 1 });
     expect(stored).toHaveLength(2);
     expect(result.rejections['band-full:easy']).toBe(1);
+  });
+
+  it('caps the variety lane at ~fraction of the bank, filling the rest strict-clean (#66)', async () => {
+    const { db, stored } = recordingDb();
+    const result = await generateBank(
+      {
+        // Three variety-lane (2-hole) candidates lead, then strict-clean ones.
+        // With target 5 and fraction 0.2 the variety cap is 1, so only the first
+        // variety board is kept; the run fills the remaining 4 slots strict.
+        source: new FixedSource([
+          holesCandidate(2, 'O', 'O'),
+          holesCandidate(2, 'I', 'O'),
+          holesCandidate(2, 'T', 'O'),
+          holesCandidate(0, 'S', 'O'),
+          holesCandidate(0, 'Z', 'O'),
+          holesCandidate(0, 'L', 'O'),
+          holesCandidate(0, 'J', 'O'),
+        ]),
+        engine: comboEngine(),
+        db,
+      },
+      { targetCount: 5, maxCandidates: 20 },
+    );
+
+    expect(stored).toHaveLength(5);
+    expect(result.byLane.variety).toBe(1);
+    expect(result.byLane.strict).toBe(4);
+    expect(result.rejections['variety-lane-full']).toBe(2);
   });
 
   it('drops BetaTetris disagreers and tops up to target, storing only consensus puzzles (#55)', async () => {

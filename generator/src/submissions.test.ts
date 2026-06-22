@@ -70,6 +70,7 @@ describe('processSubmissions (#45)', () => {
       ];
       return {
         ok: true,
+        lane: 'strict',
         puzzle: {
           board: encodeBoard(candidate.board),
           piece1: candidate.currentPiece,
