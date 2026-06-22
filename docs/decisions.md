@@ -2,6 +2,42 @@
 
 Lightweight log of decisions not captured in [PRD-v1.md](PRD-v1.md) (the PRD owns product/architecture decisions; this owns tooling, repo, and doc choices). Newest first.
 
+### 2026-06-22 — Letter grades, board-top result feedback, NES next box, keyboard loop, cleaner boards, upload hardening, rank-1 audit (grill-with-docs #5)
+
+A fifth `/grill-with-docs` session: ten owner reports/asks, resolved into the decisions below. Several share one enabler — a **bank re-generation** — so they ship together (the re-bank also folds in decimal scores and the #55 consensus pass). To be filed as issues.
+
+**Grading & rating**
+
+- **A+ win line moves 95 → 97.** The graded Glicko outcome curve (`scoreToOutcome`, #51) keeps its shape but its neutral point moves to 97: ≥ 97 gains rating (convex up to 100 = full credit), < 97 docks toward the 0.10 floor. `CORRECT_SCORE_THRESHOLD` moves to 97 so "correct" and "A+" coincide. The owner wants "only A+ (97+) answers to score"; keeping the continuous curve was chosen over a hard binary win/loss and over an "only A+ updates the rating" rule (which would let a rating only ever climb — Glicko needs two-sided outcomes).
+- **Scores display as letter grade + one-decimal number.** Everywhere a /100 showed (the verdict and every combo-list row), show a standard US 12-band letter plus the raw score to one decimal, e.g. `A+ 97.6`. Bands are half-open intervals on the real score: A+ = [97,100], A = [93,97), A- = [90,93), B+ = [87,90), B = [83,87), B- = [80,83), C+ = [77,80), C = [73,77), C- = [70,73), D = [60,70), F = [0,60) and unranked. The decimal makes `ComboEntry.score` a float (generator drops its `round()`; finer scores land in the re-bank, no separate migration). Credit phrases ("big gain") are dropped from the player view.
+
+**Result feedback (#1)**
+
+- **Grade banner on the board top + NES sound.** On result, a banner overlays the top of the board well with the big letter + decimal score — green for A+ (win), red for below (a non-A+ "A" still reads red) — persisting through feedback until the next puzzle. The right-rail verdict banner is slimmed to just the rating-change line (no duplicate grade). A distinct NES-style chiptune plays: an ascending arpeggio for A+, a soft neutral blip for below; mute toggle in Controls, default on.
+
+**Play UI**
+
+- **Remove the replay step counter (#3).** The `feedback-step` line under the board (`{label} · {step}/{n}`) is removed entirely — it was replay-animation playback progress, not a score; it was the misread "count out of 10."
+- **NES next box (#4).** Give the next box a fixed-size recessed black box matching the board well's border/shadow, the piece centered at the board's cell scale (constant footprint, no per-piece resize), keeping a small NES-font "NEXT" caption.
+- **Swap Next/Replay (#7).** "Next puzzle" moves to center under the board (primary action); "Replay" moves to the right rail.
+- **Keyboard-only loop (#6).** Add rebindable `next-puzzle` (default `N`) and `replay` (default `R`) actions. `N` advances in feedback — deliberately not Enter/Space (which stay confirm) so the piece-2 confirm keypress cannot bleed into "next." On puzzle load, focus auto-lands on the board so the whole loop is no-mouse.
+
+**Right-wall report (#5)**
+
+- **No model bug; prove + guard + redeploy.** `PlacementInput` already gates every move and rotation against the reachable set, so a bar cannot reach a cell past col 9 while placing (flush-right at cols 6–9 is legal, not off-board). The report is most likely a stale deployed bundle or a misread legal flush-right placement. Add a property test asserting no reachable state for any piece/board renders an out-of-bounds cell, add a defensive render guard (Board never draws a cell outside the grid), then redeploy and retest.
+
+**Generator — cleaner boards (#8)**
+
+- **Strict-clean default + a variety lane.** The default geometric accept tightens to clean (target holes ≤ 1, bumpiness ≤ ~12, max height ≤ ~12); a small relaxed lane (~20% of the bank: holes ≤ 2, bumpiness ≤ ~20) preserves some texture for variety. Self-play `noiseRate` drops 0.12 → ~0.08 so candidates trend clean upstream. Fewer candidates per draw is accepted — cleaner boards are the better teaching material. Exact thresholds set from one calibration run. Requires the re-bank. (Considered and rejected: a hard single bar with no variety lane; and a full cleanliness-score quota system — more machinery than the goal needs.)
+
+**Security — screenshot uploads (#9)**
+
+- **Full upload hardening.** Today any session (including anonymous) can upload any file type/size to any path in the `submissions` bucket, unlimited times, with a client-chosen `image_path` and content-type ([data-access.ts](../packages/data/src/data-access.ts), [schema.sql](../packages/data/schema.sql)). Harden: bucket `allowed_mime_types` (png/jpeg) + `file_size_limit` (~5 MB) + private bucket; storage INSERT policy scoped to a per-user path prefix; server-generated path/uuid (drop client-chosen path & content-type); magic-byte validation; per-user pending quota; require a non-anonymous session to submit; and sandbox the offline parser (size / decompression-bomb limits, untrusted input) wherever it reads submissions.
+
+**Puzzle 436 — rank-1 audit (#10)**
+
+- **Diagnose the failure class, add a gate, let the re-bank fix it.** The owner is confident 436's rank-1 (bar-right) is worse than rank-2 (bar-left). Likely cause: an eval-only **well-preservation blind spot** (a moderate error below the deeper-confirm `rejectMargin` of 12), or a **mirror near-tie** the engine broke marginally — plausibly a legacy pre-#53/#55 puzzle. Plan: pull 436, re-evaluate both placements with deeper StackRabbit + BetaTetris; identify the failure class; add a generator gate/term that catches it (well-preservation and/or mirror-near-tie cull, or tighter deeper-confirm / BetaTetris value agreement); then the full re-bank excludes the whole class. No per-puzzle surgery (re-ranking individual puzzles and per-puzzle culling were both rejected in favour of the root-cause gate).
+
 ### 2026-06-22 — BetaTetris normal-net top-1 consensus is a standard generation gate (#55)
 
 Builds on the #54 Phase-1 measurement below (now superseded as the *headline*): the owner settled the gate design in a 2026-06-21 grilling session and chose to make a BetaTetris consensus check **the usual puzzle-creation path going forward**, plus a one-time live-bank repair.

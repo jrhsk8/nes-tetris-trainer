@@ -32,15 +32,35 @@ treat the issues that need them as blocked.
 
 ## Run scope (this run)
 
-This is the **#55 bank-repair FINISHING PASS** (2026-06-22). #55's CODE already shipped in a prior run (commit 123ac7a: the BetaTetris normal-net top-1 consensus filter is the standard post-gen stage, plus generator/src/repair-bank.ts). #56 and #57 are CLOSED. The ONLY remaining work is the one-time LIVE-BANK REPAIR, which a prior run started but did NOT finish -- the repair was launched as a detached background process and was killed when the sandbox was reaped at iteration end. The live bank is still the un-repaired 280 (the ~110 BetaTetris-disagreers were never culled). All prior batches (#1-#54, plus #56/#57) are closed.
+This is the **grill-with-docs #5 batch** (2026-06-22): ten owner-decided issues, **#58-#67**, all settled in a `/grill-with-docs` session and specced in `docs/decisions.md` -> "2026-06-22 ... (grill-with-docs #5)". **Read that decisions entry first** -- every issue body points there for the full spec/rationale. All prior batches (#1-#57) are closed. Work in RALPH priority order (bug -> polish/enhancement), respecting the dependencies and the **single re-bank** coordination below.
 
-- **The one open issue: #55** [generator] -- FINISH the live-bank repair: cull the ~110 normal-net top-1 disagreers and backfill ~110 consensus-passing replacements, keeping the easy/medium/hard band spread, so the shipped bank is 100% top-1-consensus at ~280 puzzles. Decisions are already settled (issue body / commit 123ac7a): normal net ONLY (perfect net dropped -- off-objective), fail-closed (BT-unjudgeable -> reject), filter-not-re-rank (drop disagreers; keep the StackRabbit optimal). Repair tooling already exists: generator/src/repair-bank.ts (backup -> backfill -> drop -> verify). Run it (regenerate the consensus verdict via bank_keys -> betatetris-spike/consensus.py if needed). A backup puzzles_bak_pre55_20260622 already exists.
-- **CRITICAL -- make the repair ACTUALLY FINISH (this is exactly why the last run failed):** the repair is long (~50 min). Launch it, then POLL its log until it reports completion (the FINAL / verify line). Do NOT detach-and-move-on, do NOT end the iteration, and do NOT close #55 until the repair has FULLY completed. Keep THIS process alive for the entire repair via repeated short status checks of the repair log -- do NOT rely on a single long-running command (it would hit the per-command timeout). The prior failure was: the repair was backgrounded and the agent exited, so the sandbox (and the running repair) were reaped mid-backfill. Be patient; wait it out.
-- **VERIFY before closing:** after the repair reports done, confirm AGAINST THE LIVE DB that the bank is actually repaired -- e.g. psql "$DATABASE_URL": live puzzles count is ~280 AND a disagreer re-check shows 0 remaining (every live puzzle is top-1-consensus). Only `gh issue close 55` AFTER that verification passes, and put the verified numbers in the close comment.
-- **Do NOT redo #55's code** -- the filter + tooling are already committed; this run only completes the DATA repair. If a small code tweak to repair-bank.ts is genuinely needed to finish, commit it RALPH:-prefixed; otherwise no code commit is expected.
-- **Do NOT drop any *_bak_* or *_quarantine_* table.** Engine stays OFFLINE / generator-only (StackRabbit at $STACKRABBIT_URL; BetaTetris via bt-run).
-- **Do NOT deploy, push, or host.** The push + GitHub Pages redeploy stay a manual step after this run.
-- When **#55** is closed (bank verified) -- or you are genuinely blocked and have left a comment -- output the completion signal.
+**Bugs first**
+
+- **#58** [bug][play] -- bar appears to cross the right wall *while placing*. The model is already correct (`PlacementInput` gates moves+rotations against the reachable set), so this is **prove + guard**: add a property test (no reachable state renders an out-of-bounds cell, all 7 pieces x sampled boards) + a defensive render guard in `Board` (never draw a cell outside the grid). Autonomous. Redeploy/retest is manual. Files: `apps/play/src/board/{PlacementInput,Board}.tsx`, `packages/core/src/placement.ts`.
+- **#59** [bug][generator] -- puzzle 436 rank-1 (bar-right) likely worse than rank-2 (bar-left). **Diagnose on the real board** (pull 436 from `DATABASE_URL`; re-eval both placements with deeper StackRabbit + BetaTetris `bt-run`), identify the failure class (well-preservation vs mirror near-tie), then **add a generator gate** that catches the class. The re-bank (#66) applies it bank-wide -- no per-puzzle surgery. **LONG DATA-OP** (offline engines): poll-until-done, do NOT detach-and-exit. Files: `generator/src/pipeline/{combo,deeper,consensus}.ts`, `betatetris-spike/`.
+
+**Grading + feedback**
+
+- **#60** [core][play] -- letter grades + A+ win line at 97. Move `CORRECT_SCORE_THRESHOLD`/`NEUTRAL_SCORE` 95->97 (curve + slope k=0.625 unchanged); make `ComboEntry.score` a **float** (generator drops `round()`); display **letter + one-decimal** (12-band, A+ = [97,100]). **Code only -- do NOT re-bank here** (the float scores land in #66). Files: `packages/core/src/combo.ts`, `packages/rating/src/glicko.ts`, `apps/play/src/feedback/*`.
+- **#61** [play] -- grade banner on the **board top** (green A+/red below, letter + decimal) + NES chiptune (arpeggio A+/blip below) + mute toggle; slim the rail to the rating line. **Depends on #60.** Files: `apps/play/src/feedback/Feedback.tsx`, `board/Board.tsx`, controls/prefs.
+
+**Play UI polish**
+
+- **#62** [play] -- remove the replay step-counter line under the board (`feedback-step` in `Feedback.tsx`). Tiny.
+- **#63** [play] -- NES next box: fixed recessed black box, centered piece, constant footprint, tiny "NEXT". Files: `board/NextPieceBox.tsx`, `styles.css`.
+- **#64** [play] -- keyboard loop: rebindable `next-puzzle`(N)/`replay`(R) (N is deliberately NOT Enter/Space), auto-focus the board on load. Files: `board/keybindings.ts`, `board/PlacementInput.tsx`, session loader.
+- **#65** [play] -- swap Next(->center, under board)/Replay(->rail) in `Feedback.tsx`. Tiny; pairs with #64.
+
+**Generator + security**
+
+- **#66** [generator] -- **cleaner boards + THE single re-bank.** Tighten default accept (holes <= 1, bump <= ~12, h <= ~12) + a ~20% variety lane (holes <= 2, bump <= ~20); self-play noise 0.12 -> 0.08; finalize thresholds from one calibration run. This re-bank **also folds in** #60's float scores, #59's gate, and a fresh #55 BetaTetris consensus pass -- so do the other generator code (#59, #60) FIRST, then run **one** regen here. **LONG DATA-OP** (~50min+): poll-until-done, do NOT detach-and-exit; verify against the live DB before closing.
+- **#67** [generator][play] -- harden screenshot uploads: bucket mime/size/private, per-user path policy, server-gen path/type, magic-byte check, per-user quota, require non-anon to submit, sandbox the offline parser. Files: `packages/data/{schema.sql, src/data-access.ts}`, submission UI.
+
+**Bank regen + backup (REQUIRED -- exactly one re-bank, in #66; #59 and #60 feed it).** **Back up first:** `create table puzzles_bak_20260622_grill5 as select * from puzzles;`. **Never drop** any `*_bak_*` / `*_quarantine_*` table. Verify against the live DB (count + disagreer/quality spot-checks) before closing #66.
+
+**Engine stays OFFLINE / generator-only** (StackRabbit at `$STACKRABBIT_URL`; BetaTetris via `bt-run`) -- never called from `apps/play`. **Do NOT deploy, push, or host** -- the push + GitHub Pages redeploy stay a manual step after this run (`/push-deploy-sandcastle`).
+
+When **#58-#67** are all closed (the bank re-banked + verified) -- or you are genuinely blocked and have left a comment on the remaining ones -- output the completion signal.
 
 # Task
 
