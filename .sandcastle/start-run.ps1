@@ -1,4 +1,4 @@
-<#
+﻿<#
   ONE-COMMAND sandcastle AFK launcher.
 
   Does the full preflight the runbook used to require by hand — start Docker
@@ -14,7 +14,8 @@
   - Foreground/blocking on purpose (same as run-afk.ps1) — closing the window
     kills the run. A completion line prints when the backlog drains.
   - Open issues are a live `gh` query inside the loop, so whatever is OPEN on
-    GitHub at launch is the backlog. The 2026-06-22 batch is #55 / #56 / #57.
+    GitHub at launch is the backlog. The 2026-06-22 batch is #68-#73
+    (grill-with-docs #6).
 #>
 [CmdletBinding()]
 param(
@@ -51,12 +52,12 @@ else { Write-Host "[start] $freeGb GB host RAM free" -ForegroundColor Green }
 #    a missing +x is the one trap that has killed a launch with 'Permission denied').
 wsl -d $Distro -u root bash -c "cd $repo && chown dev:docker .sandcastle/run-afk.sh && chmod 755 .sandcastle/run-afk.sh"
 
-# 4. Confirm the WSL canonical repo + that the prompt scope is the #55-#57 batch.
+# 4. Confirm the WSL canonical repo + that the prompt scope is the #68-#73 batch.
 $tip = wsl -d $Distro -u $WslUser bash -lc "cd $repo && git log --oneline -1"
 Write-Host "[start] WSL main: $tip" -ForegroundColor Cyan
-$scope = wsl -d $Distro -u $WslUser bash -lc "cd $repo && grep -m1 'consensus-gate' .sandcastle/prompt.md"
-if (-not $scope) { Write-Warning "[start] prompt.md does not mention the #55-#57 'consensus-gate' scope — WSL repo may be out of date." }
-else { Write-Host '[start] prompt scope = #55-#57 consensus-gate batch' -ForegroundColor Green }
+$scope = wsl -d $Distro -u $WslUser bash -lc "cd $repo && grep -m1 'grill-with-docs #6' .sandcastle/prompt.md"
+if (-not $scope) { Write-Warning "[start] prompt.md does not mention the #68-#73 'grill-with-docs #6' scope — WSL repo may be out of date." }
+else { Write-Host '[start] prompt scope = #68-#73 grill-with-docs #6 batch' -ForegroundColor Green }
 
 # 5. Hand off to the existing launcher (runs the loop, then reclaims RAM).
 Write-Host '[start] preflight clean — launching run-afk.ps1...' -ForegroundColor Cyan
