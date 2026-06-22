@@ -24,7 +24,9 @@ export type Action =
   | 'rotate-ccw'
   | 'soft-drop'
   | 'move-up'
-  | 'confirm';
+  | 'confirm'
+  | 'next-puzzle'
+  | 'replay';
 
 /** The rebindable actions in display order, with human labels for the Controls panel. */
 export const ACTIONS: ReadonlyArray<{ action: RebindableAction; label: string }> = [
@@ -34,6 +36,11 @@ export const ACTIONS: ReadonlyArray<{ action: RebindableAction; label: string }>
   { action: 'rotate-cw', label: 'Rotate clockwise' },
   { action: 'soft-drop', label: 'Soft drop' },
   { action: 'confirm', label: 'Confirm placement' },
+  // Feedback-phase actions (#64): advance the loop with the keyboard. `next-puzzle`
+  // is deliberately NOT Enter/Space (those stay confirm) so the piece-2 confirm
+  // keypress can never bleed into "next".
+  { action: 'next-puzzle', label: 'Next puzzle' },
+  { action: 'replay', label: 'Replay' },
 ];
 
 /** The rebindable actions — every {@link Action} except the fixed `move-up` aid. */
@@ -42,7 +49,10 @@ export type RebindableAction = Exclude<Action, 'move-up'>;
 /** A primary key per rebindable action (value is a normalized `KeyboardEvent.key`). */
 export type KeyBindings = Record<RebindableAction, string>;
 
-/** The out-of-the-box bindings: arrows move, z/x rotate CCW/CW, ↓ soft-drops, Enter confirms. */
+/**
+ * The out-of-the-box bindings: arrows move, z/x rotate CCW/CW, ↓ soft-drops,
+ * Enter confirms, and (in feedback, #64) N advances to the next puzzle, R replays.
+ */
 export const DEFAULT_BINDINGS: KeyBindings = {
   'move-left': 'ArrowLeft',
   'move-right': 'ArrowRight',
@@ -50,6 +60,8 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   'rotate-cw': 'x',
   'soft-drop': 'ArrowDown',
   confirm: 'Enter',
+  'next-puzzle': 'n',
+  replay: 'r',
 };
 
 /** Fixed secondary aliases; active only when the key isn't a primary binding. */

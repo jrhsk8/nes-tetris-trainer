@@ -34,6 +34,7 @@ import {
 } from '@trainer/core';
 import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
+import { DEFAULT_BINDINGS, resolveAction, type KeyBindings } from '../board/keybindings.js';
 import { ComboList } from './ComboList.js';
 import { formatScore } from './grade.js';
 import { playResultSound } from './sound.js';
@@ -70,6 +71,8 @@ export interface FeedbackProps {
   muted?: boolean;
   /** Injectable result-sound player (#61), for tests. Defaults to the real one. */
   playSound?: (win: boolean) => void;
+  /** Key bindings (#64): `next-puzzle` (N) advances, `replay` (R) replays. */
+  bindings?: KeyBindings;
 }
 
 /** True if the user has asked for reduced motion (read once, at mount). */
@@ -168,6 +171,7 @@ export function Feedback({
   onNext,
   muted = false,
   playSound = playResultSound,
+  bindings = DEFAULT_BINDINGS,
 }: FeedbackProps) {
   const [reduced] = useState(prefersReducedMotion);
 
@@ -217,6 +221,25 @@ export function Feedback({
   useEffect(() => {
     if (!muted) playSound(win);
   }, [muted, playSound, win]);
+
+  // Keyboard-only loop (#64): in feedback, N (next-puzzle) advances and R
+  // (replay) restarts the animation. Bound on the window so no click/focus is
+  // needed. Deliberately NOT Enter/Space (those stay confirm), so the piece-2
+  // confirm keypress can never bleed through into "next".
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const action = resolveAction(bindings, event.key);
+      if (action === 'next-puzzle' && onNext) {
+        event.preventDefault();
+        onNext();
+      } else if (action === 'replay') {
+        event.preventDefault();
+        setStep(0);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [bindings, onNext]);
 
   return (
     <div className="feedback">

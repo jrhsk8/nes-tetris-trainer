@@ -237,6 +237,7 @@ export function PuzzleSession({
         ratingChange={result!.rating}
         onNext={onNext}
         muted={muted}
+        bindings={bindings}
       />
     </PlayScreen>
   );

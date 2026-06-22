@@ -136,6 +136,12 @@ describe('PlacementInput', () => {
     expect(shown.size).toBe(4);
   });
 
+  it('auto-focuses the board on load so the loop is no-mouse (#64)', () => {
+    render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
+    // No click needed — keystrokes land on the placement input immediately.
+    expect(screen.getByLabelText('placement input')).toHaveFocus();
+  });
+
   it('moves and rotates the ghost, then emits the placement that was shown', async () => {
     const user = userEvent.setup();
     const board = emptyBoard();

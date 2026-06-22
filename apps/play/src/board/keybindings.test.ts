@@ -28,6 +28,15 @@ describe('key bindings', () => {
     expect(resolveAction(DEFAULT_BINDINGS, 'X')).toBe('rotate-cw');
   });
 
+  it('resolves the feedback-loop keys: N is next-puzzle, R is replay (#64)', () => {
+    expect(resolveAction(DEFAULT_BINDINGS, 'n')).toBe('next-puzzle');
+    expect(resolveAction(DEFAULT_BINDINGS, 'r')).toBe('replay');
+    // Deliberately NOT Enter/Space — those stay confirm so a piece-2 confirm
+    // keypress can never bleed into "next".
+    expect(resolveAction(DEFAULT_BINDINGS, 'Enter')).toBe('confirm');
+    expect(resolveAction(DEFAULT_BINDINGS, ' ')).toBe('confirm');
+  });
+
   it('returns null for an unbound key', () => {
     expect(resolveAction(DEFAULT_BINDINGS, 'q')).toBeNull();
   });

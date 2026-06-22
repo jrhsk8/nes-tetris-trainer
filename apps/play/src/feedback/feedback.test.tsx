@@ -107,6 +107,49 @@ describe('Feedback grade banner (#60/#61)', () => {
   });
 });
 
+describe('Feedback keyboard loop (#64)', () => {
+  const noSound = () => {};
+
+  it('advances to the next puzzle on N — not Enter/Space', async () => {
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        onNext={onNext}
+        playSound={noSound}
+      />,
+    );
+    // Enter and Space stay confirm — they must NOT advance.
+    await user.keyboard('{Enter} ');
+    expect(onNext).not.toHaveBeenCalled();
+    // N advances.
+    await user.keyboard('n');
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('restarts the replay on R', async () => {
+    const user = userEvent.setup();
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        playSound={noSound}
+      />,
+    );
+    // R replays without throwing (resets the animation step to 0).
+    await user.keyboard('r');
+    expect(screen.getByTestId('board-center')).toBeInTheDocument();
+  });
+});
+
 describe('Feedback NES result sound (#61)', () => {
   it('plays the win jingle for an A+ result', () => {
     const playSound = vi.fn();

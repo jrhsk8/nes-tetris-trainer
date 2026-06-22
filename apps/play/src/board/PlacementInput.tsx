@@ -23,7 +23,7 @@
  * what you get.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   COLS,
   ROWS,
@@ -91,6 +91,14 @@ export function PlacementInput({
   const [rotation, setRotation] = useState(0);
   const [col, setCol] = useState(() => spawnColumn(board, piece));
   const [row, setRow] = useState(0);
+
+  // Auto-focus the board on puzzle/piece load (#64) so the whole loop is no-mouse:
+  // keystrokes land on the placement input immediately, no click required. Re-runs
+  // when the piece changes (placement 1 → 2) and on each new puzzle.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, [board, piece]);
 
   // Every floating state the player may manoeuvre into — the generator's
   // reachability model (#56). A move is allowed iff its target state is in here,
@@ -190,6 +198,7 @@ export function PlacementInput({
 
   return (
     <div
+      ref={rootRef}
       className="placement-input"
       onKeyDown={onKeyDown}
       tabIndex={0}
