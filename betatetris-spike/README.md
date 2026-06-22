@@ -23,11 +23,19 @@ run inside the `bt` env via the `bt-run` wrapper — e.g. `bt-run python betatet
 then `bt-run python betatetris-spike/compare.py`. `DATABASE_URL` is already in the env.
 
 ## Files
+- `keeprate.py` — **#54 Phase-1 keep-rate harness** (the current one). Reads
+  `bank_keys.json` (written by `generator/src/bt-bank-keys.ts`), injects each board0,
+  and ranks our stored optimal's after-piece-1 outcome in BetaTetris's *adjustment-phase*
+  policy → `keeprate_{perfect,normal}.json` + a top-1/3/5 / `π_BT` keep-rate summary.
+  Run: `bt-run python betatetris-spike/keeprate.py [limit]`. Results + methodology:
+  `../FINDINGS-betatetris-consensus.md`.
 - `pull.py` — pull the sample from Supabase (13 quarantined + 20 current) → `sample.json`.
   Reads `DATABASE_URL` from `.sandcastle/.env`.
-- `compare.py` — the harness: inject each board, take BetaTetris's two-ply line (piece-2
-  swept over 7 next pieces), compare to our optimal/top-K, characterise towers/holes with
-  the #50 audit metric. Runs perfect + normal nets → `results_{perfect,normal}.json`.
+- `compare.py` — the original spike harness: inject each board, take BetaTetris's two-ply
+  line, compare to our optimal/top-K, characterise towers/holes with the #50 audit metric.
+  **Caveat:** it calls `InputPlacement` once per piece, which does **not** lock BetaTetris's
+  two-phase (tap → `IsAdjMove` adjustment) placements — the cause of its misleading `0/33`
+  (`keeprate.py` and the FINDINGS doc use the correct cadence).
 - `smoke.py` — board-converter round-trip + one model forward (the feasibility proof).
 - `dump_examples.py` — render board0 / our-optimal / BetaTetris boards for eyeballing.
 - `results_*.json`, `sample.json` — captured outputs from the run.
