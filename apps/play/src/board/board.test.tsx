@@ -52,7 +52,7 @@ describe('Board', () => {
     expect(decodeURIComponent(ghost.style.backgroundImage)).toContain('#d82800');
   });
 
-  it('draws the positioning ghost as a dashed-outline preview, distinct from a locked cell and the gold highlight (#48)', () => {
+  it('draws the positioning ghost as a muted-fill preview (no outline), distinct from a locked cell and the gold highlight (#48, #57)', () => {
     const grid: Grid = emptyBoard();
     grid[19][0] = 1; // a locked cell
     render(
@@ -68,14 +68,13 @@ describe('Board', () => {
     const locked = screen.getByTestId('cell-19-0');
     const highlight = screen.getByTestId('cell-17-4');
 
-    // The ghost reads as a movable preview: a bright dashed outline...
-    expect(ghost.style.outline).toContain('dashed');
-    // ...over a muted (washed-down) fill, not the solid locked sprite.
+    // The ghost reads as a movable preview via a muted (washed-down) fill alone —
+    // the dashed outline was dropped (#57); the opacity wash carries the read.
+    expect(ghost.style.outline).toBe('');
     expect(ghost.style.backgroundImage).toContain('linear-gradient');
-    expect(locked.style.outline).toBe('');
+    // It is still distinct from a locked cell (solid sprite, no wash)...
     expect(locked.style.backgroundImage).not.toContain('linear-gradient');
-
-    // And it is NOT the feedback highlight's solid gold inset outline.
+    // ...and from the feedback highlight's solid gold inset outline.
     expect(ghost.style.boxShadow).not.toContain('#fcd000');
     expect(highlight.style.boxShadow).toContain('#fcd000');
     expect(highlight.style.outline).toBe('');

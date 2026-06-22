@@ -109,16 +109,15 @@ export function Board({
               const group = (colorGrid?.[r]?.[c] || WHITE_GROUP) as ColorGroup;
               style.backgroundImage = blockBackground(group);
             } else if (state === 'ghost') {
-              // The piece being positioned (#48): a muted fill (the black well
-              // shows through a darkening wash over the piece-colour sprite) under
-              // a bright dashed outline, so it reads unmistakably as a movable
-              // preview — not a locked block, and not the feedback view's solid
-              // gold inset highlight. Still colour-coded by piece.
+              // The piece being positioned (#48): a muted fill — the black well
+              // shows through a darkening wash over the piece-colour sprite. The
+              // lowered opacity alone reads as a movable preview (#57): clearly
+              // distinct from a locked block (solid sprite) and from the feedback
+              // view's solid gold inset highlight, so no outline is needed. Still
+              // colour-coded by piece.
               style.backgroundImage = `linear-gradient(rgba(8, 8, 8, 0.6), rgba(8, 8, 8, 0.6)), ${blockBackground(
                 ghostGroup,
               )}`;
-              style.outline = '2px dashed rgba(255, 255, 255, 0.92)';
-              style.outlineOffset = '-2px';
             } else if (state === 'highlight') {
               style.backgroundImage = blockBackground(highlightGroup);
               style.boxShadow = 'inset 0 0 0 1px #fcd000';
