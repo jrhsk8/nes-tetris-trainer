@@ -15,10 +15,12 @@ import {
   rank1QualityReason,
   rankCombosBySanity,
   sweepCombos,
+  CORRECT_GAP_MARGIN,
   type ComboContext,
   type ComboEngine,
   type ScoredCombo,
 } from './combo.js';
+import { CORRECT_SCORE_THRESHOLD } from '@trainer/core';
 import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
 
 /** A scored combo at the given resting columns (row inferred is irrelevant here). */
@@ -31,29 +33,30 @@ const combo = (col1: number, col2: number, value: number, key: string): ScoredCo
 });
 
 describe('normalizedScores / normalizeCombos — gap-from-best (#47)', () => {
-  it('anchors to gap from the best (rank-1 = 100), not the worst legal', () => {
-    // best = 10; gaps 0 / 5 / 10 → 100 / round(100−0.625·5) / round(100−0.625·10).
+  it('anchors to gap from the best (rank-1 = 100), not the worst legal, as floats (#60)', () => {
+    // best = 10; gaps 0 / 5 / 10 → 100 / 100−0.625·5 / 100−0.625·10 (no rounding).
     const combos = [combo(0, 0, 10, 'a'), combo(1, 0, 5, 'b'), combo(2, 0, 0, 'c')];
-    expect(normalizedScores(combos)).toEqual([100, 97, 94]);
+    expect(normalizedScores(combos)).toEqual([100, 96.875, 93.75]);
     const table = normalizeCombos(combos, 30);
     expect(table.total).toBe(3);
-    expect(table.entries.map((e) => e.score)).toEqual([100, 97, 94]);
+    expect(table.entries.map((e) => e.score)).toEqual([100, 96.875, 93.75]);
     expect(table.entries[0]).toMatchObject({ rot1: 0, col1: 0, boardKey: 'a' });
   });
 
-  it('grades the gap=MARGIN boundary correct and just past it incorrect', () => {
-    const atMargin = normalizedScores([combo(0, 0, 100, 'a'), combo(1, 0, 92, 'b')]); // gap 8
-    expect(atMargin[1]).toBe(95); // CORRECT_SCORE_THRESHOLD — still correct
-    const pastMargin = normalizedScores([combo(0, 0, 100, 'a'), combo(1, 0, 91, 'b')]); // gap 9
-    expect(pastMargin[1]).toBeLessThan(95); // ranked, shown, but incorrect
+  it('grades the gap=MARGIN boundary correct and just past it incorrect (#60: 97/4.8)', () => {
+    // The win line is now 97 ⇔ gap ≤ CORRECT_GAP_MARGIN (4.8) at the pinned k=0.625.
+    const atMargin = normalizedScores([combo(0, 0, 100, 'a'), combo(1, 0, 100 - CORRECT_GAP_MARGIN, 'b')]);
+    expect(atMargin[1]).toBe(CORRECT_SCORE_THRESHOLD); // exactly 97 — still correct
+    const pastMargin = normalizedScores([combo(0, 0, 100, 'a'), combo(1, 0, 100 - CORRECT_GAP_MARGIN - 0.1, 'b')]);
+    expect(pastMargin[1]).toBeLessThan(CORRECT_SCORE_THRESHOLD); // ranked, shown, but incorrect
   });
 
   it('grades a move the OLD min-max scheme passed (≥95) as incorrect', () => {
     // values 1000 / 980 / 0: old min-max gave the middle (980−0)/1000·100 = 98
-    // (correct). Gap-from-best is 20 → 100−0.625·20 = 87.5 → 88 (incorrect).
+    // (correct). Gap-from-best is 20 → 100−0.625·20 = 87.5 (incorrect, well below 97).
     const scores = normalizedScores([combo(0, 0, 1000, 'a'), combo(1, 0, 980, 'b'), combo(2, 0, 0, 'c')]);
-    expect(scores[1]).toBe(88);
-    expect(scores[1]).toBeLessThan(95);
+    expect(scores[1]).toBe(87.5);
+    expect(scores[1]).toBeLessThan(CORRECT_SCORE_THRESHOLD);
   });
 
   it('gives the same score for the same absolute gap across puzzles with different worst-legal tails', () => {

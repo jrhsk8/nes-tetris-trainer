@@ -32,26 +32,12 @@ import {
   type Piece,
   type Placement,
 } from '@trainer/core';
-import { scoreToOutcome, NEUTRAL_OUTCOME, OUTCOME_FLOOR } from '@trainer/rating';
 import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
 import { ComboList } from './ComboList.js';
+import { formatScore } from './grade.js';
 import { buildReplay, type Keyframe, type ReplayOverlay } from './replay.js';
 import { PuzzleTitle } from '../session/PuzzleTitle.js';
-
-/**
- * The graded-credit phrase for a 0–100 combo `score` (#51): the rating no longer
- * just reads Correct/Incorrect, it shows how much credit the answer earned along
- * the {@link scoreToOutcome} curve. `null` (too low to rank) earns no credit.
- */
-export function creditLabel(score: number | null): string | null {
-  if (score === null) return null;
-  if (score >= 100) return 'full credit';
-  const outcome = scoreToOutcome(score);
-  if (outcome > NEUTRAL_OUTCOME) return outcome >= 0.75 ? 'big gain' : 'small gain';
-  if (outcome === NEUTRAL_OUTCOME) return 'neutral';
-  return outcome <= OUTCOME_FLOOR ? 'heavily docked' : 'docked';
-}
 
 /** A player rating change to surface alongside the verdict. */
 export interface RatingChange {
@@ -213,11 +199,9 @@ export function Feedback({
   }, [step, timeline.length, stepMs]);
 
   const frame = timeline[Math.min(step, timeline.length - 1)];
-  const credit = creditLabel(verdict.score);
-  const scoreText =
-    verdict.score !== null
-      ? `Score ${verdict.score}${credit ? ` — ${credit}` : ''}`
-      : 'Too low to rank';
+  // Letter grade + one-decimal score (#60), e.g. `A+ 97.6`; unranked combos have
+  // no numeric score and read as "too low to rank".
+  const scoreText = verdict.score !== null ? formatScore(verdict.score) : 'Too low to rank';
 
   return (
     <div className="feedback">

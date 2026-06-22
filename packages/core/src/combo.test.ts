@@ -16,7 +16,7 @@ const userLine = (
 const table: ComboTable = {
   entries: [
     { rot1: 0, col1: 3, rot2: 2, col2: 6, score: 100 }, // rank 1
-    { rot1: 0, col1: 3, rot2: 0, col2: 6, score: 95 }, // rank 2 (at the boundary)
+    { rot1: 0, col1: 3, rot2: 0, col2: 6, score: 97 }, // rank 2 (at the 97 boundary)
     { rot1: 1, col1: 0, rot2: 0, col2: 4, score: 80 }, // rank 3 (ranked but weak)
   ],
   total: 27,
@@ -28,15 +28,15 @@ describe('gradeCombo — combo-threshold grading (#34)', () => {
     expect(result).toEqual({ correct: true, score: 100, rank: 1, total: 27, ranked: true });
   });
 
-  it('counts a combo at the >=95 boundary as correct', () => {
+  it('counts a combo at the >=97 boundary as correct (#60)', () => {
     const result = gradeCombo(table, userLine([0, 3], [0, 6]));
     expect(result.correct).toBe(true);
-    expect(result.score).toBe(95);
+    expect(result.score).toBe(97);
     expect(result.rank).toBe(2);
     expect(result.ranked).toBe(true);
   });
 
-  it('counts a ranked but sub-95 combo as incorrect, still reporting its rank', () => {
+  it('counts a ranked but sub-97 combo as incorrect, still reporting its rank (#60)', () => {
     const result = gradeCombo(table, userLine([1, 0], [0, 4]));
     expect(result).toEqual({ correct: false, score: 80, rank: 3, total: 27, ranked: true });
   });
@@ -46,8 +46,8 @@ describe('gradeCombo — combo-threshold grading (#34)', () => {
     expect(result).toEqual({ correct: false, score: null, rank: null, total: 27, ranked: false });
   });
 
-  it('exposes a correct-score threshold of 95', () => {
-    expect(CORRECT_SCORE_THRESHOLD).toBe(95);
+  it('exposes a correct-score threshold of 97 (#60)', () => {
+    expect(CORRECT_SCORE_THRESHOLD).toBe(97);
   });
 
   it('does not short-circuit on a weak first placement — it grades the whole combo', () => {

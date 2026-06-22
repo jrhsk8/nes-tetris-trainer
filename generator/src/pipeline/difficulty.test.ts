@@ -10,21 +10,21 @@ import {
 } from './difficulty.js';
 
 describe('difficultyFromScores (#40)', () => {
-  it('counts accepts (≥95) and the margin below the accept bar', () => {
+  it('counts accepts (≥97) and the margin below the accept bar (#60)', () => {
     // One acceptable answer (100), the rest far below → small accept count, big margin.
     const d = difficultyFromScores([100, 40, 30, 0]);
     expect(d.acceptCount).toBe(1);
-    expect(d.margin).toBe(60); // 100 - best-below-95 (40)
+    expect(d.margin).toBe(60); // 100 - best-below-97 (40)
   });
 
-  it('reports a tiny margin when many answers pass', () => {
+  it('reports the accept count and margin against the 97 bar (#60)', () => {
     const d = difficultyFromScores([100, 99, 97, 96, 95, 80]);
-    expect(d.acceptCount).toBe(5);
-    expect(d.margin).toBe(20); // 100 - 80
+    expect(d.acceptCount).toBe(3); // 100, 99, 97 clear the 97 bar
+    expect(d.margin).toBe(4); // 100 - best-below-97 (96)
   });
 
   it('has margin 0 when every combo passes the bar (no separation)', () => {
-    const d = difficultyFromScores([100, 98, 96]);
+    const d = difficultyFromScores([100, 98, 97]);
     expect(d.acceptCount).toBe(3);
     expect(d.margin).toBe(0);
   });

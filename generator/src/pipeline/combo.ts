@@ -148,21 +148,23 @@ export async function sweepCombos(
 }
 
 /**
- * The raw StackRabbit eval gap (`bestValue − value`) at which a combo stops
- * being graded correct (#47). Chosen from sampled real bank gaps (see
- * `generator/src/gap-sample.ts` + docs/decisions.md 2026-06-21 #47): a clean but
- * slightly bumpier line costs ~4–8 eval units (median 4.3, p75 8.4), while a move
- * that buries a hole costs ~12–22 (p25 12.2, median 21.6). MARGIN = 8 admits
- * "within a little bumpiness of the best" and rejects most hole-burying moves.
+ * Display slope (eval units → points), pinned at k = 0.625 (#47). Held FIXED
+ * across the 95 → 97 A+/win-line move (#60, grill #5): the curve shape and slope
+ * don't change, only the accept cutoff. Originally 5/8 at the 95 threshold with
+ * an 8-unit margin; pinned here so it stays 0.625 now that the threshold is 97.
  */
-export const CORRECT_GAP_MARGIN = 8;
+export const SCORE_SLOPE = 0.625;
 
 /**
- * Display slope (eval units → points), pinned so `score ≥ CORRECT_SCORE_THRESHOLD`
- * is exactly equivalent to `gap ≤ CORRECT_GAP_MARGIN`. With the 95 threshold and
- * an 8-unit margin this is 5/8 = 0.625 points per eval unit.
+ * The raw StackRabbit eval gap (`bestValue − value`) at which a combo stops
+ * being graded correct (#47), derived from the pinned slope so `score ≥
+ * CORRECT_SCORE_THRESHOLD` is exactly equivalent to `gap ≤ CORRECT_GAP_MARGIN`.
+ * At the 97 threshold this is (100 − 97)/0.625 = **4.8** eval units (was 8 at the
+ * 95 threshold). The slope was chosen from sampled real bank gaps (see
+ * `generator/src/gap-sample.ts` + docs/decisions.md 2026-06-21 #47): a clean but
+ * slightly bumpier line costs ~4–8 eval units, a hole-burying move ~12–22.
  */
-export const SCORE_SLOPE = (100 - CORRECT_SCORE_THRESHOLD) / CORRECT_GAP_MARGIN;
+export const CORRECT_GAP_MARGIN = (100 - CORRECT_SCORE_THRESHOLD) / SCORE_SLOPE;
 
 function clampScore(score: number): number {
   return Math.max(0, Math.min(100, score));
@@ -170,17 +172,19 @@ function clampScore(score: number): number {
 
 /**
  * Score swept combos by their **gap from the best** (#47), in raw StackRabbit
- * eval units: `score = clamp(round(100 − k·(bestValue − value)), 0, 100)`. The
- * best combo scores exactly 100; the worst-legal anchor is dropped entirely, so
- * the SAME absolute gap yields the SAME score on every puzzle (cross-puzzle
+ * eval units: `score = clamp(100 − k·(bestValue − value), 0, 100)`. The best
+ * combo scores exactly 100; the worst-legal anchor is dropped entirely, so the
+ * SAME absolute gap yields the SAME score on every puzzle (cross-puzzle
  * comparable) and a genuinely mediocre move no longer compresses into the 90s.
- * `correct = score ≥ CORRECT_SCORE_THRESHOLD` is equivalent to `gap ≤
- * CORRECT_GAP_MARGIN`. Ties (or a single combo) all score 100.
+ * Scores are kept as **floats** (#60 — the round() is dropped so the player view
+ * can show a one-decimal number behind the letter grade); `correct = score ≥
+ * CORRECT_SCORE_THRESHOLD` is equivalent to `gap ≤ CORRECT_GAP_MARGIN`. Ties (or
+ * a single combo) all score 100.
  */
 export function normalizedScores(combos: readonly ScoredCombo[]): number[] {
   if (combos.length === 0) return [];
   const best = Math.max(...combos.map((c) => c.value));
-  return combos.map((c) => clampScore(Math.round(100 - SCORE_SLOPE * (best - c.value))));
+  return combos.map((c) => clampScore(100 - SCORE_SLOPE * (best - c.value)));
 }
 
 /**

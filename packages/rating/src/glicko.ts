@@ -28,8 +28,13 @@ export const GLICKO_TAU = 0.5;
 
 /** Player-perspective Glicko outcome for a neutral answer (no rating change). */
 export const NEUTRAL_OUTCOME = 0.5;
-/** The accept-threshold score (combo ≥ this is a solve) — maps to neutral. */
-export const NEUTRAL_SCORE = 95;
+/**
+ * The accept-threshold score (combo ≥ this is a solve) — maps to neutral. Moved
+ * 95 → 97 (#60, grill #5) so the rating's neutral point coincides with the A+
+ * win line: ≥ 97 gains rating, < 97 docks toward the floor. The curve keeps its
+ * shape; only this knot moves.
+ */
+export const NEUTRAL_SCORE = 97;
 /** The best possible combo score (rank-1), mapping to a full win. */
 export const MAX_SCORE = 100;
 /** The lowest outcome a numerically-scored answer can earn (a bad-but-ranked miss). */
@@ -40,9 +45,9 @@ export const BELOW_NEUTRAL_SLOPE = 0.0267;
 /**
  * Map a combo's 0–100 quality `score` to the player-perspective Glicko outcome
  * in `[OUTCOME_FLOOR, 1]` (the puzzle's perspective is `1 - outcome`):
- * - **At the bar (95):** neutral (0.5) — no rating change.
- * - **Above (convex up to 100):** `0.5 + 0.5·((score-95)/5)²` → 97≈0.58, 99≈0.82, 100=1.0.
- * - **Below (steeper, floored):** `max(0.10, 0.5 − 0.0267·(95−score))` → 93≈0.45, ≤80→0.10.
+ * - **At the bar (97):** neutral (0.5) — no rating change.
+ * - **Above (convex up to 100):** `0.5 + 0.5·((score-97)/3)²` → 98≈0.56, 99≈0.72, 100=1.0.
+ * - **Below (steeper, floored):** `max(0.10, 0.5 − 0.0267·(97−score))` → 95≈0.45, ≤82→0.10.
  */
 export function scoreToOutcome(score: number): number {
   if (score >= NEUTRAL_SCORE) {

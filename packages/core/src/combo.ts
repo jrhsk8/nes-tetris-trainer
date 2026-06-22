@@ -28,6 +28,11 @@ export interface ComboEntry {
   col1: number;
   rot2: number;
   col2: number;
+  /**
+   * Gap-anchored 0–100 quality (rank-1 = 100). A **float** since #60 (the
+   * generator drops its `round()`); the player view shows it as a letter grade
+   * plus a one-decimal number. Legacy bank rows are whole numbers.
+   */
   score: number;
   /**
    * Canonical outcome key (see @trainer/core `boardKey`): the resulting locked
@@ -52,8 +57,13 @@ export interface ComboTable {
   total: number;
 }
 
-/** A combo scoring at least this (0–100) counts as a correct solve. */
-export const CORRECT_SCORE_THRESHOLD = 95;
+/**
+ * A combo scoring at least this (0–100) counts as a correct solve — the A+ /
+ * win line. Moved 95 → 97 (#60, grill #5): only A+ answers score a rating gain;
+ * the gap-anchored score curve and its slope (k = 0.625) are unchanged, so 97
+ * corresponds to a gap of ~4.8 eval units from the best.
+ */
+export const CORRECT_SCORE_THRESHOLD = 97;
 
 /** The graded outcome of a two-piece combo attempt. */
 export interface ComboResult {

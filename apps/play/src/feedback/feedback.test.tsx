@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyBoard, type ComboTable, type Grid, type Line } from '@trainer/core';
-import { Feedback, creditLabel } from './Feedback.js';
+import { Feedback } from './Feedback.js';
 
 afterEach(() => cleanup());
 
@@ -34,7 +34,7 @@ describe('Feedback verdict banner (#35)', () => {
     const verdict = screen.getByTestId('verdict');
     expect(verdict).toHaveTextContent('Correct');
     expect(verdict).toHaveAttribute('data-correct', 'true');
-    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Score 100');
+    expect(screen.getByTestId('verdict-score')).toHaveTextContent('A+ 100.0');
   });
 
   it('shows an Incorrect, "too low to rank" verdict when the combo is beyond the top-K', () => {
@@ -53,7 +53,7 @@ describe('Feedback verdict banner (#35)', () => {
     expect(screen.getByTestId('verdict-score')).toHaveTextContent('Too low to rank');
   });
 
-  it('counts a ranked but sub-95 combo as Incorrect while still showing its score', () => {
+  it('counts a ranked but sub-97 combo as Incorrect while still showing its grade (#60)', () => {
     render(
       <Feedback
         board0={emptyBoard()}
@@ -64,30 +64,21 @@ describe('Feedback verdict banner (#35)', () => {
       />,
     );
     expect(screen.getByTestId('verdict')).toHaveTextContent('Incorrect');
-    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Score 80');
-  });
-});
-
-describe('Feedback graded credit (#51)', () => {
-  it('labels a perfect answer as full credit', () => {
-    expect(creditLabel(100)).toBe('full credit');
-    expect(creditLabel(97)).toBe('small gain');
-    expect(creditLabel(95)).toBe('neutral');
-    expect(creditLabel(80)).toBe('heavily docked');
-    expect(creditLabel(null)).toBeNull();
+    // Letter grade + one decimal, no credit phrase (#60).
+    expect(screen.getByTestId('verdict-score')).toHaveTextContent('B- 80.0');
   });
 
-  it('shows the graded credit phrase next to the score', () => {
+  it('shows the A+ grade with one decimal for a near-best score (#60)', () => {
     render(
       <Feedback
         board0={emptyBoard()}
         piece1="T"
         piece2="L"
-        combos={table([rank1])}
+        combos={table([{ ...rank1, score: 97.6 }])}
         userLine={L([0, 3], [0, 6])}
       />,
     );
-    expect(screen.getByTestId('verdict-score')).toHaveTextContent('Score 100 — full credit');
+    expect(screen.getByTestId('verdict-score')).toHaveTextContent('A+ 97.6');
   });
 });
 
@@ -143,7 +134,7 @@ describe('Feedback ranked combo list (#35)', () => {
     );
     const below = screen.getByTestId('combo-your-move');
     expect(below).toHaveTextContent('6th');
-    expect(below).toHaveTextContent('50');
+    expect(below).toHaveTextContent('F 50.0'); // letter + one decimal (#60)
   });
 
   it('shows "too low to rank" below when the player’s combo is unranked', () => {

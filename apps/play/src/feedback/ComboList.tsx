@@ -1,14 +1,16 @@
 /**
  * Ranked combo list (#35) — replaces the per-ply strip-plot chart (#29). A
- * stacked, ranked list of the puzzle's top-5 two-piece combos with their 0–100
- * scores (docs/glossary.md "Ranked combo list"). The player's own combo is
- * highlighted in-list when it is among the top-5; otherwise a row below shows its
+ * stacked, ranked list of the puzzle's top-5 two-piece combos with their grades
+ * (letter + one-decimal score, #60; docs/glossary.md "Ranked combo list"). The
+ * player's own combo is highlighted in-list when it is among the top-5;
+ * otherwise a row below shows its
  * exact rank + score (ranks 6–30) or "too low to rank" (beyond the stored
  * top-K). Rows are interactive: selecting one replays that combo on the central
  * board.
  */
 
 import type { ComboEntry, Line, Placement } from '@trainer/core';
+import { formatScore } from './grade.js';
 
 export interface ComboListProps {
   /** The stored top-K combos, best-first (rank 1 = index 0). */
@@ -91,7 +93,7 @@ export function ComboList({
             onClick={() => onSelect(line)}
           >
             <span className="combo-rank">{ordinal(rank)}</span>
-            <span className="combo-score">{entry.score}</span>
+            <span className="combo-score">{formatScore(entry.score)}</span>
             {isPlayer ? <span className="combo-you">You</span> : null}
           </button>
         );
@@ -108,7 +110,9 @@ export function ComboList({
         >
           <span className="combo-rank">Your move</span>
           <span className="combo-score">
-            {playerRank !== null ? `${ordinal(playerRank)} · ${playerScore}` : 'too low to rank'}
+            {playerRank !== null && playerScore !== null
+              ? `${ordinal(playerRank)} · ${formatScore(playerScore)}`
+              : 'too low to rank'}
           </span>
         </button>
       ) : null}

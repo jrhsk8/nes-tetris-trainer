@@ -14,14 +14,15 @@ import {
 const seed = (): Glicko => ({ rating: 1500, deviation: 350, volatility: 0.06 });
 
 describe('scoreToOutcome (graded reward curve, #51)', () => {
-  it('maps the 95 accept bar to a neutral outcome', () => {
+  it('maps the 97 accept bar to a neutral outcome (#60)', () => {
+    expect(NEUTRAL_SCORE).toBe(97);
     expect(scoreToOutcome(NEUTRAL_SCORE)).toBeCloseTo(0.5, 10);
   });
 
-  it('maps a perfect 100 to a full win and is convex above the bar', () => {
+  it('maps a perfect 100 to a full win and is convex above the bar (#60)', () => {
     expect(scoreToOutcome(100)).toBeCloseTo(1.0, 10);
-    expect(scoreToOutcome(97)).toBeCloseTo(0.58, 2);
-    expect(scoreToOutcome(99)).toBeCloseTo(0.82, 2);
+    expect(scoreToOutcome(98)).toBeCloseTo(0.56, 2);
+    expect(scoreToOutcome(99)).toBeCloseTo(0.72, 2);
   });
 
   it('is monotonically non-decreasing in score', () => {
@@ -33,14 +34,14 @@ describe('scoreToOutcome (graded reward curve, #51)', () => {
     }
   });
 
-  it('docks below the bar and floors at OUTCOME_FLOOR for bad misses', () => {
-    expect(scoreToOutcome(93)).toBeCloseTo(0.45, 2);
+  it('docks below the bar and floors at OUTCOME_FLOOR for bad misses (#60)', () => {
+    expect(scoreToOutcome(95)).toBeCloseTo(0.45, 2);
     expect(scoreToOutcome(80)).toBeCloseTo(OUTCOME_FLOOR, 10);
     expect(scoreToOutcome(50)).toBe(OUTCOME_FLOOR);
   });
 
   it('docks a bad miss harder than a near-miss is rewarded', () => {
-    const reward = scoreToOutcome(97) - NEUTRAL_OUTCOME;
+    const reward = scoreToOutcome(98) - NEUTRAL_OUTCOME;
     const dock = NEUTRAL_OUTCOME - scoreToOutcome(80);
     expect(dock).toBeGreaterThan(reward);
   });
@@ -49,7 +50,7 @@ describe('scoreToOutcome (graded reward curve, #51)', () => {
 describe('attemptOutcome (score | null -> outcome, with binary fallback)', () => {
   it('uses the graded curve when a numeric score is present', () => {
     expect(attemptOutcome(100, true)).toBeCloseTo(1.0, 10);
-    expect(attemptOutcome(95, true)).toBeCloseTo(0.5, 10);
+    expect(attemptOutcome(97, true)).toBeCloseTo(0.5, 10);
   });
 
   it('falls back to the binary solved signal when score is null (legacy/unranked)', () => {
@@ -71,16 +72,16 @@ describe('updateRatings (outcome -> co-rating mapping)', () => {
     expect(result.puzzle.rating).toBeGreaterThan(1500);
   });
 
-  it('rewards a 100 (full credit) more than a 97 (near-miss)', () => {
+  it('rewards a 100 (full credit) more than a 98 (near-miss) (#60)', () => {
     const full = updateRatings(seed(), seed(), scoreToOutcome(100));
-    const near = updateRatings(seed(), seed(), scoreToOutcome(97));
+    const near = updateRatings(seed(), seed(), scoreToOutcome(98));
     expect(full.user.rating).toBeGreaterThan(near.user.rating);
-    // 97 is above the neutral bar, so it is still a (small) gain.
+    // 98 is above the neutral bar (97), so it is still a (small) gain.
     expect(near.user.rating).toBeGreaterThan(1500);
   });
 
-  it('leaves both ratings essentially unchanged at the neutral bar (95)', () => {
-    const neutral = updateRatings(seed(), seed(), scoreToOutcome(95));
+  it('leaves both ratings essentially unchanged at the neutral bar (97) (#60)', () => {
+    const neutral = updateRatings(seed(), seed(), scoreToOutcome(97));
     expect(neutral.user.rating).toBeCloseTo(1500, 0);
   });
 
@@ -134,8 +135,8 @@ describe('applyAttempt (compute + persist)', () => {
     expect(result.after.rating).toBeLessThan(1600);
   });
 
-  it('scales the gain by answer quality — a 97 gains less than a 100', async () => {
-    const near = await applyAttempt(fakeDb().db, 'u', seed(), scoreToOutcome(97));
+  it('scales the gain by answer quality — a 98 gains less than a 100 (#60)', async () => {
+    const near = await applyAttempt(fakeDb().db, 'u', seed(), scoreToOutcome(98));
     const full = await applyAttempt(fakeDb().db, 'u', seed(), scoreToOutcome(100));
     expect(near.delta).toBeGreaterThan(0);
     expect(near.delta).toBeLessThan(full.delta);

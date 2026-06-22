@@ -72,9 +72,10 @@ function clamp01(x: number): number {
 
 /**
  * Compute the difficulty signals from a puzzle's field-normalized 0–100 combo
- * scores (best-first; the first is always 100). `acceptCount` is the count ≥ 95;
- * `margin` is 100 minus the best score below 95 (or 0 when every combo passes —
- * a trivially easy puzzle with no separation).
+ * scores (best-first; the first is always 100). `acceptCount` is the count ≥
+ * {@link CORRECT_SCORE_THRESHOLD} (97 since #60); `margin` is 100 minus the best
+ * score below that bar (or 0 when every combo passes — a trivially easy puzzle
+ * with no separation).
  */
 export function difficultyFromScores(scores: readonly number[]): Difficulty {
   const acceptCount = scores.filter((s) => s >= CORRECT_SCORE_THRESHOLD).length;
