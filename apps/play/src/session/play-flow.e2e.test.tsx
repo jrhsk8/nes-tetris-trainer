@@ -62,10 +62,9 @@ describe.skipIf(!configured)('Play flow (deep, real stored puzzle)', () => {
     expect(await screen.findByTestId('grade-banner')).toHaveAttribute('data-correct', 'true');
     expect(screen.getByTestId('rating-change')).toHaveTextContent('(+');
 
-    // Feedback: the optimal line animates. (The deprecated value-table strip
-    // charts are no longer populated after the combo regen #33; the ranked combo
-    // list that replaces them is asserted in #35.)
-    expect(screen.getByTestId('feedback-step')).toBeInTheDocument();
+    // Feedback: the ranked combo list is shown (the replay step counter was
+    // removed in #62; the ranked combo list is asserted in #35).
+    expect(screen.getByTestId('combo-list')).toBeInTheDocument();
 
     // Persistence: the attempt and the raised rating round-trip through the DAL.
     await waitFor(async () => {

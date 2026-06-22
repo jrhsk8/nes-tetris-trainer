@@ -248,9 +248,6 @@ export function Feedback({
             </>
           }
         />
-        <p data-testid="feedback-step">
-          {frame.label} · {Math.min(step + 1, timeline.length)}/{timeline.length}
-        </p>
         <button type="button" onClick={() => setStep(0)}>
           Replay
         </button>
