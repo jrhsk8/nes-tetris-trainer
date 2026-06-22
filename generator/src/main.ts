@@ -56,7 +56,11 @@ function parseArgs(argv: string[]): CliArgs {
         // via `bt-run` so the net is reachable (offline / generator-only).
         args.consensus = true;
         break;
-      // Difficulty-band quotas (#52): deliberately span easy→hard.
+      // Difficulty-band quotas (#52, #71): deliberately span very-easy→hard.
+      case '--very-easy':
+        setQuota('very-easy', value);
+        i++;
+        break;
       case '--easy':
         setQuota('easy', value);
         i++;

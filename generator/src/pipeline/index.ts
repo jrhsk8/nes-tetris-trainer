@@ -27,13 +27,22 @@ export {
   difficultyFromScores,
   seedRatingFor,
   bandFor,
+  VERY_EASY_SEED,
   EASY_SEED,
   HARD_SEED,
   HARD_MAX_ACCEPTS,
   EASY_MIN_ACCEPTS,
+  VERY_EASY_MIN_ACCEPTS,
   DIFFICULTY_BANDS,
+  lineClearsTetris,
+  entryClearsTetris,
+  restingLineForEntry,
+  clearsTetrisFromEntries,
+  rebandPuzzle,
   type Difficulty,
+  type DifficultyOptions,
   type DifficultyBand,
+  type Reband,
 } from './difficulty.js';
 export { boardHamming, isNearDuplicate, type BankKey } from './dedup.js';
 export { tallyBankRatings, type TallyDeps, type TallyResult } from './tally.js';

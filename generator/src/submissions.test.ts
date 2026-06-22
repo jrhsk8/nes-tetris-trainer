@@ -71,6 +71,7 @@ describe('processSubmissions (#45)', () => {
       return {
         ok: true,
         lane: 'strict',
+        tetris: false,
         puzzle: {
           board: encodeBoard(candidate.board),
           piece1: candidate.currentPiece,

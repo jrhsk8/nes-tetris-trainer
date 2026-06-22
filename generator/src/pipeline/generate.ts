@@ -17,6 +17,7 @@ import {
   boardMetrics,
   encodeBoard,
   encodeColors,
+  CORRECT_SCORE_THRESHOLD,
   type Grid,
   type Line,
 } from '@trainer/core';
@@ -44,6 +45,7 @@ import {
   difficultyFromScores,
   seedRatingFor,
   bandFor,
+  lineClearsTetris,
   DIFFICULTY_BANDS,
   type DifficultyBand,
 } from './difficulty.js';
@@ -165,7 +167,7 @@ export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
 
 /** Outcome of trying to assemble a puzzle from one candidate. */
 export type AssemblyResult =
-  | { ok: true; puzzle: NewPuzzle; lane: BoardLane }
+  | { ok: true; puzzle: NewPuzzle; lane: BoardLane; tetris: boolean }
   | { ok: false; reason: string };
 
 /**
@@ -271,7 +273,15 @@ export async function assemblePuzzle(
   // 5. Normalize to 0–100, derive difficulty + seed rating, and build the table.
   const scores = normalizedScores(ordered);
   const difficulty = difficultyFromScores(scores);
-  const seed = seedRatingFor(difficulty);
+  // Tetris cap (#71): any *acceptable* combo (score ≥ threshold) that clears a
+  // tetris caps the puzzle at easy. Checked on the actual resting placements, so
+  // a tuck/spin tetris counts too.
+  const tetris = ordered.some(
+    (c, i) =>
+      scores[i] >= CORRECT_SCORE_THRESHOLD &&
+      lineClearsTetris(board, currentPiece, nextPiece, c.p1, c.p2),
+  );
+  const seed = seedRatingFor(difficulty, { tetris });
   const table = normalizeCombos(ordered, config.topK);
   const optimalLine: Line = [
     { rotation: best.p1.rotation, col: best.p1.col },
@@ -281,6 +291,7 @@ export async function assemblePuzzle(
   return {
     ok: true,
     lane: classifyLane(board, config),
+    tetris,
     puzzle: {
       board: encodeBoard(board),
       piece1: currentPiece,
@@ -390,11 +401,14 @@ export async function generateBank(
   // TS survivors awaiting a BetaTetris consensus batch (#55); empty without a judge.
   const pending: NewPuzzle[] = [];
   const rejections: Record<string, number> = {};
-  const byBand: Record<DifficultyBand, number> = { easy: 0, medium: 0, hard: 0 };
+  const byBand: Record<DifficultyBand, number> = { 'very-easy': 0, easy: 0, medium: 0, hard: 0 };
   const byLane: Record<BoardLane, number> = { strict: 0, variety: 0 };
   // Per-survivor cleanliness lane (#66), so the variety cap can be enforced at
   // admit time (after the BetaTetris cull) without re-deriving board metrics.
   const laneByPuzzle = new Map<NewPuzzle, BoardLane>();
+  // Per-survivor tetris-cap flag (#71), so banding (which collapses tetris
+  // puzzles to easy) is consistent at admit time without re-deriving it.
+  const tetrisByPuzzle = new Map<NewPuzzle, boolean>();
   // Dedup keys: the existing bank plus every survivor accepted so far.
   const acceptedKeys: BankKey[] = [...(deps.existingKeys ?? [])];
   let candidatesTried = 0;
@@ -425,7 +439,7 @@ export async function generateBank(
       rejections['variety-lane-full'] = (rejections['variety-lane-full'] ?? 0) + 1;
       return false;
     }
-    const band = bandFor(puzzle.acceptCount ?? 0);
+    const band = bandFor(puzzle.acceptCount ?? 0, { tetris: tetrisByPuzzle.get(puzzle) ?? false });
     if (quotas && byBand[band] >= quotaFor(band)) {
       rejections[`band-full:${band}`] = (rejections[`band-full:${band}`] ?? 0) + 1;
       return false;
@@ -451,7 +465,7 @@ export async function generateBank(
       `consensus batch: kept ${result.kept.length}/${batch.length} ` +
         `(admitted ${admitted}, bt-errors ${result.btErrors}); ` +
         `bank ${survivors.length}/${target} ` +
-        `[easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard}]`,
+        `[very-easy ${byBand['very-easy']} / easy ${byBand.easy} / medium ${byBand.medium} / hard ${byBand.hard}]`,
     );
   };
 
@@ -471,6 +485,7 @@ export async function generateBank(
     // strict-clean boards that fill the remaining 80%. (The admit-time check is
     // still authoritative for the consensus path's in-flight batch.)
     laneByPuzzle.set(result.puzzle, result.lane);
+    tetrisByPuzzle.set(result.puzzle, result.tetris);
     if (varietyFull(result.lane)) {
       rejections['variety-lane-full'] = (rejections['variety-lane-full'] ?? 0) + 1;
       continue;
@@ -481,7 +496,7 @@ export async function generateBank(
     // that still need filling (notably the rare, tight hard band). With a
     // consensus judge we over-generate instead and apply the band gate AFTER the
     // BetaTetris cull (in `admit`), so a culled puzzle frees its band slot.
-    const band = bandFor(result.puzzle.acceptCount ?? 0);
+    const band = bandFor(result.puzzle.acceptCount ?? 0, { tetris: result.tetris });
     if (!judge && quotas && byBand[band] >= quotaFor(band)) {
       rejections[`band-full:${band}`] = (rejections[`band-full:${band}`] ?? 0) + 1;
       continue;

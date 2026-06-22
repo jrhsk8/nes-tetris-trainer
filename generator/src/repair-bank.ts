@@ -47,7 +47,7 @@ interface LivePuzzle extends ConsensusPuzzle {
 }
 
 function bandCounts(rows: Array<{ acceptCount: number | null }>): Record<DifficultyBand, number> {
-  const counts: Record<DifficultyBand, number> = { easy: 0, medium: 0, hard: 0 };
+  const counts: Record<DifficultyBand, number> = { 'very-easy': 0, easy: 0, medium: 0, hard: 0 };
   for (const r of rows) counts[bandFor(r.acceptCount ?? 0)]++;
   return counts;
 }

@@ -18,7 +18,7 @@ import {
   type GeneratorEngine,
 } from './generate.js';
 import type { ConsensusJudge, ConsensusVerdict } from './consensus.js';
-import { EASY_SEED, HARD_SEED, HARD_MAX_ACCEPTS } from './difficulty.js';
+import { VERY_EASY_SEED, HARD_SEED, HARD_MAX_ACCEPTS } from './difficulty.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
 import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
 import { StackRabbitClient, DEFAULT_BASE_URL } from '../engine/client.js';
@@ -273,7 +273,7 @@ describe('assemblePuzzle combo pipeline (#40)', () => {
     expect(typeof puzzle.acceptCount).toBe('number');
     expect(puzzle.acceptCount!).toBeGreaterThanOrEqual(1);
     expect(typeof puzzle.margin).toBe('number');
-    expect(puzzle.glicko!.rating!).toBeGreaterThanOrEqual(EASY_SEED);
+    expect(puzzle.glicko!.rating!).toBeGreaterThanOrEqual(VERY_EASY_SEED);
     expect(puzzle.glicko!.rating!).toBeLessThanOrEqual(HARD_SEED);
 
     expect(puzzle.colors).toHaveLength(200);
@@ -457,7 +457,8 @@ describe('generateBank (deterministic)', () => {
       { source: new FixedSource([candidateWith('O', 'O'), candidateWith('T', 'O')]), engine: comboEngine(), db },
       { targetCount: 2, maxCandidates: 10 },
     );
-    const total = result.byBand.easy + result.byBand.medium + result.byBand.hard;
+    const total =
+      result.byBand['very-easy'] + result.byBand.easy + result.byBand.medium + result.byBand.hard;
     expect(total).toBe(result.stored.length);
   });
 
@@ -466,19 +467,19 @@ describe('generateBank (deterministic)', () => {
     const result = await generateBank(
       {
         // Distinct flat boards per band so dedup never fires; the engine sets the
-        // band from `lines` (0 easy / 1 medium / 2 hard).
+        // band from `lines` (0 → all-pass = very-easy / 1 medium / 2 hard, #71).
         source: new FixedSource([
           bandCandidate(4, 2), // hard
           bandCandidate(2, 1), // medium
-          bandCandidate(0, 0), // easy
+          bandCandidate(0, 0), // very-easy (every combo passes ⇒ many accepts)
         ]),
         engine: bandEngine(),
         db,
       },
-      { targetCount: 0, bandQuotas: { easy: 1, medium: 1, hard: 1 }, maxCandidates: 20 },
+      { targetCount: 0, bandQuotas: { 'very-easy': 1, medium: 1, hard: 1 }, maxCandidates: 20 },
     );
 
-    expect(result.byBand).toEqual({ easy: 1, medium: 1, hard: 1 });
+    expect(result.byBand).toEqual({ 'very-easy': 1, easy: 0, medium: 1, hard: 1 });
     expect(stored).toHaveLength(3);
     // The hard survivor has a genuinely tight acceptable set (≤ 2).
     const hard = stored.find((p) => p.acceptCount! <= HARD_MAX_ACCEPTS);
@@ -490,22 +491,23 @@ describe('generateBank (deterministic)', () => {
     const { db, stored } = recordingDb();
     const result = await generateBank(
       {
-        // Easy is over-supplied (2 candidates) but only has 1 slot; the run keeps
-        // going for the still-unfilled hard band, so the surplus easy is rejected.
+        // very-easy is over-supplied (2 all-pass candidates) but only has 1 slot;
+        // the run keeps going for the still-unfilled hard band, so the surplus
+        // very-easy is rejected.
         source: new FixedSource([
-          bandCandidate(0, 0), // easy (accepted)
-          bandCandidate(2, 0), // easy (band-full → rejected)
+          bandCandidate(0, 0), // very-easy (accepted)
+          bandCandidate(2, 0), // very-easy (band-full → rejected)
           bandCandidate(4, 2), // hard (accepted)
         ]),
         engine: bandEngine(),
         db,
       },
-      { targetCount: 0, bandQuotas: { easy: 1, hard: 1 }, maxCandidates: 20 },
+      { targetCount: 0, bandQuotas: { 'very-easy': 1, hard: 1 }, maxCandidates: 20 },
     );
 
-    expect(result.byBand).toEqual({ easy: 1, medium: 0, hard: 1 });
+    expect(result.byBand).toEqual({ 'very-easy': 1, easy: 0, medium: 0, hard: 1 });
     expect(stored).toHaveLength(2);
-    expect(result.rejections['band-full:easy']).toBe(1);
+    expect(result.rejections['band-full:very-easy']).toBe(1);
   });
 
   it('caps the variety lane at ~fraction of the bank, filling the rest strict-clean (#66)', async () => {
@@ -630,7 +632,7 @@ describe.skipIf(!engineUp)('generateBank (live engine)', () => {
       expect(puzzle.optimalLine[1]).toEqual({ rotation: top.rot2, col: top.col2 });
       // Difficulty + seed rating present.
       expect(typeof puzzle.acceptCount).toBe('number');
-      expect(puzzle.glicko!.rating!).toBeGreaterThanOrEqual(EASY_SEED);
+      expect(puzzle.glicko!.rating!).toBeGreaterThanOrEqual(VERY_EASY_SEED);
       expect(puzzle.glicko!.rating!).toBeLessThanOrEqual(HARD_SEED);
     }
   }, 180_000);
