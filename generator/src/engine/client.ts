@@ -68,6 +68,20 @@ export interface RateMoveResult {
   bestValue: number;
 }
 
+/**
+ * Per-call overrides for {@link StackRabbitClient.rateMove} (#53). Passing a
+ * `playoutCount > 0` switches that single rating from the fast eval-only score
+ * (the client default) to a deeper, lookahead-aware playout search — used by the
+ * deeper-confirm gate to re-check the swept optimal without changing the client's
+ * default scoring for the rest of the sweep.
+ */
+export interface RateMoveOptions {
+  /** Playout count for this rating (`> 0` enables the deeper search). */
+  playoutCount?: number;
+  /** Playout length for this rating (only meaningful when `playoutCount > 0`). */
+  playoutLength?: number;
+}
+
 /** Options for constructing a {@link StackRabbitClient}. */
 export interface StackRabbitClientOptions {
   /** Base URL of the engine; defaults to {@link DEFAULT_BASE_URL}. */
@@ -278,10 +292,18 @@ export class StackRabbitClient {
   /**
    * Score a specific placement: supply the board AFTER the player's move and
    * get back its value alongside the engine's best value from the same start.
+   * Defaults to the client's (eval-only) playout settings; pass {@link
+   * RateMoveOptions} to run this one rating at a deeper `playoutCount` (#53).
    */
-  async rateMove(query: MoveQuery, playerBoardAfter: Grid): Promise<RateMoveResult> {
+  async rateMove(
+    query: MoveQuery,
+    playerBoardAfter: Grid,
+    options?: RateMoveOptions,
+  ): Promise<RateMoveResult> {
+    const playoutCount = options?.playoutCount ?? this.playoutCount;
+    const playoutLength = options?.playoutLength ?? this.playoutLength;
     const body = await this.get(
-      `rate-move-cpp?${buildQuery(query, this.playoutCount, this.playoutLength, playerBoardAfter)}`,
+      `rate-move-cpp?${buildQuery(query, playoutCount, playoutLength, playerBoardAfter)}`,
     );
     return parseRateResponse(body);
   }

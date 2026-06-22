@@ -83,6 +83,40 @@ function holeyEngine(): GeneratorEngine {
 }
 
 /**
+ * An engine whose EVAL-ONLY rating and DEEPER (playoutCount > 0) rating disagree:
+ * eval ranks a combo by its resulting board's filled `(row*10+col)` sum (so
+ * bottom-right placements win), while the deeper search returns the negated sum —
+ * inverting the ranking. The deeper-best is therefore a different, far-lower
+ * eval combo, contradicting the eval-only pick well beyond the reject threshold:
+ * an "eval-only quirk" the #53 gate must reject.
+ */
+function quirkEngine(): GeneratorEngine {
+  const evalValue = (after: Grid): number => {
+    let v = 0;
+    for (let r = 0; r < after.length; r++)
+      for (let c = 0; c < after[r].length; c++) if (after[r][c]) v += r * 10 + c;
+    return v;
+  };
+  return {
+    async getBestMove(query: MoveQuery): Promise<EngineMove | null> {
+      return {
+        rotation: 0,
+        x: 0,
+        y: 0,
+        board: applyPlacement(query.board, query.currentPiece, { rotation: 0, col: 0 }),
+        totalValue: 100,
+      };
+    },
+    async rateMove(_query: MoveQuery, after: Grid, options?): Promise<RateMoveResult> {
+      const v = evalValue(after);
+      // The deeper search inverts and amplifies the ranking, so its best is a
+      // far-lower eval combo — a contradiction well past the reject threshold.
+      return { playerValue: options?.playoutCount ? -100 * v : v, bestValue: 0 };
+    },
+  };
+}
+
+/**
  * A candidate with a deep one-wide well (col 5, depth 4) under a flat height-4
  * surface. An I piece dropped vertically fills the well cleanly; an I laid across
  * the top buries the well as 4 holes — so a hole-rewarding engine's value-best is
@@ -261,6 +295,34 @@ describe('assemblePuzzle combo pipeline (#40)', () => {
     const result = await assemblePuzzle(comboEngine(), tallCandidate());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('start-too-tall');
+  });
+
+  it('confirms the eval-only optimal when a deeper search agrees (#53)', async () => {
+    // comboEngine ignores the deeper playout option, so eval == deep: the gate
+    // confirms and the stored optimal is the eval-only rank-1, unchanged.
+    const evalOnly = await assemblePuzzle(comboEngine(), sampleCandidate(), {
+      ...DEFAULT_GENERATION_CONFIG,
+      deeperConfirm: null,
+    });
+    const confirmed = await assemblePuzzle(comboEngine(), sampleCandidate());
+    expect(evalOnly.ok && confirmed.ok).toBe(true);
+    if (!evalOnly.ok || !confirmed.ok) return;
+    expect(confirmed.puzzle.optimalLine).toEqual(evalOnly.puzzle.optimalLine);
+  });
+
+  it('rejects an eval-only-quirk optimal that a deeper search contradicts (#53)', async () => {
+    const result = await assemblePuzzle(quirkEngine(), sampleCandidate());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('deeper-quirk');
+  });
+
+  it('accepts the same quirk candidate when the deeper-confirm gate is disabled (#53)', async () => {
+    // Proves the rejection above is the #53 gate, not another filter.
+    const result = await assemblePuzzle(quirkEngine(), sampleCandidate(), {
+      ...DEFAULT_GENERATION_CONFIG,
+      deeperConfirm: null,
+    });
+    expect(result.ok).toBe(true);
   });
 });
 

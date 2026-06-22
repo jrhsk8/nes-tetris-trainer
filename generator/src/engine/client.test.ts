@@ -61,6 +61,44 @@ describe('parseRateResponse', () => {
   });
 });
 
+describe('rateMove deeper-search plumbing (#53)', () => {
+  const query = {
+    board: midGameBoard(),
+    currentPiece: 'T' as const,
+    nextPiece: 'L' as const,
+    level: 18,
+    lines: 0,
+    inputFrameTimeline: 'X.....',
+  };
+  const body = '{"playerMoveNoAdjustment":-1,"bestMoveNoAdjustment":0}';
+
+  /** A fake `fetch` that records the requested URL and returns a canned rate body. */
+  function recordingFetch() {
+    const urls: string[] = [];
+    const fetchImpl = (async (input: string | URL) => {
+      urls.push(String(input));
+      return { ok: true, text: async () => body } as Response;
+    }) as unknown as typeof fetch;
+    return { fetchImpl, urls };
+  }
+
+  it('defaults to the client eval-only playoutCount', async () => {
+    const { fetchImpl, urls } = recordingFetch();
+    const client = new StackRabbitClient({ fetch: fetchImpl });
+    await client.rateMove(query, midGameBoard());
+    expect(new URL(urls[0]).searchParams.get('playoutCount')).toBe('0');
+  });
+
+  it('passes a per-call deeper playoutCount/playoutLength through to the query', async () => {
+    const { fetchImpl, urls } = recordingFetch();
+    const client = new StackRabbitClient({ fetch: fetchImpl });
+    await client.rateMove(query, midGameBoard(), { playoutCount: 32, playoutLength: 3 });
+    const params = new URL(urls[0]).searchParams;
+    expect(params.get('playoutCount')).toBe('32');
+    expect(params.get('playoutLength')).toBe('3');
+  });
+});
+
 // Integration smoke test — exercises the real HTTP client against a live local
 // StackRabbit (the engine client is I/O, so it is covered here rather than by
 // mocked unit tests; see docs/PRD-v1.md "Testing Decisions"). Skipped cleanly

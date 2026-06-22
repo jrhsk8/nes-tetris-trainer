@@ -21,7 +21,7 @@ import {
   type Line,
 } from '@trainer/core';
 import type { DataAccess, NewPuzzle, Puzzle } from '@trainer/data';
-import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
+import type { EngineMove, MoveQuery, RateMoveOptions, RateMoveResult } from '../engine/client.js';
 import { passesGeometricPrefilter } from '../quality/filters.js';
 import type { BoardSource, Candidate } from '../selfplay/board-source.js';
 import {
@@ -33,7 +33,13 @@ import {
   rankCombosBySanity,
   sweepCombos,
   type ComboContext,
+  type ScoredCombo,
 } from './combo.js';
+import {
+  deeperConfirmBest,
+  DEFAULT_DEEPER_CONFIRM,
+  type DeeperConfirmConfig,
+} from './deeper.js';
 import {
   difficultyFromScores,
   seedRatingFor,
@@ -46,7 +52,11 @@ import { isNearDuplicate, type BankKey } from './dedup.js';
 /** The engine surface the pipeline needs (best move + move rating). */
 export interface GeneratorEngine {
   getBestMove(query: MoveQuery): Promise<EngineMove | null>;
-  rateMove(query: MoveQuery, playerBoardAfter: Grid): Promise<RateMoveResult>;
+  rateMove(
+    query: MoveQuery,
+    playerBoardAfter: Grid,
+    options?: RateMoveOptions,
+  ): Promise<RateMoveResult>;
 }
 
 /** Tuning for the v2 combo gates (#40). */
@@ -85,6 +95,14 @@ export interface GenerationConfig {
    * accepted puzzle.
    */
   dedupMaxHamming: number;
+  /**
+   * Deeper-StackRabbit best-confirm gate (#53). After the sweep + #50 gate, the
+   * top contenders are re-valued with a deeper (`playoutCount > 0`) search; the
+   * eval-only optimal is confirmed, re-ranked to the deeper-best, or the puzzle
+   * rejected as an eval-only quirk. `null` disables the gate (eval-only optimal,
+   * the legacy behaviour — useful for offline/no-engine tests).
+   */
+  deeperConfirm: DeeperConfirmConfig | null;
 }
 
 export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
@@ -104,6 +122,8 @@ export const DEFAULT_GENERATION_CONFIG: GenerationConfig = {
   // is configurable so a more permissive timeline can be tuned in there.
   valuationTimeline: 'X.....',
   dedupMaxHamming: 4,
+  // Deeper-confirm the eval-only optimal on every survivor (#53).
+  deeperConfirm: DEFAULT_DEEPER_CONFIRM,
 };
 
 /** Outcome of trying to assemble a puzzle from one candidate. */
@@ -159,7 +179,30 @@ export async function assemblePuzzle(
   // strictly-worse board than a cleaner alternative. Past the gate, rank-1 equals
   // the engine's value-best (it is Pareto-clean), so the optimal is unchanged.
   const ranked = rankCombosBySanity(combos);
-  const best = ranked[0];
+
+  // 3c. Deeper-StackRabbit best-confirm gate (#53): re-value the top contenders
+  //     with a deeper (playoutCount > 0) search. Confirm the eval-only optimal,
+  //     re-rank to the deeper-confirmed best, or reject an eval-only quirk.
+  let best = ranked[0];
+  let ordered: readonly ScoredCombo[] = ranked;
+  if (config.deeperConfirm) {
+    const decision = await deeperConfirmBest(
+      engine,
+      ctx,
+      ranked,
+      config.valuationTimeline,
+      config.deeperConfirm,
+    );
+    if (decision.kind === 'reject') return { ok: false, reason: decision.reason };
+    if (decision.kind === 'reranked') {
+      // Promote the deeper-confirmed combo to rank-1. Anchor its value at the
+      // sweep's max so it normalizes to 100 (rank-1 invariant) and the rest of
+      // the dominance-ranked table follows it, non-increasing.
+      const maxValue = Math.max(...ranked.map((c) => c.value));
+      best = { ...decision.best, value: maxValue };
+      ordered = [best, ...ranked.filter((c) => c !== decision.best)];
+    }
+  }
 
   // 4. Narrowed Hz-invariance: the stored optimal must be a genuinely reachable
   //    resting placement (tuck capability granted, not gated — #40). Both pieces
@@ -172,10 +215,10 @@ export async function assemblePuzzle(
   if (!reachable) return { ok: false, reason: 'optimal-unreachable' };
 
   // 5. Normalize to 0–100, derive difficulty + seed rating, and build the table.
-  const scores = normalizedScores(ranked);
+  const scores = normalizedScores(ordered);
   const difficulty = difficultyFromScores(scores);
   const seed = seedRatingFor(difficulty);
-  const table = normalizeCombos(ranked, config.topK);
+  const table = normalizeCombos(ordered, config.topK);
   const optimalLine: Line = [
     { rotation: best.p1.rotation, col: best.p1.col },
     { rotation: best.p2.rotation, col: best.p2.col },

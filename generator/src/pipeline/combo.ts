@@ -28,12 +28,16 @@ import {
   type RestingPlacement,
 } from '@trainer/core';
 import type { ComboEntry, ComboTable } from '@trainer/data';
-import type { EngineMove, MoveQuery, RateMoveResult } from '../engine/client.js';
+import type { EngineMove, MoveQuery, RateMoveOptions, RateMoveResult } from '../engine/client.js';
 
 /** The slice of the engine client combo evaluation needs. */
 export interface ComboEngine {
   getBestMove(query: MoveQuery): Promise<EngineMove | null>;
-  rateMove(query: MoveQuery, playerBoardAfter: Grid): Promise<RateMoveResult>;
+  rateMove(
+    query: MoveQuery,
+    playerBoardAfter: Grid,
+    options?: RateMoveOptions,
+  ): Promise<RateMoveResult>;
 }
 
 /** A candidate position: a board plus the two pieces to place and its context. */
