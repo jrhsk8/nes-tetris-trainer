@@ -21,11 +21,16 @@ await run({
   // sandbox at the start of each iteration, so the agent always sees fresh data.
   promptFile: "./.sandcastle/prompt.md",
 
-  // Maximum number of iterations (agent invocations) to run in a session.
-  // Each iteration works on a single issue. ~10 actionable issues remain; 25
-  // leaves headroom for retries/blocked-then-unblocked re-picks. The run also
-  // stops early when the prompt emits <promise>COMPLETE</promise>.
-  maxIterations: 25,
+  // Maximum number of iterations (agent invocations) per process. Pinned to 1
+  // so each issue runs in a FRESH process: the agent's accumulated context — and
+  // its RAM footprint — resets to baseline after every issue instead of climbing
+  // across iterations. This caps WSL's peak memory and is what stops a long
+  // backlog from OOM-killing the agent (and cascading into the host). It also
+  // means each issue's work merges back to HEAD as soon as that process exits,
+  // so a crash on a later issue can't strand earlier ones. The AFK wrapper
+  // (.sandcastle/run-afk.sh) relaunches a fresh process per issue up to
+  // MAX_RESTARTS (40), and stops early when the backlog is drained.
+  maxIterations: 1,
 
   // Branch strategy — merge-to-head creates a temporary branch for the agent
   // to work on, then merges the result back to HEAD when the run completes.

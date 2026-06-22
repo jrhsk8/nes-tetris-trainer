@@ -18,13 +18,13 @@
 # so Windows gets the RAM back promptly instead of hours later.
 #
 # Usage:   bash .sandcastle/run-afk.sh
-# Tunables (env): MAX_RESTARTS (default 6), MAX_CONSEC_FAIL (default 3)
+# Tunables (env): MAX_RESTARTS (default 40), MAX_CONSEC_FAIL (default 3)
 set -uo pipefail
 
 REPO="$HOME/nes-tetris-trainer"
 cd "$REPO" || { echo "repo not found: $REPO" >&2; exit 1; }
 
-MAX_RESTARTS="${MAX_RESTARTS:-6}"
+MAX_RESTARTS="${MAX_RESTARTS:-40}"
 MAX_CONSEC_FAIL="${MAX_CONSEC_FAIL:-3}"
 
 RUN_TS="$(date +%Y%m%d-%H%M%S)"
