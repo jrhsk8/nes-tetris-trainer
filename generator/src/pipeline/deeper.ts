@@ -21,6 +21,7 @@
 
 import { applyRestingPlacement } from '@trainer/core';
 import type { MoveQuery } from '../engine/client.js';
+import { CORRECT_GAP_MARGIN } from './combo.js';
 import type { ComboContext, ComboEngine, ScoredCombo } from './combo.js';
 
 /** Tuning for the deeper-confirm gate (#53). */
@@ -43,6 +44,18 @@ export interface DeeperConfirmConfig {
    * than {@link rerankMargin}.
    */
   rejectMargin: number;
+  /**
+   * Eval/deeper rank-1 **inversion** cull (#59, puzzle 436). Even when the deeper
+   * search edges the eval-only pick by less than {@link rerankMargin} (normally
+   * treated as noise), if eval-only ranked that deeper-best combo more than this
+   * many eval units below its own #1 — far enough to grade it INCORRECT — the
+   * eval scoring is miscalibrated for the position: a mirror near-tie the engine
+   * broke the wrong way, where eval-only would fail the genuinely-best line.
+   * Reject rather than bank a mis-grading optimal. Defaults to the grading
+   * margin (`CORRECT_GAP_MARGIN`) so "the deeper-best is one eval grades wrong"
+   * is exactly the trigger.
+   */
+  evalInversionGap: number;
 }
 
 export const DEFAULT_DEEPER_CONFIRM: DeeperConfirmConfig = {
@@ -57,13 +70,16 @@ export const DEFAULT_DEEPER_CONFIRM: DeeperConfirmConfig = {
   // is real signal, a large gap means the eval-only pick was badly wrong.
   rerankMargin: 2,
   rejectMargin: 12,
+  // The deeper-best must beat the grading bar in eval units: if eval-only scored
+  // it as a miss yet the deeper search calls it best, the position is unbankable.
+  evalInversionGap: CORRECT_GAP_MARGIN,
 };
 
 /** The verdict of {@link deeperConfirmBest}. */
 export type DeeperDecision =
   | { kind: 'confirmed'; best: ScoredCombo }
   | { kind: 'reranked'; best: ScoredCombo }
-  | { kind: 'reject'; reason: string };
+  | { kind: 'reject'; reason: 'deeper-quirk' | 'eval-inversion' | 'deeper-no-combos' };
 
 /**
  * Re-value the top-N eval-ranked combos with a deeper StackRabbit search and
@@ -122,5 +138,14 @@ export async function deeperConfirmBest(
   const delta = (deep.get(deepBest) ?? 0) - (deep.get(evalBest) ?? 0);
   if (delta >= config.rejectMargin) return { kind: 'reject', reason: 'deeper-quirk' };
   if (delta >= config.rerankMargin) return { kind: 'reranked', best: deepBest };
+  // Sub-rerankMargin disagreement: the deeper search edges a different combo by
+  // only a hair — normally noise, keep the eval pick. But if eval-only had ranked
+  // that deeper-best far enough down to grade it INCORRECT, the eval scoring is
+  // miscalibrated for this position (a mirror near-tie broken the wrong way, #59
+  // puzzle 436): banking it would fail the genuinely-best line. Reject.
+  const evalGapOfDeepBest = evalBest.value - deepBest.value;
+  if (evalGapOfDeepBest > config.evalInversionGap) {
+    return { kind: 'reject', reason: 'eval-inversion' };
+  }
   return { kind: 'confirmed', best: evalBest };
 }

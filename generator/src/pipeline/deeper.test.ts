@@ -95,7 +95,8 @@ describe('deeperConfirmBest (#53)', () => {
   });
 
   it('treats a sub-margin disagreement as noise and keeps the eval-only pick', async () => {
-    // B beats A by only 1 deeper unit: below rerankMargin → confirmed.
+    // B beats A by only 1 deeper unit: below rerankMargin, and B's eval value
+    // (98) is within CORRECT_GAP_MARGIN of A (100) → a true near-tie → confirmed.
     const engine = deepEngine(
       new Map([
         [a.board2, 100],
@@ -106,6 +107,24 @@ describe('deeperConfirmBest (#53)', () => {
     const decision = await deeperConfirmBest(engine, ctx, ranked, 'X.....');
     expect(decision.kind).toBe('confirmed');
     if (decision.kind !== 'reject') expect(decision.best).toBe(a);
+  });
+
+  it('rejects an eval/deeper rank-1 inversion: the deeper-best is one eval-only graded incorrect (#59, puzzle 436)', async () => {
+    // The 436 signature: eval-only crowns A; the deeper search edges to C by a
+    // sub-rerankMargin hair (1 unit), but eval-only ranked C 50 units down — far
+    // enough to grade it INCORRECT. The eval scoring is miscalibrated for this
+    // position (a mirror near-tie the engine broke the wrong way), so banking it
+    // would mis-grade the genuinely-best line. Reject rather than confirm A.
+    const engine = deepEngine(
+      new Map([
+        [a.board2, 100],
+        [b.board2, 10],
+        [c.board2, 101], // C edges A by 1 deeper unit, but its eval value is 50
+      ]),
+    );
+    const decision = await deeperConfirmBest(engine, ctx, ranked, 'X.....');
+    expect(decision.kind).toBe('reject');
+    if (decision.kind === 'reject') expect(decision.reason).toBe('eval-inversion');
   });
 
   it('keeps the eval-only pick when the deeper search cannot value it', async () => {
