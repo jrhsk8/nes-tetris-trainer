@@ -255,13 +255,14 @@ describe('PlacementInput', () => {
     expect(keysOf(landed)).toEqual(landingKeys());
   });
 
-  it('a lateral press is a pure one-column shift, blocked by a wall — no row teleport (#81)', async () => {
+  it('a settled piece slides onto a higher neighbour by riding up its surface (#81)', async () => {
     const user = userEvent.setup();
     // A tall wall fills col 9 from row 8 down; col 8 is an open well. Soft-drop a
-    // vertical I to the floor of col 8, then press RIGHT toward the wall. Pure
-    // translation: col 9 is blocked at this row, so the press does nothing and the
-    // piece stays in the well — it does NOT teleport up to ride the wall (the old
-    // tuck-seek/ride-up rule, removed in #81 because the row jumps were opaque).
+    // vertical I to the floor of col 8, then press RIGHT toward the wall. The piece
+    // is settled LOW, so it cannot translate across at that row — instead it rides
+    // UP the wall's surface and rests ON TOP of it (rows 4..7). This is the owner's
+    // "a dropped piece should still slide left/right easily" fix: a single press
+    // climbs onto the neighbour rather than stalling against it.
     const board = emptyBoard();
     for (let r = 8; r < 20; r++) board[r][9] = 1;
     const onConfirm = vi.fn<(p: Placement) => void>();
@@ -271,23 +272,23 @@ describe('PlacementInput', () => {
     await user.keyboard('x'); // vertical I
     for (let i = 0; i < 5; i++) await user.keyboard('{ArrowRight}'); // walk to col 8 well
     for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop to the floor
-    await user.keyboard('{ArrowRight}'); // press toward the wall — blocked, stays put
+    await user.keyboard('{ArrowRight}'); // press toward the wall — rides up onto it
+    expect(landingKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
     await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const landed = restingCells(board, 'I', onConfirm.mock.calls[0][0])!;
-    // Still in the col-8 well, not teleported onto the wall.
-    expect(keysOf(landed)).toEqual(new Set(['16-8', '17-8', '18-8', '19-8']));
+    // Seated on top of the wall, reached by a single lateral press.
+    expect(keysOf(landed)).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
     expect(keysOf(landed)).toEqual(landingKeys());
   });
 
-  it('seats on top of a wall by lifting over it, then shifting on (#81)', async () => {
+  it('slides freely both ways: rides up onto a wall, then back down into the well (#81)', async () => {
     const user = userEvent.setup();
-    // col-9 wall, rows 8-19. With gravity-on-shift the piece walks the floor, so
-    // moving right settles it in the col-8 well — it cannot slide onto the wall at
-    // that low row. To rest ON the wall you lift it above the wall top (▲), then
-    // shift right: it falls onto the wall (rows 4..7). The active piece then shows
-    // the seated landing.
+    // col-9 wall (rows 8-19), col-8 well. From the well floor, RIGHT rides up onto
+    // the wall (rows 4..7); LEFT then slides straight back off it and falls into
+    // the col-8 well (rows 16..19). A settled piece moves freely in both directions
+    // with single presses — never stuck against the bump.
     const board = emptyBoard();
     for (let r = 8; r < 20; r++) board[r][9] = 1;
     const onConfirm = vi.fn<(p: Placement) => void>();
@@ -295,15 +296,17 @@ describe('PlacementInput', () => {
 
     await user.click(screen.getByLabelText('placement input'));
     await user.keyboard('x'); // vertical I
-    for (let i = 0; i < 9; i++) await user.keyboard('{ArrowRight}'); // walk to the col-8 well floor
-    for (let i = 0; i < 16; i++) await user.keyboard('{ArrowUp}'); // lift above the wall top
-    await user.keyboard('{ArrowRight}'); // shift onto col 9 — falls to rest on the wall
+    for (let i = 0; i < 5; i++) await user.keyboard('{ArrowRight}'); // walk to col 8 well
+    for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop to the floor
+    await user.keyboard('{ArrowRight}'); // ride up onto the wall
     expect(landingKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
+    await user.keyboard('{ArrowLeft}'); // slide back off — falls into the well
+    expect(landingKeys()).toEqual(new Set(['16-8', '17-8', '18-8', '19-8']));
     await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const landed = restingCells(board, 'I', onConfirm.mock.calls[0][0])!;
-    expect(keysOf(landed)).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
+    expect(keysOf(landed)).toEqual(new Set(['16-8', '17-8', '18-8', '19-8']));
   });
 
   // jsdom has no PointerEvent (and drops clientX from a synthetic one). A

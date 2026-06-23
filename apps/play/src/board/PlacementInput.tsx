@@ -6,14 +6,17 @@
  * *beside* an overhang, then shift it one column **under** the overhang, and
  * lock.
  *
- * The input model is deliberately NES-faithful and fully predictable (#81): a
- * left/right press is a **pure one-column translation at the current row** — it
- * never teleports the piece to another row to "seek" a pocket (the old
- * {@link moveToColumn} tuck-seek rule, whose row jumps made the maneuver
- * inscrutable). Up/down move one row. Because the active piece is drawn where you
- * are flying it (not only its landing), soft-dropping visibly carries it down
- * beside the wall, and the slide-under reads as a single sideways step — so the
- * tuck is something you can see and discover, not a hidden incantation.
+ * The input model is deliberately NES-faithful and predictable (#81): a
+ * left/right press shifts ONE column, then the piece settles by gravity to the
+ * nearest resting spot in that column — sliding straight across (and tucking
+ * under an overhang) when it fits at the current row, or **riding up** the
+ * neighbour's surface by a single step when that column is higher, so a settled
+ * piece slides freely across the whole board instead of stalling at the first
+ * bump. It never jumps to a far high pocket. Up/down move one row. Because the
+ * active piece is drawn where you are flying it (not only its landing),
+ * soft-dropping visibly carries it down beside the wall, and the slide-under
+ * reads as a single sideways step — so the tuck is something you can see and
+ * discover, not a hidden incantation.
  *
  * Every move is gated on the {@link reachableStates} set — the SAME BFS the
  * generator enumerates placements with — so a confirmable position always
@@ -149,23 +152,39 @@ export function PlacementInput({
     [piece, rotation, restRow, col],
   );
 
-  // Lateral movement (#81): shift one column at the current row, then let the
-  // piece FALL to rest in that column (gravity). So moving across the top walks
-  // the piece along the stack's surface, and moving into an open well drops it in
-  // — no manual soft-dropping. A tuck is then just: walk the piece into the well
-  // beside the overhang and press once more toward it; from that low row the shift
-  // slides UNDER the overhang and rests in the pocket. The shift itself is a pure
-  // one-column step gated on the reachable set (no teleport to a far pocket); only
-  // the settle that follows changes the row, by ordinary gravity. Blocked when the
-  // adjacent column is filled at this row (lift with ▲ to clear it).
+  // One lateral step into the adjacent column `dir`, settled to the nearest
+  // reachable resting spot there (#81). Two behaviours fall out of one rule:
+  //   - If the piece fits at the CURRENT row in the target column, slide straight
+  //     across at that level (and then fall by gravity into any well) — this
+  //     preserves the tuck: from the low row beside an overhang the shift slides
+  //     UNDER it into the pocket.
+  //   - Otherwise the neighbour's surface is higher (a bump or a wall), so RIDE UP
+  //     to the lowest reachable row in that column and rest on its surface — so a
+  //     settled piece always slides freely across the board instead of stalling
+  //     against the first bump (the owner's "it should slide like it used to").
+  // The ride-up climbs only to the column's surface (the first reachable row going
+  // up), never jumping to a far high pocket. Returns the new (row, col), or null if
+  // the column is off-board or unreachable at any depth from here.
+  const slideStep = useCallback(
+    (rot: number, r: number, c: number, dir: -1 | 1): { row: number; col: number } | null => {
+      const nc = c + dir;
+      if (nc < 0 || nc >= COLS) return null;
+      let nr = r;
+      while (nr >= 0 && !canReach(rot, nr, nc)) nr--;
+      if (nr < 0) return null;
+      return { col: nc, row: settleRow(board, piece, rot, nr, nc) };
+    },
+    [canReach, board, piece],
+  );
+
   const lateral = useCallback(
     (dir: -1 | 1) => {
-      const c = col + dir;
-      if (!canReach(rotation, row, c)) return;
-      setCol(c);
-      setRow(settleRow(board, piece, rotation, row, c));
+      const next = slideStep(rotation, row, col, dir);
+      if (!next) return;
+      setCol(next.col);
+      setRow(next.row);
     },
-    [canReach, board, piece, rotation, row, col],
+    [slideStep, rotation, row, col],
   );
 
   const moveLeft = useCallback(() => lateral(-1), [lateral]);
@@ -197,18 +216,25 @@ export function PlacementInput({
       const lo = -minC;
       const hi = COLS - 1 - maxC;
       const targetCol = Math.min(hi, Math.max(lo, fingerCol - Math.round((minC + maxC) / 2)));
-      // Walk toward the finger as far as the piece can slide at the current row
-      // (#81): one column at a time while the next still fits, stopping at the
-      // first wall, then let it fall to rest in that column — matching keyboard L/R.
+      // Walk toward the finger one column at a time using the SAME shift-then
+      // -settle rule as keyboard L/R (#81): each step rides up over any bump and
+      // falls to rest, so the piece tracks the finger across the whole surface
+      // (climbing walls, dropping into wells) instead of stalling at the first bump.
       const step = targetCol > col ? 1 : -1;
       let c = col;
-      while (c !== targetCol && canReach(rotation, row, c + step)) c += step;
+      let r = row;
+      while (c !== targetCol) {
+        const next = slideStep(rotation, r, c, step);
+        if (!next) break;
+        c = next.col;
+        r = next.row;
+      }
       if (c !== col) {
         setCol(c);
-        setRow(settleRow(board, piece, rotation, row, c));
+        setRow(r);
       }
     },
-    [canReach, board, piece, rotation, row, col],
+    [slideStep, rotation, row, col],
   );
 
   const onPointerDown = useCallback(
