@@ -1,26 +1,30 @@
 /**
- * Free-positioning ghost input (#10, #43, #56) — the player manoeuvres a ghost
- * of `piece` to any collision-reachable resting position and confirms it. Unlike
- * the old column-only ghost this can express **tucks and spins**: there is no
- * timer, and the moves (left, right, rotate, soft-drop, and the soft-drop
- * inverse "move up") are gated on the engine-shared reachability model, so the
- * player can soft-drop into an open well and slide the piece UNDER an overhang
- * before locking.
+ * Free-positioning input (#10, #43, #56, #81) — the player flies the **active
+ * piece** itself (drawn solid) to any collision-reachable resting position and
+ * confirms it, with a dimmer **drop-shadow** marking where it would land. This
+ * expresses **tucks and spins**: soft-drop the active piece down an open well
+ * *beside* an overhang, then shift it one column **under** the overhang, and
+ * lock.
  *
- * The reachable floating states come from {@link reachableStates} — the SAME BFS
- * the generator enumerates placements with — so the set of positions the player
- * can confirm matches the generator's reachability cell-for-cell (parity, #56).
- * Crucially `move up` (the inverse of soft-drop) is included: soft-drop alone is
- * irreversible, so overshooting the one row where a tuck/spin slides in used to
- * strand the piece with no way back. Every move simply walks to an adjacent
- * reachable state; it can never escape the reachable set, so it can never reach
- * a placement the generator did not enumerate.
+ * The input model is deliberately NES-faithful and fully predictable (#81): a
+ * left/right press is a **pure one-column translation at the current row** — it
+ * never teleports the piece to another row to "seek" a pocket (the old
+ * {@link moveToColumn} tuck-seek rule, whose row jumps made the maneuver
+ * inscrutable). Up/down move one row. Because the active piece is drawn where you
+ * are flying it (not only its landing), soft-dropping visibly carries it down
+ * beside the wall, and the slide-under reads as a single sideways step — so the
+ * tuck is something you can see and discover, not a hidden incantation.
  *
- * The piece has a floating position `(rotation, row, col)`; the ghost is drawn
- * where it would currently land (the floating position dropped straight to
- * rest), and confirming emits exactly that resting placement (carrying its
- * `row`, so a tuck is pinned and not re-dropped onto the ledge). What you see is
- * what you get.
+ * Every move is gated on the {@link reachableStates} set — the SAME BFS the
+ * generator enumerates placements with — so a confirmable position always
+ * matches the generator's reachability cell-for-cell (parity, #56), and a pure
+ * translation from a reachable state stays in that set. `move up` (the inverse of
+ * soft-drop) lets an overshoot be undone.
+ *
+ * The active piece floats at `(rotation, row, col)`; the drop-shadow is drawn
+ * where it would land (the floating position dropped straight to rest), and
+ * confirming emits exactly that resting placement (carrying its `row`, so a tuck
+ * is pinned and not re-dropped onto the ledge). What you see is what you get.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,8 +33,6 @@ import {
   ROWS,
   ORIENTATIONS,
   fitsAt,
-  lateralMove,
-  moveToColumn,
   pieceCells,
   reachableStates,
   type ColorGrid,
@@ -112,13 +114,26 @@ export function PlacementInput({
     for (const s of reachableList) set.add(stateKey(s.rotation, s.row, s.col));
     return set;
   }, [reachableList]);
+  // Bounds-check before hashing (#81): `stateKey` packs (rot,row,col) assuming
+  // each is in range, so an out-of-range row/col (e.g. a pure-translation press
+  // toward col -1/COLS) would ALIAS a valid in-range state and falsely read as
+  // reachable. Reject out-of-range coordinates up front so a move can never walk
+  // the piece off the board.
   const canReach = useCallback(
-    (rot: number, r: number, c: number) => reachable.has(stateKey(rot, r, c)),
+    (rot: number, r: number, c: number) =>
+      r >= 0 && r < ROWS && c >= 0 && c < COLS && reachable.has(stateKey(rot, r, c)),
     [reachable],
   );
 
-  // Where the piece would land from its current floating position — what the
-  // ghost shows and what `confirm` emits (the displayed rest, pinned by `row`).
+  // The active piece itself, drawn solid where the player is currently flying it
+  // (#81) — so soft-drop visibly carries it down beside an overhang and a shift
+  // reads as a sideways step into the pocket.
+  const activeCells = useMemo(
+    () => pieceCells(piece, rotation, row, col),
+    [piece, rotation, row, col],
+  );
+  // Where the piece would land from its current floating position — the drop
+  // -shadow, and what `confirm` emits (the displayed rest, pinned by `row`).
   const restRow = useMemo(
     () => settleRow(board, piece, rotation, row, col),
     [board, piece, rotation, row, col],
@@ -128,20 +143,16 @@ export function PlacementInput({
     [piece, rotation, restRow, col],
   );
 
-  // Tuck-seeking lateral movement (#76, #68): a press moves to the reachable
-  // position in the target column NEAREST the current row, preferring at-or-below
-  // — so it tucks INTO a pocket instead of ejecting to the column top; it rides
-  // up only when nothing at-or-below is reachable. Blocked only when the target
-  // column is full to the top or the move would go off-screen. {@link lateralMove}
-  // picks from the reachable set, so the superset binding invariant holds.
+  // Lateral movement (#81): a pure one-column translation at the current row —
+  // move iff the piece still fits one column over (a reachable state). No row
+  // teleport: to tuck, soft-drop beside the overhang first, THEN shift under. This
+  // replaces the old tuck-seeking rule whose row jumps made the maneuver opaque.
   const lateral = useCallback(
     (dir: -1 | 1) => {
-      const next = lateralMove(board, piece, rotation, row, col, dir, reachableList);
-      if (!next) return;
-      setCol(next.col);
-      setRow(next.row);
+      const c = col + dir;
+      if (canReach(rotation, row, c)) setCol(c);
     },
-    [board, piece, rotation, row, col, reachableList],
+    [canReach, rotation, row, col],
   );
 
   const moveLeft = useCallback(() => lateral(-1), [lateral]);
@@ -172,13 +183,15 @@ export function PlacementInput({
       const lo = -minC;
       const hi = COLS - 1 - maxC;
       const targetCol = Math.min(hi, Math.max(lo, fingerCol - Math.round((minC + maxC) / 2)));
-      const next = moveToColumn(board, piece, rotation, row, targetCol, reachableList);
-      if (next) {
-        setCol(next.col);
-        setRow(next.row);
-      }
+      // Translate toward the finger as far as the piece can slide at the current
+      // row (#81): one column at a time while the next still fits, stopping at the
+      // first wall. Pure translation — no row teleport — matching keyboard L/R.
+      const step = targetCol > col ? 1 : -1;
+      let c = col;
+      while (c !== targetCol && canReach(rotation, row, c + step)) c += step;
+      if (c !== col) setCol(c);
     },
-    [board, piece, rotation, row, reachableList],
+    [canReach, piece, rotation, row, col],
   );
 
   const onPointerDown = useCallback(
@@ -289,7 +302,14 @@ export function PlacementInput({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <Board grid={board} colorGrid={colorGrid} ghostCells={ghostCells} ghostPiece={piece} />
+        <Board
+          grid={board}
+          colorGrid={colorGrid}
+          ghostCells={ghostCells}
+          ghostPiece={piece}
+          activeCells={activeCells}
+          activePiece={piece}
+        />
       </div>
       <div className="placement-controls" role="group" aria-label="placement controls">
         <button type="button" onClick={moveLeft} aria-label="Move left">

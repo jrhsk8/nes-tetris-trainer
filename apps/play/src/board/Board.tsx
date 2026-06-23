@@ -28,8 +28,16 @@ export interface BoardProps {
    * sprite; `0` / out-of-range / absent falls back to the white group.
    */
   colorGrid?: ColorGrid;
-  /** Cells to draw as the piece being positioned. */
+  /** Cells of the drop-shadow: where the positioned piece would land. */
   ghostCells?: readonly Cell[];
+  /**
+   * Cells of the **active piece** the player is flying (#81): drawn as a solid,
+   * bright sprite (a light inset edge sets it apart from a locked block), so
+   * soft-dropping visibly carries it down and a tuck reads as a sideways step.
+   */
+  activeCells?: readonly Cell[];
+  /** Colour the active piece as this piece (defaults to the white group). */
+  activePiece?: Piece;
   /** Cells to draw as a highlight (e.g. the optimal placement in feedback). */
   highlightCells?: readonly Cell[];
   /** Colour the ghost cells as this piece (defaults to the white group). */
@@ -62,14 +70,18 @@ export function Board({
   grid,
   colorGrid,
   ghostCells = [],
+  activeCells = [],
+  activePiece,
   highlightCells = [],
   ghostPiece,
   highlightPiece,
   overlay,
 }: BoardProps) {
   const ghost = new Set(onBoard(ghostCells).map(([r, c]) => keyOf(r, c)));
+  const active = new Set(onBoard(activeCells).map(([r, c]) => keyOf(r, c)));
   const highlight = new Set(onBoard(highlightCells).map(([r, c]) => keyOf(r, c)));
   const ghostGroup = ghostPiece ? PIECE_GROUP[ghostPiece] : WHITE_GROUP;
+  const activeGroup = activePiece ? PIECE_GROUP[activePiece] : WHITE_GROUP;
   const highlightGroup = highlightPiece ? PIECE_GROUP[highlightPiece] : WHITE_GROUP;
 
   return (
@@ -104,11 +116,13 @@ export function Board({
           row.map((cell, c) => {
             const state = cell
               ? 'filled'
-              : highlight.has(keyOf(r, c))
-                ? 'highlight'
-                : ghost.has(keyOf(r, c))
-                  ? 'ghost'
-                  : 'empty';
+              : active.has(keyOf(r, c))
+                ? 'active'
+                : highlight.has(keyOf(r, c))
+                  ? 'highlight'
+                  : ghost.has(keyOf(r, c))
+                    ? 'ghost'
+                    : 'empty';
 
             const style: React.CSSProperties = {
               aspectRatio: '1 / 1',
@@ -118,6 +132,12 @@ export function Board({
             if (state === 'filled') {
               const group = (colorGrid?.[r]?.[c] || WHITE_GROUP) as ColorGroup;
               style.backgroundImage = blockBackground(group);
+            } else if (state === 'active') {
+              // The piece being flown (#81): the full bright sprite, with a light
+              // inset edge so it reads as the live, movable piece — distinct from a
+              // locked block (no edge) and the muted drop-shadow (washed down).
+              style.backgroundImage = blockBackground(activeGroup);
+              style.boxShadow = 'inset 0 0 0 2px rgba(255, 255, 255, 0.85)';
             } else if (state === 'ghost') {
               // The piece being positioned (#48): a muted fill — the black well
               // shows through a darkening wash over the piece-colour sprite. The

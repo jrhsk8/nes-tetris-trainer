@@ -209,6 +209,20 @@ export function buildReplay(
       });
     }
 
+    // Hold the piece visibly AT its resting spot for one beat before it locks
+    // (#81): the final move of a tuck is a quick sideways slide into the pocket;
+    // without this beat it vanishes into the static stack the instant it arrives,
+    // so the slide reads as "sits to the side and never moves into place". The
+    // extra frame repeats the rest transform, so it does not animate — it simply
+    // lets the arrival register before the overlay unmounts.
+    keyframes.push({
+      grid: current,
+      colorGrid: currentColors,
+      overlay: { cells: rest, piece, transform: path[path.length - 1] },
+      overlayKey: i,
+      label,
+    });
+
     if (cleared.length) {
       keyframes.push({
         grid: preClear,
