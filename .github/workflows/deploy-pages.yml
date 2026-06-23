@@ -2,7 +2,7 @@
 #
 # DEFERRED / MANUAL ONLY: this workflow is triggered by hand (workflow_dispatch),
 # never automatically on push, so enabling Pages and the first deploy stay a
-# deliberate, reviewed step. See docs/DEPLOY.md.
+# deliberate, reviewed step. See .claude/docs/DEPLOY.md.
 #
 # Required repository configuration before the first run:
 #   - Settings → Pages → Source: GitHub Actions.

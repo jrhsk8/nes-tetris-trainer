@@ -1,5 +1,5 @@
 /**
- * Puzzle session flow (#11, #35) — the headline play loop (docs/PRD-v1.md
+ * Puzzle session flow (#11, #35) — the headline play loop (.claude/docs/PRD-v1.md
  * "Solution", user stories 1-10). Presents the board with the current and next
  * piece, captures placement 1, then presents the second piece with NO lookahead
  * and captures placement 2, grades the whole two-piece combo (#34), updates the

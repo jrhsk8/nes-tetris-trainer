@@ -1,7 +1,7 @@
 /**
  * Ranked combo list (#35) — replaces the per-ply strip-plot chart (#29). A
  * stacked, ranked list of the puzzle's top-5 two-piece combos with their grades
- * (letter + one-decimal score, #60; docs/glossary.md "Ranked combo list"). The
+ * (letter + one-decimal score, #60; .claude/docs/glossary.md "Ranked combo list"). The
  * player's own combo is highlighted in-list when it is among the top-5;
  * otherwise a row below shows its
  * exact rank + score (ranks 6–30) or "too low to rank" (beyond the stored

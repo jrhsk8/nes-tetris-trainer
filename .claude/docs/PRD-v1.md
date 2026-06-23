@@ -1,8 +1,8 @@
 # PRD — NES Tetris Stacking Trainer (v1)
 
-> Status: Draft for implementation. Net-new project (no prior code).
-> Engine prerequisite (StackRabbit) already runs locally as an **offline** tool.
-> Companion context: handoff notes for the puzzle site and for the StackRabbit setup.
+> The v1 spec. Implemented and live; later decisions that supersede parts of this
+> doc are logged in [decisions.md](decisions.md) (noted inline where they apply).
+> Engine prerequisite (StackRabbit) runs locally as an **offline** tool.
 
 ---
 
@@ -16,7 +16,7 @@ I want a trainer that:
 2. Tells me whether I was right, and shows me the better line when I'm wrong.
 3. Tracks my stacking skill as a single number that visibly goes up as I improve, so I can see progress.
 
-There is no codebase yet. The StackRabbit engine is already installed and queryable locally, but only as a backend evaluation tool — it does not play a live game and is never deployed to users.
+The StackRabbit engine is used as a backend evaluation tool only — it does not play a live game and is never deployed to users.
 
 ## Solution
 

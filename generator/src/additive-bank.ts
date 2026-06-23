@@ -6,7 +6,7 @@
  * destructive re-bank).
  *
  * Target total is `BANK_TARGET` (env), defaulting to 1000 (the owner-set target,
- * docs/decisions.md 2026-06-22 → grill #6). The deficit (target − current count)
+ * .claude/docs/decisions.md 2026-06-22 → grill #6). The deficit (target − current count)
  * is the survivor target; 1000 is a hard ceiling — the run never generates
  * unbounded. New candidates are deduped against the existing bank (#40), so an
  * append never duplicates a stored board.

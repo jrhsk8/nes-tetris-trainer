@@ -3,7 +3,7 @@
  * a sample of real bank puzzles and reports the raw StackRabbit eval `value` gaps
  * from rank-1 to rank-2 / 3 / 5 / 10 and to the worst legal combo. The observed
  * distribution is what `MARGIN` (the largest gap still graded correct) and `k`
- * (the display slope) are chosen from — not a guess (docs/decisions.md #47).
+ * (the display slope) are chosen from — not a guess (.claude/docs/decisions.md #47).
  *
  *   npx tsx generator/src/gap-sample.ts [sampleSize]
  */

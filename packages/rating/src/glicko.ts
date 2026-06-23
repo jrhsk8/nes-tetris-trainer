@@ -1,7 +1,7 @@
 /**
  * Rating glue (#6) — the thin custom layer mapping a puzzle outcome to a
  * Glicko-2 update for both the player and the puzzle, and persisting the
- * player's new rating (docs/PRD-v1.md, "Rating").
+ * player's new rating (.claude/docs/PRD-v1.md, "Rating").
  *
  * The Glicko-2 math is off-the-shelf (`glicko2-lite`); the only custom code is
  * the outcome -> match-result mapping and the persistence wiring.
@@ -24,7 +24,7 @@ export const GLICKO_TAU = 0.5;
 // curve is gentle above the accept bar (a near-best answer earns a little) and
 // steeper below it (a real miss is docked harder than a near-miss is rewarded),
 // floored so a single bad answer can't tank a rating. Knots are named constants
-// so the curve stays tunable. See docs/decisions.md (2026-06-21 — Consensus bank).
+// so the curve stays tunable. See .claude/docs/decisions.md (2026-06-21 — Consensus bank).
 
 /** Player-perspective Glicko outcome for a neutral answer (no rating change). */
 export const NEUTRAL_OUTCOME = 0.5;

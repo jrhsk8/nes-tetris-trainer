@@ -6,7 +6,7 @@
  * wires the real query (see {@link createDataAccess}); the play app supplies the
  * player's rating and the cooldown window of just-played ids.
  *
- * Domain: docs/glossary.md "Matchmaking" / "Anti-repeat cooldown".
+ * Domain: .claude/docs/glossary.md "Matchmaking" / "Anti-repeat cooldown".
  */
 
 import type { Puzzle } from './types.js';
@@ -69,7 +69,7 @@ export async function selectMatchmadePuzzle(
  * recently-attempted DISTINCT puzzle ids, newest-first — the sliding window fed
  * to {@link selectMatchmadePuzzle} as `recentIds`. Pure so the derivation is
  * testable without a live Supabase, and deterministic so a reload reproduces the
- * same window (docs/decisions.md 2026-06-23, grill-with-docs #7).
+ * same window (.claude/docs/decisions.md 2026-06-23, grill-with-docs #7).
  */
 export function distinctRecent(idsNewestFirst: readonly string[], limit: number): string[] {
   const seen = new Set<string>();

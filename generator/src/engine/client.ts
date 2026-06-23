@@ -1,7 +1,7 @@
 /**
  * StackRabbit engine client (#4) — a thin, typed wrapper over the local
  * StackRabbit HTTP server. Used ONLY by the offline generator; the play app
- * never imports this module (see docs/PRD-v1.md, "Architecture" and CLAUDE.md).
+ * never imports this module (see .claude/docs/PRD-v1.md, "Architecture" and CLAUDE.md).
  *
  * It hides three things behind a typed interface: the URL/query-string
  * building, the 200-char board encoding (reusing the board model from #3), and

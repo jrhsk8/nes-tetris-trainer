@@ -3,7 +3,7 @@
  *
  * Brings the LIVE puzzle bank into line with the new standard generation gate:
  * every stored puzzle must be the BetaTetris normal net's #1 piece-1 move
- * (docs/decisions.md, 2026-06-21). It:
+ * (.claude/docs/decisions.md, 2026-06-21). It:
  *
  *   1. Self-backs-up the bank to `puzzles_bak_pre55_<date>` (DDL via psql). No
  *      existing `*_bak_*` table is touched.

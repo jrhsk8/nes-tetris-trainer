@@ -42,7 +42,7 @@ export type PlayDb = Pick<
  * The persistent anti-repeat window (#74): the 200 most-recently-attempted
  * distinct puzzles are excluded from selection so a puzzle returns later, not
  * soon — and, being derived from `attempts`, the exclusion survives reloads
- * (docs/decisions.md 2026-06-23). Replaces the session-only 10-id ring.
+ * (.claude/docs/decisions.md 2026-06-23). Replaces the session-only 10-id ring.
  */
 const RECENT_WINDOW = RECENT_PUZZLE_WINDOW;
 

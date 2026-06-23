@@ -2,7 +2,7 @@
 
 A public, multi-user web app that serves pre-generated **2-ply NES Tetris placement puzzles** and tracks each player's stacking skill with a **Glicko co-rating**. The goal is to train _stacking judgment_ — where to put each piece — independent of execution speed.
 
-> **v1 is a working prototype of the core loop.** See the full spec: [`docs/PRD-v1.md`](docs/PRD-v1.md).
+> **v1 is a working prototype of the core loop.** See the full spec: [`.claude/docs/PRD-v1.md`](.claude/docs/PRD-v1.md).
 
 ## How it works (two decoupled halves)
 
@@ -41,5 +41,5 @@ GitHub Pages project subpath and on the owner's own domain.
 
 ## Status
 
-Net-new — scaffold in place (issue #1). Core puzzle logic, generator pipeline,
-and play UI land in subsequent issues.
+Live at [jrhsk8.github.io/nes-tetris-trainer](https://jrhsk8.github.io/nes-tetris-trainer/) —
+core puzzle logic, generator pipeline, and play UI are all in place. Ongoing work is tracked in GitHub issues.

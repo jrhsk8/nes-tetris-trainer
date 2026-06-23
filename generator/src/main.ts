@@ -1,6 +1,6 @@
 /**
  * Offline generation CLI (#9) — drives the local StackRabbit engine to produce
- * a bank of stored puzzles (docs/PRD-v1.md, "Generation"). Run with:
+ * a bank of stored puzzles (.claude/docs/PRD-v1.md, "Generation"). Run with:
  *
  *   npm run start --workspace @trainer/generator -- --count 20 --max 2000
  *

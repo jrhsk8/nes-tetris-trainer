@@ -9,7 +9,7 @@
  *
  * Pure: no engine, network, or DOM. The play app grades client-side against the
  * bank; the Glicko-2 solved/failed signal is simply {@link ComboResult.correct}.
- * See docs/decisions.md (2026-06-20 "Combo-grading overhaul") and the glossary
+ * See .claude/docs/decisions.md (2026-06-20 "Combo-grading overhaul") and the glossary
  * (*Combo-threshold grading*, *Combo score*, *Verdict*).
  */
 

@@ -1,7 +1,7 @@
 /**
  * Auth wrapper (#13) — a thin typed surface over Supabase Auth so the UI never
  * touches the raw client. Supports email/password plus OAuth (Google and
- * Discord), per docs/PRD-v1.md "Auth".
+ * Discord), per .claude/docs/PRD-v1.md "Auth".
  */
 
 import type { Provider, SupabaseClient, User } from '@supabase/supabase-js';

@@ -1,7 +1,7 @@
 /**
  * Generation pipeline (#9; rewired for v2 in #40) — turn self-play candidates
- * (#8) into stored puzzles (docs/PRD-v1.md "Generation pipeline";
- * docs/decisions.md 2026-06-21).
+ * (#8) into stored puzzles (.claude/docs/PRD-v1.md "Generation pipeline";
+ * .claude/docs/decisions.md 2026-06-21).
  *
  * For each candidate it sweeps the full two-piece combo cross-product over every
  * collision-reachable resting placement (tucks/spins included, #37), values each

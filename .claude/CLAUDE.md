@@ -1,15 +1,15 @@
 # CLAUDE.md
 
-NES Tetris Stacking Trainer — trains **stacking judgment** (where to put each piece), not execution speed. Serves pre-generated **piece / next-piece puzzles** (place two pieces, optimal line known) and tracks skill with a **Glicko-2 co-rating** (player and puzzle both carry a rating). Two fully-decoupled halves: an **offline generator** (Node, drives local StackRabbit) writes a finished puzzle bank into Supabase; a **static React SPA** reads that bank and runs play. Built and live (`jrhsk8.github.io/nes-tetris-trainer`); a UX overhaul is in flight, tracked in GitHub issues (see [docs/decisions.md](docs/decisions.md), 2026-06-20).
+NES Tetris Stacking Trainer — trains **stacking judgment** (where to put each piece), not execution speed. Serves pre-generated **piece / next-piece puzzles** (place two pieces, optimal line known) and tracks skill with a **Glicko-2 co-rating** (player and puzzle both carry a rating). Two fully-decoupled halves: an **offline generator** (Node, drives local StackRabbit) writes a finished puzzle bank into Supabase; a **static React SPA** reads that bank and runs play. Built and live (`jrhsk8.github.io/nes-tetris-trainer`).
 
 Source of truth for spec / architecture / data model: [docs/PRD-v1.md](docs/PRD-v1.md). Domain terms: [docs/glossary.md](docs/glossary.md). Non-PRD decisions: [docs/decisions.md](docs/decisions.md).
 
 ## Commands
 
-- `npm test` — `vitest run`
-- `npm run typecheck` — `tsc --noEmit`
+- `npm test` — Vitest across all workspaces (via `scripts/run-tests.mjs`)
+- `npm run typecheck` — `tsc --build` across all workspaces
 
-Both are placeholders until the toolchain is scaffolded; wire them to the above. No linter/formatter is pinned on purpose (keep the prototype light) — see [docs/decisions.md](docs/decisions.md).
+No linter/formatter is pinned on purpose (keep the prototype light) — see [docs/decisions.md](docs/decisions.md).
 
 ## Layout (single repo, npm workspaces)
 
@@ -36,4 +36,4 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 
 ## Note
 
-This repo is also driven by an autonomous loop (RALPH) that works GitHub issues one at a time — see [.sandcastle/prompt.md](.sandcastle/prompt.md).
+This repo is also driven by an autonomous loop (RALPH) that works GitHub issues one at a time — see [.sandcastle/prompt.md](../.sandcastle/prompt.md).

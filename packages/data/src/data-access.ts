@@ -29,14 +29,14 @@ import type {
   UserRatingRow,
 } from './types.js';
 
-/** Flat seed rating every player and puzzle starts at (docs/PRD-v1.md "Rating"). */
+/** Flat seed rating every player and puzzle starts at (.claude/docs/PRD-v1.md "Rating"). */
 export const SEED_RATING = 1500;
 
 /**
  * The persistent anti-repeat window size (#74): the 200 most-recently-attempted
  * distinct puzzles are excluded from matchmaking so the same puzzles do not
  * recur across sessions. ~20% of the ~1003-puzzle bank, so the finite bank still
- * cycles oldest-first (docs/decisions.md 2026-06-23, grill-with-docs #7).
+ * cycles oldest-first (.claude/docs/decisions.md 2026-06-23, grill-with-docs #7).
  */
 export const RECENT_PUZZLE_WINDOW = 200;
 /** Seed rating deviation. */

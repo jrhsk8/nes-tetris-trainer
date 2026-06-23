@@ -1,5 +1,5 @@
 -- Schema shared by the play app and the offline generator (#2).
--- See docs/PRD-v1.md, "Data model" and "Rating".
+-- See .claude/docs/PRD-v1.md, "Data model" and "Rating".
 --
 -- Apply with: psql "$DATABASE_URL" -f packages/data/schema.sql
 -- Idempotent: safe to re-run.

@@ -1,6 +1,6 @@
 /**
  * Board source (#8) — produces realistic mid-game candidate boards for the
- * generation pipeline (docs/PRD-v1.md, "Generation").
+ * generation pipeline (.claude/docs/PRD-v1.md, "Generation").
  *
  * `BoardSource` is the pluggable abstraction the rest of the pipeline (#9)
  * depends on. Self-play is the only implementation in v1; real-gameplay-derived

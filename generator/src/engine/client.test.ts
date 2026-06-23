@@ -101,7 +101,7 @@ describe('rateMove deeper-search plumbing (#53)', () => {
 
 // Integration smoke test — exercises the real HTTP client against a live local
 // StackRabbit (the engine client is I/O, so it is covered here rather than by
-// mocked unit tests; see docs/PRD-v1.md "Testing Decisions"). Skipped cleanly
+// mocked unit tests; see .claude/docs/PRD-v1.md "Testing Decisions"). Skipped cleanly
 // when no engine is reachable (e.g. CI without the engine), so the build is
 // green either way.
 const baseUrl = process.env.STACKRABBIT_URL ?? DEFAULT_BASE_URL;

@@ -7,7 +7,7 @@
  * normal play. Pure and engine-free, so the selection logic is testable without
  * a live Supabase (the data-access layer feeds them real rows).
  *
- * Domain: docs/glossary.md "Miss replay" / "Miss"; docs/decisions.md 2026-06-23.
+ * Domain: .claude/docs/glossary.md "Miss replay" / "Miss"; .claude/docs/decisions.md 2026-06-23.
  */
 
 /** The minimal attempt shape the miss derivation reads (ascending by created_at). */

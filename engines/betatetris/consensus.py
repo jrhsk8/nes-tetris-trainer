@@ -9,7 +9,7 @@ two-phase adjustment cadence, the convention-free 200-char outcome keys) but
 emits a per-puzzle keep/drop **verdict** instead of an aggregate keep-rate, and
 runs the **normal net only** — the `perfect` net is off-objective for a general
 stacking trainer (it is trained for maxout/killscreen tetris-only play) and is
-dropped from the standard path (docs/decisions.md, 2026-06-21).
+dropped from the standard path (.claude/docs/decisions.md, 2026-06-21).
 
 **Fail-closed:** a puzzle BetaTetris cannot cleanly judge is DROPPED, and the
 reason distinguishes a genuine *disagree* (rank > 1) from machinery failure so a

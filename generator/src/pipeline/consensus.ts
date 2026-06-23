@@ -1,6 +1,6 @@
 /**
  * BetaTetris normal-net top-1 **consensus filter** (#55) — the standard *final*
- * stage of bank generation (docs/decisions.md, 2026-06-21).
+ * stage of bank generation (.claude/docs/decisions.md, 2026-06-21).
  *
  * Generation stays pure TS/StackRabbit (see {@link generateBank}); this stage
  * runs afterwards and drops any puzzle the BetaTetris **normal** net does not

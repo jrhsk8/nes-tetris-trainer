@@ -1,6 +1,6 @@
 /**
  * Re-band migration (#71) — recompute every stored puzzle's difficulty band and
- * seed rating under the 4-band + tetris-cap model (docs/decisions.md 2026-06-22,
+ * seed rating under the 4-band + tetris-cap model (.claude/docs/decisions.md 2026-06-22,
  * grill #6 → Difficulty), in place.
  *
  * For each puzzle it recomputes, from the STORED combo table (no StackRabbit, no

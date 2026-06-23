@@ -4,7 +4,7 @@
  * Reject a candidate whose `(piece1, piece2)` match AND whose starting board is
  * within a small Hamming distance of any puzzle already accepted — checked
  * against the in-progress batch and (optionally) the existing bank
- * (docs/decisions.md 2026-06-21). This catches near-identical look-alikes, not
+ * (.claude/docs/decisions.md 2026-06-21). This catches near-identical look-alikes, not
  * just byte-identical duplicates. Pure: operates on the binary grid only.
  */
 

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A public, multi-user web app that serves pre-generated **2-ply NES Tetris placement puzzles** and tracks each player's stacking skill with a **Glicko co-rating**. The goal is to train *stacking judgment* — where to put each piece — independent of execution speed.",
   "directories": {
-    "doc": "docs"
+    "doc": ".claude/docs"
   },
   "workspaces": [
     "packages/*",

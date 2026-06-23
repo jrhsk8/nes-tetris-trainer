@@ -1,5 +1,5 @@
 /**
- * Feedback view (#12, #22, #25, #35) — the teaching payoff (docs/PRD-v1.md
+ * Feedback view (#12, #22, #25, #35) — the teaching payoff (.claude/docs/PRD-v1.md
  * "Feedback").
  *
  * After an attempt it shows an unmistakable Correct / Incorrect verdict banner

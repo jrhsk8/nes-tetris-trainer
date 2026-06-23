@@ -1,7 +1,7 @@
 /**
  * Per-puzzle difficulty (#40, v2 overhaul issue D; 4-band + tetris cap #71).
  *
- * Difficulty is a GENERATION property (docs/decisions.md 2026-06-21): "few
+ * Difficulty is a GENERATION property (.claude/docs/decisions.md 2026-06-21): "few
  * acceptable answers and/or a large gap = hard." It is computed from the
  * field-normalized 0–100 combo scores as two raw signals, stored on the puzzle,
  * and mapped to the puzzle's **seed rating** so matchmaking (#44) works

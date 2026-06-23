@@ -161,7 +161,7 @@ export const SCORE_SLOPE = 0.625;
  * CORRECT_SCORE_THRESHOLD` is exactly equivalent to `gap ≤ CORRECT_GAP_MARGIN`.
  * At the 97 threshold this is (100 − 97)/0.625 = **4.8** eval units (was 8 at the
  * 95 threshold). The slope was chosen from sampled real bank gaps (see
- * `generator/src/gap-sample.ts` + docs/decisions.md 2026-06-21 #47): a clean but
+ * `generator/src/gap-sample.ts` + .claude/docs/decisions.md 2026-06-21 #47): a clean but
  * slightly bumpier line costs ~4–8 eval units, a hole-burying move ~12–22.
  */
 export const CORRECT_GAP_MARGIN = (100 - CORRECT_SCORE_THRESHOLD) / SCORE_SLOPE;

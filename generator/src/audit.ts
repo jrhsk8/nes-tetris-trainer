@@ -10,7 +10,7 @@
  *    shorter stored alternative.
  *  - `mild-dominated` — rank-1 beaten by ≥ 2 on holes or height (reported for
  *    transparency; NOT a defect — the engine eval legitimately trades a little
- *    height for board shape, see docs/decisions.md 2026-06-21 #50).
+ *    height for board shape, see .claude/docs/decisions.md 2026-06-21 #50).
  *
  * Acceptance (#50): a regenerated bank has ZERO `egregious-holey` and ZERO
  * `tower` rank-1 boards. Run offline with the service key:
