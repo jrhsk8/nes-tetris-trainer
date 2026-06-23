@@ -4,7 +4,8 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Attempt } from '@trainer/data';
-import type { AuthApi, AuthUser } from './auth.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createAuth, type AuthApi, type AuthUser } from './auth.js';
 import { SignIn } from './SignIn.js';
 import { RatingHistory } from './RatingHistory.js';
 import { Account } from './Account.js';
@@ -24,6 +25,20 @@ function fakeAuth(overrides: Partial<AuthApi> = {}): AuthApi {
     ...overrides,
   };
 }
+
+describe('createAuth OAuth redirect (#77)', () => {
+  it('redirects OAuth back to the app base URL (origin + BASE_URL), not bare origin', async () => {
+    const signInWithOAuth = vi.fn(async () => ({ error: null }));
+    const client = { auth: { signInWithOAuth } } as unknown as SupabaseClient;
+    await createAuth(client).signInWithProvider('discord');
+    // The redirect carries the GitHub Pages base path (origin + BASE_URL), not
+    // the bare origin — so the OAuth round-trip lands back inside the app.
+    expect(signInWithOAuth).toHaveBeenCalledWith({
+      provider: 'discord',
+      options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+    });
+  });
+});
 
 describe('SignIn', () => {
   it('offers email plus Google and Discord sign-in', () => {

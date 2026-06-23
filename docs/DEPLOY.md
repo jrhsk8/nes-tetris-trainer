@@ -34,6 +34,29 @@
    offline with the generator).
 3. Run the **"Deploy play app to Pages"** workflow from the Actions tab.
 
+### OAuth providers + account linking (#77, supervised)
+
+Google/Discord sign-in and anon→account **linking** need Supabase **dashboard**
+config that cannot be scripted from the sandbox. The app code is ready (the
+OAuth `redirectTo` now carries the Pages base path — `origin + BASE_URL`); the
+owner must, in the Supabase dashboard:
+
+1. **Authentication → Providers → Google / Discord**: enable each and paste its
+   OAuth **client ID + secret** (created in the Google Cloud / Discord developer
+   consoles).
+2. **Authentication → URL Configuration → Redirect URLs**: allowlist the app's
+   return URL(s), including the GitHub Pages base path —
+   `https://jrhsk8.github.io/nes-tetris-trainer/` (and `http://localhost:5173/`
+   for local dev).
+3. **Authentication → Providers → (Manual linking)**: enable **Manual linking**,
+   so an anonymous session can be upgraded in place (`linkIdentity` for OAuth,
+   `updateUser` + verify for email) **preserving the UID** — rating/attempts/
+   prefs/seen-window/misses all carry over and become cross-device.
+
+Until these are set, anonymous play still works; OAuth and the in-place "Sign in"
+linking affordance stay inert. This also gates **admin** (#78), which needs a
+verified-email login to exercise.
+
 ### Dev-only login bypass (#20, temporary)
 
 While the site is in development, set `VITE_AUTH_BYPASS=1` (build env / repo

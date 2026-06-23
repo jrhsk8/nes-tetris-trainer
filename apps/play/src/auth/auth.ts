@@ -85,7 +85,10 @@ export function createAuth(client: SupabaseClient): AuthApi {
     async signInWithProvider(provider) {
       const { error } = await client.auth.signInWithOAuth({
         provider: provider as Provider,
-        options: { redirectTo: window.location.origin },
+        // Return to the app's base URL INCLUDING the GitHub Pages base path
+        // (origin + BASE_URL), not the bare origin (#77): on Pages the app lives
+        // under `/nes-tetris-trainer/`, so a bare-origin redirect lands off-app.
+        options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
       });
       if (error) throw new Error(error.message);
     },
