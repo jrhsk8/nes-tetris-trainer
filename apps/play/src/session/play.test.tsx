@@ -54,6 +54,13 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
     async getPuzzleSolveStats() {
       return { total: 0, solved: 0 };
     },
+    async upsertStarRating() {},
+    async getMyStarRating() {
+      return null;
+    },
+    async getStarStats() {
+      return { avg: 0, count: 0 };
+    },
     async isCurator() {
       return false;
     },
@@ -115,6 +122,13 @@ function trackingDb() {
     async getPuzzleSolveStats() {
       return { total: 0, solved: 0 };
     },
+    async upsertStarRating() {},
+    async getMyStarRating() {
+      return null;
+    },
+    async getStarStats() {
+      return { avg: 0, count: 0 };
+    },
     async isCurator() {
       return false;
     },
@@ -158,6 +172,13 @@ describe('PuzzlePlay persistent anti-repeat window (#74)', () => {
       },
       async getPuzzleSolveStats() {
         return { total: 0, solved: 0 };
+      },
+      async upsertStarRating() {},
+      async getMyStarRating() {
+        return null;
+      },
+      async getStarStats() {
+        return { avg: 0, count: 0 };
       },
       async isCurator() {
         return false;

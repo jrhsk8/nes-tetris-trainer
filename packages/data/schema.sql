@@ -337,3 +337,70 @@ drop policy if exists submissions_storage_select on storage.objects;
 create policy submissions_storage_select on storage.objects
   for select to authenticated
   using (bucket_id = 'submissions' and owner = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- Results community stats (grill-with-docs #7): per-user star ratings (#80) and
+-- the SECURITY DEFINER aggregates that surface community stats past own-row RLS.
+-- ---------------------------------------------------------------------------
+
+-- #80: a 1–5 star "how fun" rating, ONE row per (user, puzzle), changeable
+-- (upsert). Own-row RLS (anonymous allowed); the community AVERAGE is never read
+-- by selecting other users' rows — it comes from puzzle_star_stats() below, so
+-- no individual rating is exposed.
+create table if not exists public.puzzle_star_ratings (
+  user_id uuid not null,
+  puzzle_id uuid not null references public.puzzles (id) on delete cascade,
+  stars int not null check (stars between 1 and 5),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, puzzle_id)
+);
+create index if not exists puzzle_star_ratings_puzzle_idx
+  on public.puzzle_star_ratings (puzzle_id);
+
+alter table public.puzzle_star_ratings enable row level security;
+
+drop policy if exists star_ratings_select_own on public.puzzle_star_ratings;
+create policy star_ratings_select_own on public.puzzle_star_ratings
+  for select using (auth.uid() = user_id);
+
+drop policy if exists star_ratings_insert_own on public.puzzle_star_ratings;
+create policy star_ratings_insert_own on public.puzzle_star_ratings
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists star_ratings_update_own on public.puzzle_star_ratings;
+create policy star_ratings_update_own on public.puzzle_star_ratings
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- #80 community star stats: avg + count over EVERY user's rating. SECURITY
+-- DEFINER so it aggregates past the own-row select policy without exposing any
+-- individual row; `set search_path` pins the schema (definer-safety).
+create or replace function public.puzzle_star_stats(p_puzzle_id uuid)
+returns table(avg double precision, count bigint)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce(avg(stars), 0)::double precision, count(*)::bigint
+    from public.puzzle_star_ratings
+    where puzzle_id = p_puzzle_id;
+$$;
+
+-- #79 community solve stats: total attempts + solved (A+, solved=true) over
+-- EVERY user. SECURITY DEFINER so the live community-correct-% sees all attempts
+-- past the own-row attempts select policy, not just the caller's own.
+create or replace function public.puzzle_solve_stats(p_puzzle_id uuid)
+returns table(total bigint, solved bigint)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select count(*)::bigint, count(*) filter (where solved)::bigint
+    from public.attempts
+    where puzzle_id = p_puzzle_id;
+$$;
+
+grant execute on function public.puzzle_star_stats(uuid) to anon, authenticated;
+grant execute on function public.puzzle_solve_stats(uuid) to anon, authenticated;

@@ -21,7 +21,7 @@
  * stays in the same centre position it occupied while solving.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   gradeCombo,
   comboOutcomeKey,
@@ -72,6 +72,8 @@ export interface FeedbackProps {
   solveStats?: { total: number; solved: number } | null;
   /** Called when the player asks for the next puzzle (renders the button). */
   onNext?: () => void;
+  /** The 1–5 star "how fun" control (#80), rendered in the result rail. */
+  starControl?: ReactNode;
   /** Mute the NES result chiptune (#61). Defaults to off (sound plays). */
   muted?: boolean;
   /** Injectable result-sound player (#61), for tests. Defaults to the real one. */
@@ -176,6 +178,7 @@ export function Feedback({
   puzzleRating,
   solveStats,
   onNext,
+  starControl,
   muted = false,
   playSound = playResultSound,
   bindings = DEFAULT_BINDINGS,
@@ -330,6 +333,9 @@ export function Feedback({
           onSelect={setSelected}
           compact={compact}
         />
+
+        {/* Star "how fun" rating (#80): community average revealed after rating. */}
+        {starControl}
 
         {/* Replay moves to the right rail (#65): the secondary action. */}
         <button type="button" onClick={() => setStep(0)}>

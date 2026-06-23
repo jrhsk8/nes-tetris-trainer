@@ -900,6 +900,46 @@ input:focus-visible {
   color: var(--nes-white);
 }
 
+[data-testid='puzzle-stats'] {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--nes-white);
+}
+
+/* Star "how fun" rating (#80): a 1–5 star control; community avg revealed
+   after the player rates. */
+.star-rating {
+  margin: 8px 0;
+}
+
+.star-rating-prompt {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--nes-white);
+  margin: 0 0 4px;
+}
+
+.star-rating .star {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--nes-gold);
+}
+
+.star-rating .star.is-filled {
+  color: var(--nes-gold);
+}
+
+.star-rating-community {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--nes-gold);
+  margin: 4px 0 0;
+}
+
 /* Status / error messages */
 [role='alert'] {
   border-left: 4px solid var(--nes-red);

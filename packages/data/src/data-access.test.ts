@@ -197,6 +197,35 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(history[0].solved).toBe(false);
   });
 
+  it('upserts a 1–5 star rating (one row per user) and aggregates community stats (#80)', async () => {
+    const puzzle = await db!.insertPuzzle({
+      board: encodeBoard(emptyBoard()),
+      piece1: 'O',
+      piece2: 'I',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+    });
+    createdPuzzleIds.push(puzzle.id);
+
+    const userA = crypto.randomUUID();
+    const userB = crypto.randomUUID();
+
+    // No rating yet, no community stats.
+    expect(await db!.getMyStarRating(userA, puzzle.id)).toBeNull();
+    expect(await db!.getStarStats(puzzle.id)).toEqual({ avg: 0, count: 0 });
+
+    // A rates 4; B rates 2 → avg 3, count 2.
+    await db!.upsertStarRating(userA, puzzle.id, 4);
+    await db!.upsertStarRating(userB, puzzle.id, 2);
+    expect(await db!.getMyStarRating(userA, puzzle.id)).toBe(4);
+    expect(await db!.getStarStats(puzzle.id)).toEqual({ avg: 3, count: 2 });
+
+    // A re-rates 5 — ONE row per user, so count stays 2 and the avg moves to 3.5.
+    await db!.upsertStarRating(userA, puzzle.id, 5);
+    expect(await db!.getMyStarRating(userA, puzzle.id)).toBe(5);
+    expect(await db!.getStarStats(puzzle.id)).toEqual({ avg: 3.5, count: 2 });
+  });
+
   it('counts live community solve stats for a puzzle (#79)', async () => {
     const puzzle = await db!.insertPuzzle({
       board: encodeBoard(emptyBoard()),

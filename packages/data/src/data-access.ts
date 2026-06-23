@@ -164,6 +164,19 @@ export interface DataAccess {
    */
   getPuzzleSolveStats(puzzleId: string): Promise<{ total: number; solved: number }>;
   /**
+   * Upsert this user's 1–5 star "how fun" rating for a puzzle (#80): one row per
+   * `(user, puzzle)`, changeable. RLS own-row insert/update (anonymous allowed).
+   */
+  upsertStarRating(userId: string, puzzleId: string, stars: number): Promise<void>;
+  /** This user's own star rating for a puzzle (#80), or null if not yet rated. */
+  getMyStarRating(userId: string, puzzleId: string): Promise<number | null>;
+  /**
+   * Community star stats for a puzzle (#80): `{ avg, count }` across every user's
+   * rating, via a SECURITY DEFINER aggregate (no individual row exposed). The UI
+   * reveals this only AFTER the player has rated.
+   */
+  getStarStats(puzzleId: string): Promise<{ avg: number; count: number }>;
+  /**
    * The persistent anti-repeat window (#74): the most recently-attempted
    * DISTINCT puzzle ids for this user, newest-first, capped at `limit`
    * (default {@link RECENT_PUZZLE_WINDOW}). Derived live from `attempts` — no
@@ -442,18 +455,49 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
   async function getPuzzleSolveStats(
     puzzleId: string,
   ): Promise<{ total: number; solved: number }> {
-    const { count: total, error: totalErr } = await client
-      .from('attempts')
-      .select('*', { count: 'exact', head: true })
-      .eq('puzzle_id', puzzleId);
-    if (totalErr) throw new Error(`getPuzzleSolveStats failed: ${totalErr.message}`);
-    const { count: solved, error: solvedErr } = await client
-      .from('attempts')
-      .select('*', { count: 'exact', head: true })
+    // Community-wide, so it must aggregate across all users' attempts — but the
+    // attempts table is own-row RLS, so a direct count under the anon key would
+    // see only the caller's rows. The SECURITY DEFINER `puzzle_solve_stats`
+    // function returns the aggregate past RLS without exposing any row (#79).
+    const { data, error } = await client.rpc('puzzle_solve_stats', { p_puzzle_id: puzzleId });
+    if (error) throw new Error(`getPuzzleSolveStats failed: ${error.message}`);
+    const row = (data as { total: number; solved: number }[] | null)?.[0];
+    return { total: Number(row?.total ?? 0), solved: Number(row?.solved ?? 0) };
+  }
+
+  async function upsertStarRating(
+    userId: string,
+    puzzleId: string,
+    stars: number,
+  ): Promise<void> {
+    const { error } = await client.from('puzzle_star_ratings').upsert(
+      {
+        user_id: userId,
+        puzzle_id: puzzleId,
+        stars,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,puzzle_id' },
+    );
+    if (error) throw new Error(`upsertStarRating failed: ${error.message}`);
+  }
+
+  async function getMyStarRating(userId: string, puzzleId: string): Promise<number | null> {
+    const { data, error } = await client
+      .from('puzzle_star_ratings')
+      .select('stars')
+      .eq('user_id', userId)
       .eq('puzzle_id', puzzleId)
-      .eq('solved', true);
-    if (solvedErr) throw new Error(`getPuzzleSolveStats failed: ${solvedErr.message}`);
-    return { total: total ?? 0, solved: solved ?? 0 };
+      .maybeSingle();
+    if (error) throw new Error(`getMyStarRating failed: ${error.message}`);
+    return data ? (data as { stars: number }).stars : null;
+  }
+
+  async function getStarStats(puzzleId: string): Promise<{ avg: number; count: number }> {
+    const { data, error } = await client.rpc('puzzle_star_stats', { p_puzzle_id: puzzleId });
+    if (error) throw new Error(`getStarStats failed: ${error.message}`);
+    const row = (data as { avg: number; count: number }[] | null)?.[0];
+    return { avg: Number(row?.avg ?? 0), count: Number(row?.count ?? 0) };
   }
 
   async function getRecentAttemptedPuzzleIds(
@@ -629,6 +673,9 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     getUserAttempts,
     getUserAttemptHistory,
     getPuzzleSolveStats,
+    upsertStarRating,
+    getMyStarRating,
+    getStarStats,
     getRecentAttemptedPuzzleIds,
     getUserPrefs,
     upsertUserPrefs,

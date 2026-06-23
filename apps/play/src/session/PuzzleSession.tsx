@@ -36,7 +36,7 @@ import { applyAttempt, seedRating, updateRatings, attemptOutcome } from '@traine
 import { PlacementInput } from '../board/PlacementInput.js';
 import { NextPieceBox } from '../board/NextPieceBox.js';
 import { DEFAULT_BINDINGS, type KeyBindings } from '../board/keybindings.js';
-import { Feedback } from '../feedback/index.js';
+import { Feedback, StarRating } from '../feedback/index.js';
 import { Curation } from '../curation/index.js';
 import { PlayScreen } from './PlayScreen.js';
 import { PuzzleTitle } from './PuzzleTitle.js';
@@ -48,6 +48,9 @@ export type SessionDb = Pick<
   | 'upsertUserRating'
   | 'insertAttempt'
   | 'getPuzzleSolveStats'
+  | 'upsertStarRating'
+  | 'getMyStarRating'
+  | 'getStarStats'
   | 'isCurator'
   | 'flagPuzzle'
   | 'cullPuzzle'
@@ -269,6 +272,7 @@ export function PuzzleSession({
         ratingChange={result!.rating}
         puzzleRating={puzzle.glicko.rating}
         solveStats={result!.solveStats}
+        starControl={<StarRating db={db} userId={userId} puzzleId={puzzle.id} />}
         onNext={onNext}
         muted={muted}
         bindings={bindings}

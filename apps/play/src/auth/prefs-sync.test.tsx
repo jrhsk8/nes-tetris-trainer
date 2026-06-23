@@ -30,6 +30,13 @@ function prefsDb(initial: UserPrefs | null, upserts: UserPrefs[]): AccountDb {
     async getPuzzleSolveStats() {
       return { total: 0, solved: 0 };
     },
+    async upsertStarRating() {},
+    async getMyStarRating() {
+      return null;
+    },
+    async getStarStats() {
+      return { avg: 0, count: 0 };
+    },
     async isCurator() {
       return false;
     },
