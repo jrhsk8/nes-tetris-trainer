@@ -5,6 +5,9 @@ import {
   emptyBoard,
   emptyColorGrid,
   restingCells,
+  applyRestingPlacement,
+  boardKey,
+  resolveLineByOutcome,
   type Grid,
   type Line,
 } from '@trainer/core';
@@ -119,5 +122,58 @@ describe('buildReplay tuck animation (#43)', () => {
     // It still settles to the tucked board in the final frame.
     const settledFrame = frames[frames.length - 1];
     for (const r of [16, 17, 18, 19]) expect(settledFrame.grid[r][4]).toBe(1);
+  });
+
+  /** The cells of the falling overlay in the LAST frame that animates `piece`. */
+  function finalOverlayCells(frames: ReturnType<typeof buildReplay>, piece: string): Set<string> {
+    const overlays = frames.filter((f) => f.overlay?.piece === piece);
+    const last = overlays[overlays.length - 1];
+    return new Set(last.overlay!.cells.map(([r, c]) => `${r}-${c}`));
+  }
+  const keysOf = (cells: ReadonlyArray<readonly [number, number]>) =>
+    new Set(cells.map(([r, c]) => `${r}-${c}`));
+
+  it('animates a stored row-less tuck to the resting spot the puzzle says, not a hard drop (#76)', () => {
+    // The real defect: a stored combo keeps only {rotation, col} (the resting row
+    // was dropped at generation, e.g. puzzle 1534's tuck optimal). Replaying it
+    // naively hard-drops the I ONTO the ledge instead of into the pocket. The
+    // stored canonical boardKey encodes the true outcome, so the play app recovers
+    // the rows before replaying — and the animation must finish where the puzzle
+    // actually says.
+    const board = emptyBoard();
+    for (let c = 4; c <= 7; c++) board[10][c] = 1;
+
+    // What the puzzle ACTUALLY says: O parked at col 0, then the I tucked into the
+    // pocket (rows 16-19, col 4). This is the stored canonical outcome.
+    const truth: readonly [
+      { rotation: number; col: number; row: number },
+      { rotation: number; col: number; row: number },
+    ] = [
+      { rotation: 0, col: 0, row: 18 },
+      { rotation: 1, col: 4, row: 16 },
+    ];
+    const board1 = applyRestingPlacement(board, 'O', truth[0]);
+    const truthKey = boardKey(applyRestingPlacement(board1, 'I', truth[1]));
+    const tuckCells = restingCells(board1, 'I', truth[1])!;
+
+    // The stored (row-less) line, as it comes back from the combo table.
+    const storedRowless: Line = [
+      { rotation: 0, col: 0 },
+      { rotation: 1, col: 4 },
+    ];
+
+    // Naively replaying the row-less line hard-drops the I onto the ledge — the
+    // bug the recovery fixes (final overlay sits at rows 6-9, not the pocket).
+    const naive = buildReplay(board, 'O', 'I', storedRowless);
+    expect(finalOverlayCells(naive, 'I')).not.toEqual(keysOf(tuckCells));
+
+    // Recover the rows from the stored outcome (what Feedback does), then replay.
+    const recovered = resolveLineByOutcome(board, 'O', 'I', storedRowless, truthKey);
+    const frames = buildReplay(board, 'O', 'I', recovered);
+
+    // The animation's final resting cells equal exactly what the puzzle says...
+    expect(finalOverlayCells(frames, 'I')).toEqual(keysOf(tuckCells));
+    // ...and the settled stack reproduces the stored canonical outcome.
+    expect(boardKey(frames[frames.length - 1].grid)).toBe(truthKey);
   });
 });

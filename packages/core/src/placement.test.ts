@@ -13,6 +13,7 @@ import {
   lateralMove,
   moveToColumn,
   boardKey,
+  resolveLineByOutcome,
   ORIENTATIONS,
   ROWS,
   COLS,
@@ -20,6 +21,7 @@ import {
   type Piece,
   type RestingPlacement,
   type Grid,
+  type Line,
 } from './index.js';
 
 /**
@@ -303,6 +305,59 @@ describe('lateralMove (free lateral movement #68)', () => {
         `J tuck into (${pr},${pc}) not reachable by input`,
       ).toBe(true);
     }
+  });
+});
+
+describe('resolveLineByOutcome (recover tuck rows from the stored boardKey #42)', () => {
+  // A ledge across cols 4..7 at row 10; the pocket beneath (col 4, rows 16-19)
+  // holds the true second placement — a TUCK. The stored combo records only
+  // {rotation, col} (the resting row was dropped at generation), so by geometry
+  // alone it is indistinguishable from a hard drop ONTO the ledge.
+  function ledgeBoard(): Grid {
+    const grid = emptyBoard();
+    for (let c = 4; c <= 7; c++) grid[10][c] = 1;
+    return grid;
+  }
+  const trueLine: readonly [RestingPlacement, RestingPlacement] = [
+    { rotation: 0, col: 0, row: 18 }, // O parked bottom-left, out of the way
+    { rotation: 1, col: 4, row: 16 }, // the tuck under the ledge
+  ];
+  const rowless: Line = [
+    { rotation: 0, col: 0 },
+    { rotation: 1, col: 4 },
+  ];
+
+  it('pins the resting rows so the recovered line reproduces the stored outcome', () => {
+    const board = ledgeBoard();
+    const outcome = boardKey(
+      applyRestingPlacement(applyRestingPlacement(board, 'O', trueLine[0]), 'I', trueLine[1]),
+    );
+
+    const resolved = resolveLineByOutcome(board, 'O', 'I', rowless, outcome);
+    // The second ply is pinned to the tuck row (16), NOT the hard-drop row (6).
+    expect(resolved[1].row).toBe(16);
+    // And re-applying the recovered line (applyPlacement respects the pinned row)
+    // lands exactly the stored outcome.
+    const rebuilt = boardKey(applyPlacement(applyPlacement(board, 'O', resolved[0]), 'I', resolved[1]));
+    expect(rebuilt).toBe(outcome);
+  });
+
+  it('distinguishes the tuck from the hard drop down the same column', () => {
+    const board = ledgeBoard();
+    // The hard-drop outcome (no tuck) keys differently: the I rests ON the ledge.
+    const hardDropKey = boardKey(
+      applyRestingPlacement(applyRestingPlacement(board, 'O', trueLine[0]), 'I', {
+        rotation: 1,
+        col: 4,
+        row: 6,
+      }),
+    );
+    const resolved = resolveLineByOutcome(board, 'O', 'I', rowless, hardDropKey);
+    expect(resolved[1].row).toBe(6); // recovers the on-ledge hard drop, not the tuck
+  });
+
+  it('returns the line unchanged when no outcome key is supplied', () => {
+    expect(resolveLineByOutcome(ledgeBoard(), 'O', 'I', rowless)).toBe(rowless);
   });
 });
 

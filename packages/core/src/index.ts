@@ -37,6 +37,7 @@ export {
   moveToColumn,
   lateralMove,
   boardKey,
+  resolveLineByOutcome,
 } from './placement.js';
 export type { RestingPlacement } from './placement.js';
 

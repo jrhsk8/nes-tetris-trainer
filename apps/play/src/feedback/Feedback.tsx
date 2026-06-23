@@ -25,6 +25,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   gradeCombo,
   comboOutcomeKey,
+  resolveLineByOutcome,
   type ColorGrid,
   type ComboTable,
   type Grid,
@@ -165,6 +166,34 @@ function bestLineOf(combos: ComboTable): Line | null {
   return e ? [{ rotation: e.rot1, col: e.col1 }, { rotation: e.rot2, col: e.col2 }] : null;
 }
 
+/**
+ * Pin the resting rows of `selected` before replaying it. The player's own line
+ * already carries the exact rows it confirmed (so a tuck the player made animates
+ * faithfully); a **stored combo** is row-less ({@link ComboEntry} keeps only
+ * `rotation`/`col`), so we recover its true rows from the entry's canonical
+ * `boardKey` ({@link resolveLineByOutcome}, #42) — without which a tuck combo
+ * (e.g. puzzle 1534's optimal) would hard-drop onto the ledge instead of sliding
+ * into the pocket. Falls back to the row-less line when no entry/key matches (the
+ * replay's own hard-drop path then applies).
+ */
+function resolveSelectedLine(
+  combos: ComboTable,
+  board0: Grid,
+  piece1: Piece,
+  piece2: Piece,
+  selected: Line,
+): Line {
+  if (selected[0].row !== undefined && selected[1].row !== undefined) return selected;
+  const entry = combos.entries.find(
+    (e) =>
+      e.rot1 === selected[0].rotation &&
+      e.col1 === selected[0].col &&
+      e.rot2 === selected[1].rotation &&
+      e.col2 === selected[1].col,
+  );
+  return resolveLineByOutcome(board0, piece1, piece2, selected, entry?.boardKey);
+}
+
 export function Feedback({
   number = null,
   board0,
@@ -207,10 +236,13 @@ export function Feedback({
   ]);
 
   const timeline = useMemo<Keyframe[]>(() => {
-    const keyframes = buildReplay(board0, piece1, piece2, selected, baseColors);
+    // Pin the resting rows (recovering a stored tuck from its boardKey) so the
+    // animation lands exactly where the puzzle says — not hard-dropped (#76).
+    const resolved = resolveSelectedLine(combos, board0, piece1, piece2, selected);
+    const keyframes = buildReplay(board0, piece1, piece2, resolved, baseColors);
     // Reduced motion: jump straight to the settled board (last keyframe).
     return reduced ? [keyframes[keyframes.length - 1]] : keyframes;
-  }, [board0, piece1, piece2, selected, baseColors, reduced]);
+  }, [combos, board0, piece1, piece2, selected, baseColors, reduced]);
 
   const [step, setStep] = useState(0);
 

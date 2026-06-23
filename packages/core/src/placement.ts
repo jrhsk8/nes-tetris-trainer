@@ -29,6 +29,8 @@ import {
   clearFullRows,
   encodeBoard,
   type Grid,
+  type Placement,
+  type Line,
 } from './board.js';
 import { ORIENTATIONS, type Piece } from './pieces.js';
 
@@ -252,4 +254,68 @@ export function enumerateResting(grid: Grid, piece: Piece): RestingPlacement[] {
  */
 export function boardKey(grid: Grid): string {
   return encodeBoard(grid);
+}
+
+/** The reachable resting rows of `piece` at `(rotation, col)` on `grid`. */
+function restingRowsAt(grid: Grid, piece: Piece, rotation: number, col: number): number[] {
+  return enumerateResting(grid, piece)
+    .filter((p) => p.rotation === rotation && p.col === col)
+    .map((p) => p.row);
+}
+
+/**
+ * Recover the exact resting **rows** of a stored two-ply {@link Line} by matching
+ * the canonical outcome `targetKey` (#42).
+ *
+ * Legacy puzzles (and the generator before tucks were persisted with a row) store
+ * each optimal placement as `{ rotation, col }` only — the resting row was dropped
+ * at generation time. By geometry alone a **tuck** (slid under an overhang) is then
+ * indistinguishable from a plain hard drop down the same column, so the replay
+ * hard-drops it and animates the piece onto the ledge instead of into the pocket.
+ *
+ * The stored `boardKey`, however, encodes the *true* two-ply outcome. This searches
+ * the (few) reachable resting rows of each ply that, applied in order, reproduce
+ * `targetKey`, and returns the line with both rows pinned — so {@link restingCells}
+ * lands the piece exactly where the puzzle actually says, tuck or not.
+ *
+ * Returns the line **unchanged** when it cannot improve on it: no `targetKey` is
+ * given, the rows are already pinned, or no row combination reproduces the key
+ * (then the caller's existing hard-drop fallback applies).
+ */
+export function resolveLineByOutcome(
+  board0: Grid,
+  piece1: Piece,
+  piece2: Piece,
+  line: Line,
+  targetKey?: string,
+): Line {
+  const [p1, p2] = line;
+  // Nothing to recover: no outcome to match, or the rows are already pinned.
+  if (targetKey === undefined || (p1.row !== undefined && p2.row !== undefined)) return line;
+
+  const rows1 = p1.row !== undefined ? [p1.row] : restingRowsAt(board0, piece1, p1.rotation, p1.col);
+  for (const r1 of rows1) {
+    if (!fitsAt(board0, piece1, p1.rotation, r1, p1.col)) continue;
+    const board1 = applyRestingPlacement(board0, piece1, {
+      rotation: p1.rotation,
+      row: r1,
+      col: p1.col,
+    });
+    const rows2 = p2.row !== undefined ? [p2.row] : restingRowsAt(board1, piece2, p2.rotation, p2.col);
+    for (const r2 of rows2) {
+      if (!fitsAt(board1, piece2, p2.rotation, r2, p2.col)) continue;
+      const board2 = applyRestingPlacement(board1, piece2, {
+        rotation: p2.rotation,
+        row: r2,
+        col: p2.col,
+      });
+      if (boardKey(board2) === targetKey) {
+        return [
+          { ...p1, row: r1 },
+          { ...p2, row: r2 },
+        ];
+      }
+    }
+  }
+  return line;
 }
