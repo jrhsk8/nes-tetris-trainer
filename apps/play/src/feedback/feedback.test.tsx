@@ -128,6 +128,41 @@ describe('Feedback grade banner (#60/#61)', () => {
     // …and the rating-change line remains in the rail.
     expect(screen.getByTestId('rating-change')).toHaveTextContent('+12');
   });
+
+  it('shows the puzzle rating + live community-correct-% with sample size (#79)', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        puzzleRating={1623}
+        solveStats={{ total: 4, solved: 3 }}
+        playSound={noSound}
+      />,
+    );
+    const stats = screen.getByTestId('puzzle-stats');
+    expect(stats).toHaveTextContent('Puzzle 1623');
+    // solved/total = 3/4 = 75%, always with the sample size N.
+    expect(within(stats).getByTestId('community-correct')).toHaveTextContent('75% (4)');
+  });
+
+  it('honestly shows a brand-new puzzle as 100% (1) (#79)', () => {
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1])}
+        userLine={L([0, 3], [0, 6])}
+        puzzleRating={1500}
+        solveStats={{ total: 1, solved: 1 }}
+        playSound={noSound}
+      />,
+    );
+    expect(screen.getByTestId('community-correct')).toHaveTextContent('100% (1)');
+  });
 });
 
 describe('Feedback keyboard loop (#64)', () => {

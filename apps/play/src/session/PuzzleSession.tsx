@@ -47,6 +47,7 @@ export type SessionDb = Pick<
   | 'getUserRating'
   | 'upsertUserRating'
   | 'insertAttempt'
+  | 'getPuzzleSolveStats'
   | 'isCurator'
   | 'flagPuzzle'
   | 'cullPuzzle'
@@ -78,6 +79,8 @@ interface SessionResult {
   solved: boolean;
   rating: RatingChange;
   userLine: readonly Placement[];
+  /** Live community solve stats (#79); null if the fetch failed. */
+  solveStats: { total: number; solved: number } | null;
 }
 
 type Phase = 'place1' | 'place2' | 'grading' | 'done';
@@ -148,7 +151,16 @@ export function PuzzleSession({
           delta: update.user.rating - seedRating().rating,
         };
       }
-      setResult({ solved, rating, userLine });
+      // Live community-correct-% (#79): read AFTER recording the attempt so the
+      // player's own just-finished attempt is counted. Best-effort — a stats
+      // hiccup just hides the line, never blocks the results.
+      let solveStats: { total: number; solved: number } | null = null;
+      try {
+        solveStats = await db.getPuzzleSolveStats(puzzle.id);
+      } catch (err) {
+        console.error('solve-stats fetch failed:', err);
+      }
+      setResult({ solved, rating, userLine, solveStats });
       setPhase('done');
     },
     [db, userId, puzzle.glicko, puzzle.id],
@@ -255,6 +267,8 @@ export function PuzzleSession({
         combos={puzzle.combos}
         userLine={result!.userLine}
         ratingChange={result!.rating}
+        puzzleRating={puzzle.glicko.rating}
+        solveStats={result!.solveStats}
         onNext={onNext}
         muted={muted}
         bindings={bindings}

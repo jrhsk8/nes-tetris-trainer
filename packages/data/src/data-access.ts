@@ -155,6 +155,15 @@ export interface DataAccess {
   getUserAttempts(userId: string): Promise<Attempt[]>;
   getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]>;
   /**
+   * Live community solve stats for a puzzle (#79): `{ total, solved }` over the
+   * `attempts` table, where `solved` counts attempts with `solved = true` (an
+   * A+, score ≥ 97 — the "correct" line). Two count queries, computed at results
+   * time so the player's own just-recorded attempt is included — a brand-new
+   * puzzle honestly reads `100% (1)`. The results panel renders this as
+   * `X% (N)` correct.
+   */
+  getPuzzleSolveStats(puzzleId: string): Promise<{ total: number; solved: number }>;
+  /**
    * The persistent anti-repeat window (#74): the most recently-attempted
    * DISTINCT puzzle ids for this user, newest-first, capped at `limit`
    * (default {@link RECENT_PUZZLE_WINDOW}). Derived live from `attempts` — no
@@ -430,6 +439,23 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return rows.map((row) => ({ ...rowToAttempt(row), difficulty: row.puzzles?.rating ?? null }));
   }
 
+  async function getPuzzleSolveStats(
+    puzzleId: string,
+  ): Promise<{ total: number; solved: number }> {
+    const { count: total, error: totalErr } = await client
+      .from('attempts')
+      .select('*', { count: 'exact', head: true })
+      .eq('puzzle_id', puzzleId);
+    if (totalErr) throw new Error(`getPuzzleSolveStats failed: ${totalErr.message}`);
+    const { count: solved, error: solvedErr } = await client
+      .from('attempts')
+      .select('*', { count: 'exact', head: true })
+      .eq('puzzle_id', puzzleId)
+      .eq('solved', true);
+    if (solvedErr) throw new Error(`getPuzzleSolveStats failed: ${solvedErr.message}`);
+    return { total: total ?? 0, solved: solved ?? 0 };
+  }
+
   async function getRecentAttemptedPuzzleIds(
     userId: string,
     limit: number = RECENT_PUZZLE_WINDOW,
@@ -602,6 +628,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     getAllAttempts,
     getUserAttempts,
     getUserAttemptHistory,
+    getPuzzleSolveStats,
     getRecentAttemptedPuzzleIds,
     getUserPrefs,
     upsertUserPrefs,

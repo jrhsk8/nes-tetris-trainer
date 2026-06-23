@@ -51,6 +51,9 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
       ratings.set(rating.userId, rating);
       return rating;
     },
+    async getPuzzleSolveStats() {
+      return { total: 0, solved: 0 };
+    },
     async isCurator() {
       return false;
     },
@@ -109,6 +112,9 @@ function trackingDb() {
       ratings.set(rating.userId, rating);
       return rating;
     },
+    async getPuzzleSolveStats() {
+      return { total: 0, solved: 0 };
+    },
     async isCurator() {
       return false;
     },
@@ -149,6 +155,9 @@ describe('PuzzlePlay persistent anti-repeat window (#74)', () => {
       async upsertUserRating(rating) {
         ratings.set(rating.userId, rating);
         return rating;
+      },
+      async getPuzzleSolveStats() {
+        return { total: 0, solved: 0 };
       },
       async isCurator() {
         return false;

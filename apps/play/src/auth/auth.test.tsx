@@ -109,6 +109,9 @@ describe('Account', () => {
       async getUserAttempts() {
         return [];
       },
+      async getPuzzleSolveStats() {
+        return { total: 0, solved: 0 };
+      },
       async isCurator() {
         return false;
       },

@@ -66,6 +66,9 @@ function fakeDb() {
         score: attempt.score ?? null,
       };
     },
+    async getPuzzleSolveStats() {
+      return { total: 0, solved: 0 };
+    },
     async isCurator() {
       return false;
     },

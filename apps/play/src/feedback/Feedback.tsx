@@ -66,6 +66,10 @@ export interface FeedbackProps {
   stepMs?: number;
   /** The rating change to display, if any. */
   ratingChange?: RatingChange;
+  /** The puzzle's Glicko rating — its difficulty, shown in results (#79). */
+  puzzleRating?: number;
+  /** Live community solve stats (#79): `{ total, solved }`, rendered `X% (N)`. */
+  solveStats?: { total: number; solved: number } | null;
   /** Called when the player asks for the next puzzle (renders the button). */
   onNext?: () => void;
   /** Mute the NES result chiptune (#61). Defaults to off (sound plays). */
@@ -169,6 +173,8 @@ export function Feedback({
   userLine,
   stepMs = 320,
   ratingChange,
+  puzzleRating,
+  solveStats,
   onNext,
   muted = false,
   playSound = playResultSound,
@@ -293,6 +299,24 @@ export function Feedback({
             Rating: {Math.round(ratingChange.before.rating)} →{' '}
             {Math.round(ratingChange.after.rating)} ({ratingChange.delta >= 0 ? '+' : ''}
             {Math.round(ratingChange.delta)})
+          </p>
+        ) : null}
+
+        {/* Puzzle difficulty (#79): its Glicko rating + the live community-correct
+            -% = solved / total attempts, ALWAYS shown with the sample size `X% (N)`
+            so a tiny sample is self-evident (a brand-new puzzle reads `100% (1)`). */}
+        {puzzleRating !== undefined ? (
+          <p data-testid="puzzle-stats">
+            Puzzle {Math.round(puzzleRating)}
+            {solveStats && solveStats.total > 0 ? (
+              <>
+                {' · '}
+                <span data-testid="community-correct">
+                  {Math.round((solveStats.solved / solveStats.total) * 100)}% ({solveStats.total})
+                </span>{' '}
+                correct
+              </>
+            ) : null}
           </p>
         ) : null}
 

@@ -197,6 +197,32 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(history[0].solved).toBe(false);
   });
 
+  it('counts live community solve stats for a puzzle (#79)', async () => {
+    const puzzle = await db!.insertPuzzle({
+      board: encodeBoard(emptyBoard()),
+      piece1: 'L',
+      piece2: 'J',
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+    });
+    createdPuzzleIds.push(puzzle.id);
+
+    // No attempts yet: 0 of 0.
+    expect(await db!.getPuzzleSolveStats(puzzle.id)).toEqual({ total: 0, solved: 0 });
+
+    // Three attempts by distinct users: two solved (A+), one not.
+    for (const solved of [true, true, false]) {
+      await db!.insertAttempt({
+        userId: crypto.randomUUID(),
+        puzzleId: puzzle.id,
+        userLine: sampleLine,
+        solved,
+        score: solved ? 99 : 70,
+      });
+    }
+    expect(await db!.getPuzzleSolveStats(puzzle.id)).toEqual({ total: 3, solved: 2 });
+  });
+
   it('derives the persistent anti-repeat window from attempts (#74)', async () => {
     // Three puzzles; the user attempts p1, p2, p3, then re-attempts p1.
     const made = [];

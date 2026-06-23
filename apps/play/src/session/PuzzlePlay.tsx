@@ -19,6 +19,7 @@ export type PlayDb = Pick<
   | 'getUserRating'
   | 'upsertUserRating'
   | 'insertAttempt'
+  | 'getPuzzleSolveStats'
   | 'isCurator'
   | 'flagPuzzle'
   | 'cullPuzzle'
