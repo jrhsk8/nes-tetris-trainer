@@ -124,6 +124,9 @@ describe('Account', () => {
       async getPuzzleByNumber() {
         return null;
       },
+      async getRecentAttemptedPuzzleIds() {
+        return [];
+      },
       async upsertUserRating(r: { userId: string }) {
         return { userId: r.userId, rating: 1700, deviation: 200, volatility: 0.06 };
       },

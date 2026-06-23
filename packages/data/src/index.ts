@@ -10,6 +10,7 @@ export {
   SEED_DEVIATION,
   SEED_VOLATILITY,
   SUBMISSIONS_BUCKET,
+  RECENT_PUZZLE_WINDOW,
 } from './data-access.js';
 export type { DataAccess } from './data-access.js';
 export {
@@ -19,7 +20,7 @@ export {
   MAX_UPLOAD_BYTES,
 } from './image-sniff.js';
 export type { AllowedImageMime } from './image-sniff.js';
-export { selectMatchmadePuzzle } from './matchmaking.js';
+export { selectMatchmadePuzzle, distinctRecent } from './matchmaking.js';
 export type { MatchmakeOptions } from './matchmaking.js';
 export type {
   Glicko,

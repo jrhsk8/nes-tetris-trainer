@@ -61,3 +61,24 @@ export async function selectMatchmadePuzzle(
   if (pool.length === 0) return null;
   return pool[Math.floor(rng() * pool.length)] ?? null;
 }
+
+/**
+ * The persistent anti-repeat window (#74). Given puzzle ids ordered
+ * newest-first (with repeats — one row per attempt), keep the first occurrence
+ * of each id in order and cap the result at `limit`. The output is the most
+ * recently-attempted DISTINCT puzzle ids, newest-first — the sliding window fed
+ * to {@link selectMatchmadePuzzle} as `recentIds`. Pure so the derivation is
+ * testable without a live Supabase, and deterministic so a reload reproduces the
+ * same window (docs/decisions.md 2026-06-23, grill-with-docs #7).
+ */
+export function distinctRecent(idsNewestFirst: readonly string[], limit: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of idsNewestFirst) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= limit) break;
+  }
+  return out;
+}

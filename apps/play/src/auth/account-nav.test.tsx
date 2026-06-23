@@ -41,6 +41,9 @@ function emptyDb(): AccountDb {
     async getPuzzleByNumber() {
       return null;
     },
+    async getRecentAttemptedPuzzleIds() {
+      return [];
+    },
     async upsertUserRating(r) {
       return { userId: r.userId, rating: 1500, deviation: 200, volatility: 0.06 };
     },

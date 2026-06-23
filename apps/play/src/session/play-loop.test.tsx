@@ -45,6 +45,9 @@ function countingDb(): { db: PlayDb; calls: () => number } {
     async getPuzzleByNumber() {
       return null;
     },
+    async getRecentAttemptedPuzzleIds() {
+      return [];
+    },
     async getUserRating(userId) {
       return ratings.get(userId) ?? null;
     },

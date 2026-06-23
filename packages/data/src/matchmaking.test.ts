@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { boardMetrics, emptyBoard, encodeBoard } from '@trainer/core';
-import { selectMatchmadePuzzle } from './matchmaking.js';
+import { selectMatchmadePuzzle, distinctRecent } from './matchmaking.js';
 import type { Puzzle } from './types.js';
 
 /** A puzzle stub carrying just an id and rating — all selection looks at. */
@@ -107,8 +107,6 @@ describe('selectMatchmadePuzzle (#44)', () => {
   });
 
   it('relaxes the cooldown as a last resort when everything in range is on cooldown', async () => {
-    // Only near-a/near-b are in band; both on cooldown → still returns one,
-    // never a null/empty board.
     const { fetch } = bankFetcher(bank);
     const picked = await selectMatchmadePuzzle(fetch, {
       rating: 1500,
@@ -119,5 +117,27 @@ describe('selectMatchmadePuzzle (#44)', () => {
     });
     expect(picked).not.toBeNull();
     expect(['near-a', 'near-b']).toContain(picked!.id);
+  });
+});
+
+describe('distinctRecent (200-window derivation, #74)', () => {
+  it('keeps the most-recent distinct ids in newest-first order', () => {
+    // Newest-first attempt stream with repeats: a re-attempt of an older
+    // puzzle surfaces it at its newest position, deduped.
+    const stream = ['a', 'b', 'a', 'c', 'b', 'd'];
+    expect(distinctRecent(stream, 200)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('caps the window at the limit (oldest distinct ids fall out)', () => {
+    const stream = ['a', 'b', 'c', 'd', 'e'];
+    expect(distinctRecent(stream, 3)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('is deterministic for the same input (a reload yields the same window)', () => {
+    const stream = ['p3', 'p3', 'p1', 'p2', 'p1'];
+    const first = distinctRecent(stream, 200);
+    const second = distinctRecent(stream, 200);
+    expect(second).toEqual(first);
+    expect(first).toEqual(['p3', 'p1', 'p2']);
   });
 });

@@ -8,7 +8,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isPiece, type Piece } from '@trainer/core';
 import { sniffImageMime, extensionFor, MAX_UPLOAD_BYTES } from './image-sniff.js';
-import { selectMatchmadePuzzle, type MatchmakeOptions } from './matchmaking.js';
+import { selectMatchmadePuzzle, distinctRecent, type MatchmakeOptions } from './matchmaking.js';
 import type {
   Attempt,
   AttemptHistoryEntry,
@@ -30,6 +30,14 @@ import type {
 
 /** Flat seed rating every player and puzzle starts at (docs/PRD-v1.md "Rating"). */
 export const SEED_RATING = 1500;
+
+/**
+ * The persistent anti-repeat window size (#74): the 200 most-recently-attempted
+ * distinct puzzles are excluded from matchmaking so the same puzzles do not
+ * recur across sessions. ~20% of the ~1003-puzzle bank, so the finite bank still
+ * cycles oldest-first (docs/decisions.md 2026-06-23, grill-with-docs #7).
+ */
+export const RECENT_PUZZLE_WINDOW = 200;
 /** Seed rating deviation. */
 export const SEED_DEVIATION = 350;
 /** Seed rating volatility. */
@@ -146,6 +154,15 @@ export interface DataAccess {
   getAllAttempts(): Promise<Attempt[]>;
   getUserAttempts(userId: string): Promise<Attempt[]>;
   getUserAttemptHistory(userId: string): Promise<AttemptHistoryEntry[]>;
+  /**
+   * The persistent anti-repeat window (#74): the most recently-attempted
+   * DISTINCT puzzle ids for this user, newest-first, capped at `limit`
+   * (default {@link RECENT_PUZZLE_WINDOW}). Derived live from `attempts` — no
+   * new schema — so it survives reloads (same `userId` ⇒ same exclusion set) and
+   * goes cross-device once account linking lands (#77). Fed to
+   * {@link getMatchmadePuzzle} as `recentIds`.
+   */
+  getRecentAttemptedPuzzleIds(userId: string, limit?: number): Promise<string[]>;
   getUserPrefs(userId: string): Promise<UserPrefs | null>;
   upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs>;
   /**
@@ -413,6 +430,25 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return rows.map((row) => ({ ...rowToAttempt(row), difficulty: row.puzzles?.rating ?? null }));
   }
 
+  async function getRecentAttemptedPuzzleIds(
+    userId: string,
+    limit: number = RECENT_PUZZLE_WINDOW,
+  ): Promise<string[]> {
+    // Fetch a generous batch of the newest attempt rows (one per attempt, with
+    // repeats) and dedupe in memory to the `limit` most-recent distinct puzzles.
+    // The 5× over-fetch comfortably surfaces `limit` distinct ids for any
+    // realistic replay rate without scanning the player's whole history.
+    const { data, error } = await client
+      .from('attempts')
+      .select('puzzle_id, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit * 5);
+    if (error) throw new Error(`getRecentAttemptedPuzzleIds failed: ${error.message}`);
+    const ids = (data ?? []).map((r) => (r as { puzzle_id: string }).puzzle_id);
+    return distinctRecent(ids, limit);
+  }
+
   async function getUserPrefs(userId: string): Promise<UserPrefs | null> {
     const { data, error } = await client
       .from('user_prefs')
@@ -566,6 +602,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     getAllAttempts,
     getUserAttempts,
     getUserAttemptHistory,
+    getRecentAttemptedPuzzleIds,
     getUserPrefs,
     upsertUserPrefs,
     uploadSubmissionImage,

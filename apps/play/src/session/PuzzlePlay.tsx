@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { SEED_RATING, type DataAccess, type Puzzle } from '@trainer/data';
+import { RECENT_PUZZLE_WINDOW, SEED_RATING, type DataAccess, type Puzzle } from '@trainer/data';
 import { PuzzleSession } from './PuzzleSession.js';
 import { PlayScreen } from './PlayScreen.js';
 import { type KeyBindings } from '../board/keybindings.js';
@@ -15,6 +15,7 @@ export type PlayDb = Pick<
   DataAccess,
   | 'getMatchmadePuzzle'
   | 'getPuzzleByNumber'
+  | 'getRecentAttemptedPuzzleIds'
   | 'getUserRating'
   | 'upsertUserRating'
   | 'insertAttempt'
@@ -25,11 +26,12 @@ export type PlayDb = Pick<
 >;
 
 /**
- * How many just-played puzzles to keep on the anti-repeat cooldown (#44). A
- * puzzle in this window is excluded from selection so it returns later, not
- * soon (docs/glossary.md "Anti-repeat cooldown").
+ * The persistent anti-repeat window (#74): the 200 most-recently-attempted
+ * distinct puzzles are excluded from selection so a puzzle returns later, not
+ * soon — and, being derived from `attempts`, the exclusion survives reloads
+ * (docs/decisions.md 2026-06-23). Replaces the session-only 10-id ring.
  */
-const COOLDOWN_WINDOW = 10;
+const RECENT_WINDOW = RECENT_PUZZLE_WINDOW;
 
 export interface PuzzlePlayProps {
   db: PlayDb;
@@ -74,9 +76,12 @@ export function PuzzlePlay({
     onAdvanceRef.current = onAdvance;
   }, [onAdvance]);
 
-  // The recently-seen cooldown window (#44), kept in a ref so selecting the
-  // next puzzle never re-creates `load` and re-triggers the mount effect (#17).
+  // The persistent anti-repeat window (#74), kept in a ref so selecting the next
+  // puzzle never re-creates `load` and re-triggers the mount effect (#17). It is
+  // hydrated once per session from `attempts` (the 200 most-recently-attempted
+  // distinct ids), then kept current in memory by prepending each served id.
   const recentRef = useRef<string[]>([]);
+  const windowLoadedRef = useRef(false);
 
   // A shared puzzle to open first (#49), consumed once: after the shared puzzle
   // (or an invalid number that fell back), "Next" returns to matchmaking.
@@ -91,11 +96,29 @@ export function PuzzlePlay({
       pendingNumberRef.current = null; // one-shot — the loop is matchmade hereafter
       let next = wanted != null ? await db.getPuzzleByNumber(wanted) : null;
       if (!next) {
+        // Hydrate the persistent window once, before the first matchmade serve,
+        // so the very first puzzle already excludes the last 200 attempted.
+        if (!windowLoadedRef.current) {
+          try {
+            recentRef.current = await db.getRecentAttemptedPuzzleIds(userId, RECENT_WINDOW);
+          } catch {
+            // Best-effort: a window-load hiccup just weakens anti-repeat this
+            // session; never block play on it.
+          }
+          windowLoadedRef.current = true;
+        }
         const rating = (await db.getUserRating(userId))?.rating ?? SEED_RATING;
         next = await db.getMatchmadePuzzle({ rating, recentIds: recentRef.current });
       }
       if (next) {
-        recentRef.current = [...recentRef.current, next.id].slice(-COOLDOWN_WINDOW);
+        // Prepend the served id (newest-first) and cap at the window size, so
+        // it stays excluded for the rest of this session before `attempts`
+        // records it for the next reload.
+        const served = next.id;
+        recentRef.current = [served, ...recentRef.current.filter((id) => id !== served)].slice(
+          0,
+          RECENT_WINDOW,
+        );
       }
       setPuzzle(next);
     } catch (e) {

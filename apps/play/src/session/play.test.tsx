@@ -41,6 +41,9 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
     async getPuzzleByNumber() {
       return null;
     },
+    async getRecentAttemptedPuzzleIds() {
+      return [];
+    },
     async getUserRating(userId) {
       return ratings.get(userId) ?? null;
     },
@@ -96,6 +99,9 @@ function trackingDb() {
       calls.push(`byNumber:${n}`);
       return n === 5 ? numbered(5) : null; // only #5 exists
     },
+    async getRecentAttemptedPuzzleIds() {
+      return [];
+    },
     async getUserRating(userId) {
       return ratings.get(userId) ?? null;
     },
@@ -121,6 +127,45 @@ function trackingDb() {
   };
   return { db, calls };
 }
+
+describe('PuzzlePlay persistent anti-repeat window (#74)', () => {
+  it('hydrates the 200-window from attempts and passes it to matchmaking', async () => {
+    let passed: readonly string[] | undefined;
+    const ratings = new Map<string, UserRating>();
+    const db: PlayDb = {
+      async getMatchmadePuzzle(opts) {
+        passed = opts.recentIds;
+        return samplePuzzle();
+      },
+      async getPuzzleByNumber() {
+        return null;
+      },
+      async getRecentAttemptedPuzzleIds() {
+        return ['seen-a', 'seen-b'];
+      },
+      async getUserRating(userId) {
+        return ratings.get(userId) ?? null;
+      },
+      async upsertUserRating(rating) {
+        ratings.set(rating.userId, rating);
+        return rating;
+      },
+      async isCurator() {
+        return false;
+      },
+      async flagPuzzle() {},
+      async cullPuzzle() {},
+      async setPuzzleActive() {},
+      async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
+        return { id: 'a1', createdAt: 'x', ratingAfter: null, ...attempt, score: null };
+      },
+    };
+    render(<PuzzlePlay db={db} userId="u1" />);
+    expect(await screen.findByTestId('next-piece')).toHaveTextContent('L');
+    // The window loaded from `attempts` is fed to matchmaking as `recentIds`.
+    expect(passed).toEqual(['seen-a', 'seen-b']);
+  });
+});
 
 describe('PuzzlePlay shared-puzzle link (#49)', () => {
   it('opens the exact shared puzzle by number, bypassing matchmaking', async () => {

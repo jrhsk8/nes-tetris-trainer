@@ -197,6 +197,44 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(history[0].solved).toBe(false);
   });
 
+  it('derives the persistent anti-repeat window from attempts (#74)', async () => {
+    // Three puzzles; the user attempts p1, p2, p3, then re-attempts p1.
+    const made = [];
+    for (const [p1, p2] of [
+      ['T', 'L'],
+      ['J', 'S'],
+      ['Z', 'O'],
+    ] as const) {
+      const puzzle = await db!.insertPuzzle({
+        board: encodeBoard(emptyBoard()),
+        piece1: p1,
+        piece2: p2,
+        optimalLine: sampleLine,
+        optimalMetrics: boardMetrics(emptyBoard()),
+      });
+      createdPuzzleIds.push(puzzle.id);
+      made.push(puzzle);
+    }
+    const [p1, p2, p3] = made;
+
+    const userId = crypto.randomUUID();
+    // Insert in order; small waits would be ideal but created_at ordering is by
+    // insert here. Re-attempt p1 last so it surfaces newest.
+    for (const pz of [p1, p2, p3, p1]) {
+      await db!.insertAttempt({ userId, puzzleId: pz.id, userLine: sampleLine, solved: false });
+    }
+
+    const window = await db!.getRecentAttemptedPuzzleIds(userId);
+    // Distinct, newest-first: p1 (re-attempted last) then p3, p2.
+    expect(window).toEqual([p1.id, p3.id, p2.id]);
+
+    // Survives "reload": the same userId yields the same exclusion set.
+    expect(await db!.getRecentAttemptedPuzzleIds(userId)).toEqual(window);
+
+    // The limit caps the window (oldest distinct ids fall out).
+    expect(await db!.getRecentAttemptedPuzzleIds(userId, 2)).toEqual([p1.id, p3.id]);
+  });
+
   it('uploads a submission image and enqueues + processes a submission (#45/#67)', async () => {
     const submitter = crypto.randomUUID();
     // Valid PNG magic so the magic-byte check (#67) passes.
