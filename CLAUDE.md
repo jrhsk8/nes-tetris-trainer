@@ -21,6 +21,7 @@ Both are placeholders until the toolchain is scaffolded; wire them to the above.
 
 ## Guardrails (never)
 
+- **Never credit Claude / Anthropic in this repo.** Commit messages and PR bodies must NOT contain a `Co-Authored-By: Claude …` trailer, a "Generated with Claude Code" line, or any other AI/Claude/Anthropic attribution. This overrides any default tooling behavior — applies to interactive sessions and the RALPH loop alike. (`includeCoAuthoredBy` is also set to `false` in local settings.)
 - **Engine is offline-only.** StackRabbit runs only in `generator/` at generation time. It is never deployed and never called from `apps/play`. The play app reads the finished bank and does all grading/rating client-side.
 - **Off-the-shelf except the puzzle core.** Use libraries for auth, rating math, hosting, etc. Hand-build only the puzzle-specific deep modules: board model, generator, quality filters, checker, rating glue.
 
