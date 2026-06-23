@@ -9,6 +9,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { isPiece, type Piece } from '@trainer/core';
 import { sniffImageMime, extensionFor, MAX_UPLOAD_BYTES } from './image-sniff.js';
 import { selectMatchmadePuzzle, distinctRecent, type MatchmakeOptions } from './matchmaking.js';
+import { missPuzzleIds } from './misses.js';
 import type {
   Attempt,
   AttemptHistoryEntry,
@@ -185,6 +186,13 @@ export interface DataAccess {
    * {@link getMatchmadePuzzle} as `recentIds`.
    */
   getRecentAttemptedPuzzleIds(userId: string, limit?: number): Promise<string[]>;
+  /**
+   * The miss set (#75): puzzle ids this user has attempted ≥1 time but never
+   * solved, **oldest-first** (by earliest attempt). Derived live from `attempts`
+   * (own rows under RLS). A puzzle leaves the set once solved. Feeds both the
+   * Review-misses mode and the ~1-in-10 auto-injection in normal play.
+   */
+  getMissPuzzleIds(userId: string): Promise<string[]>;
   getUserPrefs(userId: string): Promise<UserPrefs | null>;
   upsertUserPrefs(prefs: UserPrefs): Promise<UserPrefs>;
   /**
@@ -519,6 +527,17 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     return distinctRecent(ids, limit);
   }
 
+  async function getMissPuzzleIds(userId: string): Promise<string[]> {
+    const { data, error } = await client
+      .from('attempts')
+      .select('puzzle_id, solved, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(`getMissPuzzleIds failed: ${error.message}`);
+    const rows = (data ?? []) as { puzzle_id: string; solved: boolean }[];
+    return missPuzzleIds(rows.map((r) => ({ puzzleId: r.puzzle_id, solved: r.solved })));
+  }
+
   async function getUserPrefs(userId: string): Promise<UserPrefs | null> {
     const { data, error } = await client
       .from('user_prefs')
@@ -677,6 +696,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     getMyStarRating,
     getStarStats,
     getRecentAttemptedPuzzleIds,
+    getMissPuzzleIds,
     getUserPrefs,
     upsertUserPrefs,
     uploadSubmissionImage,

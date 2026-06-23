@@ -61,6 +61,12 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
     async getStarStats() {
       return { avg: 0, count: 0 };
     },
+    async getPuzzle() {
+      return null;
+    },
+    async getMissPuzzleIds() {
+      return [];
+    },
     async isCurator() {
       return false;
     },
@@ -129,6 +135,12 @@ function trackingDb() {
     async getStarStats() {
       return { avg: 0, count: 0 };
     },
+    async getPuzzle() {
+      return null;
+    },
+    async getMissPuzzleIds() {
+      return [];
+    },
     async isCurator() {
       return false;
     },
@@ -180,6 +192,12 @@ describe('PuzzlePlay persistent anti-repeat window (#74)', () => {
       async getStarStats() {
         return { avg: 0, count: 0 };
       },
+      async getPuzzle() {
+        return null;
+      },
+      async getMissPuzzleIds() {
+        return [];
+      },
       async isCurator() {
         return false;
       },
@@ -217,5 +235,98 @@ describe('PuzzlePlay shared-puzzle link (#49)', () => {
     render(<PuzzlePlay db={db} userId="u1" initialPuzzleNumber={404} />);
     expect(await screen.findByText(/Puzzle #99/)).toBeInTheDocument();
     expect(calls).toEqual(['byNumber:404', 'matchmade']);
+  });
+});
+
+/**
+ * A db whose miss set + by-id lookups are configurable, tracking which selector
+ * served. Misses map to numbered puzzles (m11 → #11, …); matchmaking serves #99.
+ */
+function missDb(opts: { misses?: string[]; window?: string[] } = {}) {
+  const calls: string[] = [];
+  const numOf = (id: string) => Number(id.replace('m', ''));
+  const db: PlayDb = {
+    async getMatchmadePuzzle() {
+      calls.push('matchmade');
+      return numbered(99);
+    },
+    async getPuzzle(id) {
+      calls.push(`getPuzzle:${id}`);
+      return numbered(numOf(id));
+    },
+    async getPuzzleByNumber() {
+      return null;
+    },
+    async getRecentAttemptedPuzzleIds() {
+      return opts.window ?? [];
+    },
+    async getMissPuzzleIds() {
+      return opts.misses ?? [];
+    },
+    async getUserRating() {
+      return null;
+    },
+    async upsertUserRating(r) {
+      return r;
+    },
+    async getPuzzleSolveStats() {
+      return { total: 0, solved: 0 };
+    },
+    async upsertStarRating() {},
+    async getMyStarRating() {
+      return null;
+    },
+    async getStarStats() {
+      return { avg: 0, count: 0 };
+    },
+    async isCurator() {
+      return false;
+    },
+    async flagPuzzle() {},
+    async cullPuzzle() {},
+    async setPuzzleActive() {},
+    async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
+      return { id: 'a1', createdAt: 'x', ratingAfter: null, ...attempt, score: null };
+    },
+  };
+  return { db, calls };
+}
+
+describe('PuzzlePlay miss replay (#75)', () => {
+  it('Review-misses mode serves the oldest miss first, bypassing matchmaking', async () => {
+    const { db, calls } = missDb({ misses: ['m11', 'm12'] });
+    render(<PuzzlePlay db={db} userId="u1" reviewMode />);
+    // Oldest miss (#11) is served by id; matchmaking is never consulted.
+    expect(await screen.findByText(/Puzzle #11/)).toBeInTheDocument();
+    expect(calls).toEqual(['getPuzzle:m11']);
+  });
+
+  it('Review-misses mode shows an empty state when there are no misses', async () => {
+    const { db } = missDb({ misses: [] });
+    render(<PuzzlePlay db={db} userId="u1" reviewMode />);
+    expect(await screen.findByText(/No misses to review/)).toBeInTheDocument();
+  });
+
+  it('normal play auto-injects the oldest DUE miss when the rate fires (#75)', async () => {
+    // m11 is a due miss (window empty). random < 0.1 forces the injection.
+    const { db, calls } = missDb({ misses: ['m11'], window: [] });
+    render(<PuzzlePlay db={db} userId="u1" random={() => 0} />);
+    expect(await screen.findByText(/Puzzle #11/)).toBeInTheDocument();
+    expect(calls).toEqual(['getPuzzle:m11']); // injected, NOT matchmade
+  });
+
+  it('normal play stays fresh when the rate does not fire', async () => {
+    const { db, calls } = missDb({ misses: ['m11'], window: [] });
+    render(<PuzzlePlay db={db} userId="u1" random={() => 0.9} />);
+    expect(await screen.findByText(/Puzzle #99/)).toBeInTheDocument();
+    expect(calls).toEqual(['matchmade']); // fresh, no injection
+  });
+
+  it('normal play never injects a miss still inside the window (not due)', async () => {
+    // m11 IS in the window → not due → no injection even with random 0.
+    const { db, calls } = missDb({ misses: ['m11'], window: ['m11'] });
+    render(<PuzzlePlay db={db} userId="u1" random={() => 0} />);
+    expect(await screen.findByText(/Puzzle #99/)).toBeInTheDocument();
+    expect(calls).toEqual(['matchmade']);
   });
 });

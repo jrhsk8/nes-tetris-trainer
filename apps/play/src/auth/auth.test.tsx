@@ -119,6 +119,9 @@ describe('Account', () => {
       async getStarStats() {
         return { avg: 0, count: 0 };
       },
+      async getMissPuzzleIds() {
+        return [];
+      },
       async isCurator() {
         return false;
       },

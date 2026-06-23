@@ -5,7 +5,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { RECENT_PUZZLE_WINDOW, SEED_RATING, type DataAccess, type Puzzle } from '@trainer/data';
+import {
+  RECENT_PUZZLE_WINDOW,
+  SEED_RATING,
+  dueMisses,
+  shouldInjectMiss,
+  type DataAccess,
+  type Puzzle,
+} from '@trainer/data';
 import { PuzzleSession } from './PuzzleSession.js';
 import { PlayScreen } from './PlayScreen.js';
 import { type KeyBindings } from '../board/keybindings.js';
@@ -14,8 +21,10 @@ import { type KeyBindings } from '../board/keybindings.js';
 export type PlayDb = Pick<
   DataAccess,
   | 'getMatchmadePuzzle'
+  | 'getPuzzle'
   | 'getPuzzleByNumber'
   | 'getRecentAttemptedPuzzleIds'
+  | 'getMissPuzzleIds'
   | 'getUserRating'
   | 'upsertUserRating'
   | 'insertAttempt'
@@ -55,6 +64,15 @@ export interface PuzzlePlayProps {
   bindings?: KeyBindings;
   /** Mute the NES result chiptune (#61); threaded to the session feedback. */
   muted?: boolean;
+  /**
+   * Review-misses mode (#75): serve the player's misses (attempted-but-unsolved)
+   * **oldest-first**, bypassing the anti-repeat window AND the rating band.
+   * Solving one removes it from the set; default `false` = normal matchmade play
+   * (which still ~1-in-10 auto-injects a due miss).
+   */
+  reviewMode?: boolean;
+  /** Injectable RNG in `[0, 1)` for the miss auto-injection (#75); tests override. */
+  random?: () => number;
 }
 
 export function PuzzlePlay({
@@ -65,6 +83,8 @@ export function PuzzlePlay({
   leftFlank,
   bindings,
   muted,
+  reviewMode = false,
+  random = Math.random,
 }: PuzzlePlayProps) {
   // undefined = loading, null = empty bank, Puzzle = ready.
   const [puzzle, setPuzzle] = useState<Puzzle | null | undefined>(undefined);
@@ -91,6 +111,17 @@ export function PuzzlePlay({
   // (or an invalid number that fell back), "Next" returns to matchmaking.
   const pendingNumberRef = useRef<number | null>(initialPuzzleNumber);
 
+  // Review-misses cursor (#75): the miss ids already served THIS review session,
+  // so "Next" walks the misses oldest-first without re-serving the same one; when
+  // all have been served it cycles back to the oldest.
+  const reviewServedRef = useRef<Set<string>>(new Set());
+
+  // Latest RNG in a ref so `load`'s identity does not change per render (#17).
+  const randomRef = useRef(random);
+  useEffect(() => {
+    randomRef.current = random;
+  }, [random]);
+
   const load = useCallback(async () => {
     setPuzzle(undefined);
     setError(null);
@@ -111,8 +142,40 @@ export function PuzzlePlay({
           }
           windowLoadedRef.current = true;
         }
-        const rating = (await db.getUserRating(userId))?.rating ?? SEED_RATING;
-        next = await db.getMatchmadePuzzle({ rating, recentIds: recentRef.current });
+
+        if (reviewMode) {
+          // Review-misses (#75): serve misses oldest-first, bypassing the window
+          // AND the rating band. Walk them with a per-session cursor; cycle back
+          // to the oldest once all have been served. Solved puzzles have already
+          // dropped out of the freshly-derived miss set.
+          const misses = await db.getMissPuzzleIds(userId);
+          const served = reviewServedRef.current;
+          let missId = misses.find((id) => !served.has(id));
+          if (!missId && misses.length > 0) {
+            served.clear();
+            missId = misses[0];
+          }
+          if (missId) {
+            served.add(missId);
+            next = await db.getPuzzle(missId);
+          }
+        } else {
+          // Normal play: ~1-in-10 serves resurface the oldest DUE miss (one that
+          // has fallen out of the window), band ignored; the rest stay fresh.
+          try {
+            const misses = await db.getMissPuzzleIds(userId);
+            const due = dueMisses(misses, recentRef.current);
+            if (shouldInjectMiss(randomRef.current(), due.length)) {
+              next = await db.getPuzzle(due[0]);
+            }
+          } catch {
+            // A miss-derivation hiccup just skips injection; fresh play continues.
+          }
+          if (!next) {
+            const rating = (await db.getUserRating(userId))?.rating ?? SEED_RATING;
+            next = await db.getMatchmadePuzzle({ rating, recentIds: recentRef.current });
+          }
+        }
       }
       if (next) {
         // Prepend the served id (newest-first) and cap at the window size, so
@@ -128,7 +191,7 @@ export function PuzzlePlay({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load a puzzle');
     }
-  }, [db, userId]);
+  }, [db, userId, reviewMode]);
 
   useEffect(() => {
     void load();
@@ -142,6 +205,8 @@ export function PuzzlePlay({
             <p role="alert">Could not load a puzzle: {error}</p>
           ) : puzzle === undefined ? (
             <p>Loading puzzle…</p>
+          ) : reviewMode ? (
+            <p>No misses to review — solve more puzzles first.</p>
           ) : (
             <p>No puzzles in the bank yet.</p>
           )}

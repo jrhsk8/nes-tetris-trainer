@@ -44,10 +44,11 @@ export interface AccountProps {
   auth: AuthApi;
 }
 
-type View = 'play' | 'history' | 'controls' | 'submit';
+type View = 'play' | 'review' | 'history' | 'controls' | 'submit';
 
 const NAV: { view: View; label: string }[] = [
   { view: 'play', label: 'Play' },
+  { view: 'review', label: 'Review misses' },
   { view: 'history', label: 'History' },
   { view: 'controls', label: 'Controls' },
   { view: 'submit', label: 'Submit' },
@@ -173,6 +174,18 @@ export function Account({ db, user, auth }: AccountProps) {
             db={db}
             userId={user.id}
             initialPuzzleNumber={sharedPuzzleNumber}
+            onAdvance={() => void refresh()}
+            leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
+            bindings={bindings}
+            muted={muted}
+          />
+        </div>
+      ) : view === 'review' ? (
+        <div data-testid="view-review">
+          <PuzzlePlay
+            db={db}
+            userId={user.id}
+            reviewMode
             onAdvance={() => void refresh()}
             leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
             bindings={bindings}

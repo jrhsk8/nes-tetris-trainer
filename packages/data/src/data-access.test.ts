@@ -41,6 +41,13 @@ const sampleLine: Line = [
   { rotation: 1, col: 3 },
 ];
 
+/**
+ * A short wait between attempt inserts in ordering-sensitive tests, so each row
+ * lands on a strictly later `created_at` (now() has µs resolution but two rapid
+ * inserts can otherwise tie and flip the order).
+ */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 15));
+
 describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
   it('round-trips a puzzle: insert then read back by id', async () => {
     const board = encodeBoard(emptyBoard());
@@ -226,6 +233,38 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(await db!.getStarStats(puzzle.id)).toEqual({ avg: 3.5, count: 2 });
   });
 
+  it('derives the miss set (attempted, never solved) oldest-first and exits on solve (#75)', async () => {
+    const made = [];
+    for (const [p1, p2] of [
+      ['T', 'L'],
+      ['J', 'S'],
+    ] as const) {
+      const puzzle = await db!.insertPuzzle({
+        board: encodeBoard(emptyBoard()),
+        piece1: p1,
+        piece2: p2,
+        optimalLine: sampleLine,
+        optimalMetrics: boardMetrics(emptyBoard()),
+      });
+      createdPuzzleIds.push(puzzle.id);
+      made.push(puzzle);
+    }
+    const [p1, p2] = made;
+    const userId = crypto.randomUUID();
+
+    // Miss p1, then miss p2 → both are misses, p1 first (oldest). Spaced so
+    // created_at strictly increases (stable oldest-first order).
+    await db!.insertAttempt({ userId, puzzleId: p1.id, userLine: sampleLine, solved: false });
+    await tick();
+    await db!.insertAttempt({ userId, puzzleId: p2.id, userLine: sampleLine, solved: false });
+    expect(await db!.getMissPuzzleIds(userId)).toEqual([p1.id, p2.id]);
+
+    // Finally solve p1 → it leaves the set; p2 remains.
+    await tick();
+    await db!.insertAttempt({ userId, puzzleId: p1.id, userLine: sampleLine, solved: true });
+    expect(await db!.getMissPuzzleIds(userId)).toEqual([p2.id]);
+  });
+
   it('counts live community solve stats for a puzzle (#79)', async () => {
     const puzzle = await db!.insertPuzzle({
       board: encodeBoard(emptyBoard()),
@@ -273,10 +312,11 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     const [p1, p2, p3] = made;
 
     const userId = crypto.randomUUID();
-    // Insert in order; small waits would be ideal but created_at ordering is by
-    // insert here. Re-attempt p1 last so it surfaces newest.
+    // Insert in order, spacing each so created_at strictly increases. Re-attempt
+    // p1 last so it surfaces newest.
     for (const pz of [p1, p2, p3, p1]) {
       await db!.insertAttempt({ userId, puzzleId: pz.id, userLine: sampleLine, solved: false });
+      await tick();
     }
 
     const window = await db!.getRecentAttemptedPuzzleIds(userId);

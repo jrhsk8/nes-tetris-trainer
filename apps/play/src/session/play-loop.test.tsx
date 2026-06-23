@@ -65,6 +65,12 @@ function countingDb(): { db: PlayDb; calls: () => number } {
     async getStarStats() {
       return { avg: 0, count: 0 };
     },
+    async getPuzzle() {
+      return null;
+    },
+    async getMissPuzzleIds() {
+      return [];
+    },
     async isCurator() {
       return false;
     },

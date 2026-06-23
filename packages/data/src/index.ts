@@ -22,6 +22,8 @@ export {
 export type { AllowedImageMime } from './image-sniff.js';
 export { selectMatchmadePuzzle, distinctRecent } from './matchmaking.js';
 export type { MatchmakeOptions } from './matchmaking.js';
+export { missPuzzleIds, dueMisses, shouldInjectMiss, MISS_INJECT_RATE } from './misses.js';
+export type { MissAttempt } from './misses.js';
 export type {
   Glicko,
   Puzzle,
