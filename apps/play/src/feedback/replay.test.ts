@@ -6,12 +6,20 @@ import {
   emptyColorGrid,
   restingCells,
   applyRestingPlacement,
+  applyPlacement,
   boardKey,
+  decodeBoard,
   resolveLineByOutcome,
   type Grid,
   type Line,
 } from '@trainer/core';
 import { buildReplay } from './replay.js';
+
+/** The last `translate(x%, y%)` of the overlay frames that animate `piece`. */
+function lastTransform(frames: ReturnType<typeof buildReplay>, piece: string): string {
+  const overlays = frames.filter((f) => f.overlay?.piece === piece);
+  return overlays[overlays.length - 1].overlay!.transform;
+}
 
 /** The settled (last) keyframe of a replay. */
 function settled(board0: Grid, p1: 'T' | 'O' | 'I' | 'Z' | 'L' | 'J' | 'S', p2: typeof p1, line: Line, base = emptyColorGrid()) {
@@ -175,5 +183,37 @@ describe('buildReplay tuck animation (#43)', () => {
     expect(finalOverlayCells(frames, 'I')).toEqual(keysOf(tuckCells));
     // ...and the settled stack reproduces the stored canonical outcome.
     expect(boardKey(frames[frames.length - 1].grid)).toBe(truthKey);
+  });
+
+  // Real data from the live bank for puzzle 1534 (Z then J): its rank-1 optimal is
+  // a tuck/spin whose stored placement is row-less. This guards the whole path the
+  // owner reported broken — recover rows from the boardKey, then animate — and in
+  // particular that each piece's LAST overlay frame ends AT its target
+  // (`translate(0%, 0%)`), not parked to the side ("sits to the side and never
+  // moves into place").
+  it('puzzle 1534: recovers the tuck and the animation ends in place, not to the side', () => {
+    const BOARD =
+      '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011000000001100011110111101111111110111111111011111111101111111110';
+    const KEY =
+      '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001100000001110011000111001100011110111101111111110111111111011111111101111111110';
+    const board = decodeBoard(BOARD);
+    const rowless: Line = [
+      { rotation: 1, col: 0 },
+      { rotation: 3, col: 1 },
+    ];
+
+    const recovered = resolveLineByOutcome(board, 'Z', 'J', rowless, KEY);
+    // Rows were recovered (not left as the row-less hard drop)...
+    expect(recovered[0].row).toBeDefined();
+    expect(recovered[1].row).toBeDefined();
+    // ...and re-applying the recovered line reproduces the stored outcome.
+    expect(boardKey(applyPlacement(applyPlacement(board, 'Z', recovered[0]), 'J', recovered[1]))).toBe(KEY);
+
+    const frames = buildReplay(board, 'Z', 'J', recovered);
+    // Every piece's animation ends AT its resting cells, never parked to the side.
+    expect(lastTransform(frames, 'Z')).toBe('translate(0%, 0%)');
+    expect(lastTransform(frames, 'J')).toBe('translate(0%, 0%)');
+    // And the settled board is exactly the stored outcome.
+    expect(boardKey(frames[frames.length - 1].grid)).toBe(KEY);
   });
 });

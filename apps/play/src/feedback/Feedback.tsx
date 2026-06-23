@@ -167,23 +167,19 @@ function bestLineOf(combos: ComboTable): Line | null {
 }
 
 /**
- * Pin the resting rows of `selected` before replaying it. The player's own line
- * already carries the exact rows it confirmed (so a tuck the player made animates
- * faithfully); a **stored combo** is row-less ({@link ComboEntry} keeps only
- * `rotation`/`col`), so we recover its true rows from the entry's canonical
- * `boardKey` ({@link resolveLineByOutcome}, #42) — without which a tuck combo
- * (e.g. puzzle 1534's optimal) would hard-drop onto the ledge instead of sliding
- * into the pocket. Falls back to the row-less line when no entry/key matches (the
- * replay's own hard-drop path then applies).
+ * The canonical outcome `boardKey` of the selected STORED combo, or `''` when
+ * `selected` is the player's own (already row-bearing) line. We recover a stored
+ * combo's pinned tuck rows from this key ({@link resolveLineByOutcome}, #42) —
+ * without it a tuck combo (e.g. puzzle 1534's optimal) hard-drops onto the ledge
+ * instead of sliding into the pocket.
+ *
+ * Returned as a **string** so the replay timeline can depend on it instead of the
+ * `combos` object: a re-render that only changes `combos`' identity (e.g. when the
+ * #79/#80 community-stats / star props resolve) then leaves the timeline — and the
+ * step counter — untouched, so the animation is not restarted mid-play.
  */
-function resolveSelectedLine(
-  combos: ComboTable,
-  board0: Grid,
-  piece1: Piece,
-  piece2: Piece,
-  selected: Line,
-): Line {
-  if (selected[0].row !== undefined && selected[1].row !== undefined) return selected;
+function selectedOutcomeKey(combos: ComboTable, selected: Line): string {
+  if (selected[0].row !== undefined && selected[1].row !== undefined) return '';
   const entry = combos.entries.find(
     (e) =>
       e.rot1 === selected[0].rotation &&
@@ -191,7 +187,7 @@ function resolveSelectedLine(
       e.rot2 === selected[1].rotation &&
       e.col2 === selected[1].col,
   );
-  return resolveLineByOutcome(board0, piece1, piece2, selected, entry?.boardKey);
+  return entry?.boardKey ?? '';
 }
 
 export function Feedback({
@@ -235,14 +231,20 @@ export function Feedback({
     { rotation: 0, col: 0 },
   ]);
 
+  // Stable across re-renders that only churn the `combos` object identity, so the
+  // replay timeline (and step counter) aren't reset mid-animation (#76 follow-up).
+  const selectedKey = useMemo(() => selectedOutcomeKey(combos, selected), [combos, selected]);
+
   const timeline = useMemo<Keyframe[]>(() => {
     // Pin the resting rows (recovering a stored tuck from its boardKey) so the
     // animation lands exactly where the puzzle says — not hard-dropped (#76).
-    const resolved = resolveSelectedLine(combos, board0, piece1, piece2, selected);
+    const resolved = selectedKey
+      ? resolveLineByOutcome(board0, piece1, piece2, selected, selectedKey)
+      : selected;
     const keyframes = buildReplay(board0, piece1, piece2, resolved, baseColors);
     // Reduced motion: jump straight to the settled board (last keyframe).
     return reduced ? [keyframes[keyframes.length - 1]] : keyframes;
-  }, [combos, board0, piece1, piece2, selected, baseColors, reduced]);
+  }, [board0, piece1, piece2, selected, baseColors, reduced, selectedKey]);
 
   const [step, setStep] = useState(0);
 
