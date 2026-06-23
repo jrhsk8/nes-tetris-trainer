@@ -17,6 +17,13 @@ build/
 # Generated puzzle banks / local artifacts
 *.local.json
 
+# Transient session scratch at repo root (handoffs, findings, ad-hoc verify
+# scripts). Real docs live in docs/; these are throwaway working notes that kept
+# landing at root. Anchored to root so docs/ is unaffected.
+/HANDOFF-*.md
+/FINDINGS-*.md
+/verify-*.mjs
+
 # Editor / OS
 .vscode/
 .idea/
