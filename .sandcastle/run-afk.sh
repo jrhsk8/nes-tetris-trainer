@@ -37,8 +37,9 @@ log() { echo "[afk $(date +%H:%M:%S)] $*" | tee -a "$SUMMARY"; }
 # --- memory hygiene -------------------------------------------------------
 # Reap any sandcastle sandbox container(s) left running. Best-effort: a zombie
 # left by a prior hard VM kill refuses `docker rm -f` ("did not receive an exit
-# event"), but its RAM is already freed and it clears on a Docker Desktop
-# restart — so we note it and move on rather than failing the run.
+# event"), but its RAM is already freed and it clears when dockerd restarts
+# (e.g. after `wsl --shutdown` — systemd brings the engine back) — so we note it
+# and move on rather than failing the run.
 reap_sandcastle_containers() {
   local ids
   ids=$(docker ps -aq --filter "name=^sandcastle-" 2>/dev/null) || return 0
@@ -46,7 +47,7 @@ reap_sandcastle_containers() {
   log "reaping leftover sandcastle container(s): $(echo "$ids" | tr '\n' ' ')"
   # shellcheck disable=SC2086
   docker rm -f $ids >>"$SUMMARY" 2>&1 \
-    || log "  note: a container would not die (zombie from a prior hard kill); its RAM is already freed — clears on a Docker Desktop restart."
+    || log "  note: a container would not die (zombie from a prior hard kill); its RAM is already freed — clears when dockerd restarts (wsl --shutdown / systemd)."
 }
 
 # Drop the WSL VM's page cache so the freed RAM returns to Windows now rather
