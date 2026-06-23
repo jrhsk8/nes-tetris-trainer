@@ -167,20 +167,31 @@ export function reachableStates(grid: Grid, piece: Piece): RestingPlacement[] {
 
 /**
  * The floating state that selecting `targetCol` moves `piece` to from
- * `(rotation, row)` under the **free lateral** rule (#68, #69):
+ * `(rotation, row)` under the **tuck-seeking lateral** rule (#76, refining the
+ * #68/#69 free-lateral rule):
  *
- * - If the piece fits in the target column **at the current row**, slide there
- *   (this still covers sliding *into* an open pocket = a tuck).
- * - Otherwise **ride up** over the wall to the highest row that fits in the target
- *   column — where the piece would rest if dropped from the top of that column.
+ * - Move to the **reachable** position in the target column **nearest the
+ *   current row, preferring at-or-below** — i.e. tuck *into* a pocket rather than
+ *   eject to the column top.
+ * - **Ride up** (pick the nearest reachable position *above* the current row)
+ *   only when nothing at-or-below is reachable.
  *
- * Returns `null` only when the move is genuinely blocked: the target column is
- * full to the very top, or the piece would land off-screen. Every returned state
- * is in {@link reachableStates} (the ride-up target rests from the top, the slide
- * is one BFS step from a reachable state), so the superset binding invariant holds
- * — lateral can never reach a placement the generator did not enumerate. Shared by
+ * The candidates are taken from {@link reachableStates}, so every returned state
+ * is one the generator enumerated — the superset/soundness binding invariant
+ * holds. This replaces the old "fits at the current row, else ride up to the very
+ * top" rule, whose ride-up ejected a piece to the column top whenever it did not
+ * fit at the *exact* current row, making right-side tucks (puzzle 1374's col-4 /
+ * col-8 holes) demand pixel-perfect soft-dropping.
+ *
+ * Returns `null` only when the move is genuinely blocked: no reachable state of
+ * `piece` exists in the target column at this rotation (the column is full to the
+ * very top, or the target would carry the piece off-screen). Shared by
  * keyboard/button lateral steps ({@link lateralMove}) and mobile drag (#69), so
- * both express identical free/ride-up behaviour.
+ * both express identical tuck-seeking behaviour.
+ *
+ * `reachable` defaults to {@link reachableStates}`(grid, piece)`; callers that
+ * already hold the reachable set (the play input, or a hot loop) pass it in to
+ * skip recomputing the BFS per press.
  */
 export function moveToColumn(
   grid: Grid,
@@ -188,21 +199,25 @@ export function moveToColumn(
   rotation: number,
   row: number,
   targetCol: number,
+  reachable: readonly RestingPlacement[] = reachableStates(grid, piece),
 ): RestingPlacement | null {
-  if (fitsAt(grid, piece, rotation, row, targetCol)) {
-    return { rotation, row, col: targetCol };
+  let atOrBelow: RestingPlacement | null = null; // nearest reachable with row >= current (tuck in)
+  let above: RestingPlacement | null = null; //     nearest reachable with row <  current (ride up)
+  for (const s of reachable) {
+    if (s.rotation !== rotation || s.col !== targetCol) continue;
+    if (s.row >= row) {
+      if (atOrBelow === null || s.row < atOrBelow.row) atOrBelow = s;
+    } else if (above === null || s.row > above.row) {
+      above = s;
+    }
   }
-  if (fitsAt(grid, piece, rotation, 0, targetCol)) {
-    let r = 0;
-    while (fitsAt(grid, piece, rotation, r + 1, targetCol)) r++;
-    return { rotation, row: r, col: targetCol };
-  }
-  return null;
+  return atOrBelow ?? above;
 }
 
 /**
- * The free-lateral move (#68) for a single L/R press in direction `dir` (`-1`
- * left, `+1` right): {@link moveToColumn} applied to the adjacent column.
+ * The tuck-seeking lateral move (#76, #68) for a single L/R press in direction
+ * `dir` (`-1` left, `+1` right): {@link moveToColumn} applied to the adjacent
+ * column. `reachable` is forwarded so a caller can reuse one BFS across presses.
  */
 export function lateralMove(
   grid: Grid,
@@ -211,8 +226,9 @@ export function lateralMove(
   row: number,
   col: number,
   dir: -1 | 1,
+  reachable?: readonly RestingPlacement[],
 ): RestingPlacement | null {
-  return moveToColumn(grid, piece, rotation, row, col + dir);
+  return moveToColumn(grid, piece, rotation, row, col + dir, reachable);
 }
 
 /**

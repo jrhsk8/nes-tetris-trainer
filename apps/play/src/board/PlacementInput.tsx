@@ -106,11 +106,12 @@ export function PlacementInput({
   // reachability model (#56). A move is allowed iff its target state is in here,
   // so the confirmable placements match the generator's cell-for-cell and a move
   // can never escape onto a placement the generator did not enumerate.
+  const reachableList = useMemo(() => reachableStates(board, piece), [board, piece]);
   const reachable = useMemo(() => {
     const set = new Set<number>();
-    for (const s of reachableStates(board, piece)) set.add(stateKey(s.rotation, s.row, s.col));
+    for (const s of reachableList) set.add(stateKey(s.rotation, s.row, s.col));
     return set;
-  }, [board, piece]);
+  }, [reachableList]);
   const canReach = useCallback(
     (rot: number, r: number, c: number) => reachable.has(stateKey(rot, r, c)),
     [reachable],
@@ -127,20 +128,20 @@ export function PlacementInput({
     [piece, rotation, restRow, col],
   );
 
-  // Free lateral movement (#68): a press moves to the target column at the
-  // current row if it fits (this still covers sliding into an open pocket = a
-  // tuck), otherwise the piece RIDES UP over the wall to the highest row that
-  // fits there. Blocked only when the target column is full to the top or the
-  // move would go off-screen. {@link lateralMove} guarantees the target is a
-  // BFS-reachable state, so the superset binding invariant holds.
+  // Tuck-seeking lateral movement (#76, #68): a press moves to the reachable
+  // position in the target column NEAREST the current row, preferring at-or-below
+  // — so it tucks INTO a pocket instead of ejecting to the column top; it rides
+  // up only when nothing at-or-below is reachable. Blocked only when the target
+  // column is full to the top or the move would go off-screen. {@link lateralMove}
+  // picks from the reachable set, so the superset binding invariant holds.
   const lateral = useCallback(
     (dir: -1 | 1) => {
-      const next = lateralMove(board, piece, rotation, row, col, dir);
+      const next = lateralMove(board, piece, rotation, row, col, dir, reachableList);
       if (!next) return;
       setCol(next.col);
       setRow(next.row);
     },
-    [board, piece, rotation, row, col],
+    [board, piece, rotation, row, col, reachableList],
   );
 
   const moveLeft = useCallback(() => lateral(-1), [lateral]);
@@ -171,13 +172,13 @@ export function PlacementInput({
       const lo = -minC;
       const hi = COLS - 1 - maxC;
       const targetCol = Math.min(hi, Math.max(lo, fingerCol - Math.round((minC + maxC) / 2)));
-      const next = moveToColumn(board, piece, rotation, row, targetCol);
+      const next = moveToColumn(board, piece, rotation, row, targetCol, reachableList);
       if (next) {
         setCol(next.col);
         setRow(next.row);
       }
     },
-    [board, piece, rotation, row],
+    [board, piece, rotation, row, reachableList],
   );
 
   const onPointerDown = useCallback(

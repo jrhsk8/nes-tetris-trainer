@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   emptyBoard,
   encodeBoard,
+  decodeBoard,
   applyPlacement,
   pieceCells,
   fitsAt,
@@ -10,13 +11,68 @@ import {
   reachableStates,
   enumerateResting,
   lateralMove,
+  moveToColumn,
   boardKey,
+  ORIENTATIONS,
   ROWS,
   COLS,
   PIECES,
+  type Piece,
   type RestingPlacement,
   type Grid,
 } from './index.js';
+
+/**
+ * Every floating state the player can actually navigate to via the on-screen /
+ * keyboard inputs (#76): tuck-seeking lateral (both directions), soft-drop
+ * (down), raise (up), and rotate (cw/ccw) — each gated on the BFS-reachable set
+ * exactly as `PlacementInput` gates `canReach`. Seeded from the entry row (every
+ * rotation/column that fits at the top), mirroring how pieces enter. A resting
+ * placement is "reachable by input" iff its exact floating state appears here
+ * (confirming there hard-drops in place). This is the navigation model the
+ * completeness property asserts must cover every {@link enumerateResting}.
+ */
+function inputReachableStates(grid: Grid, piece: Piece): Set<number> {
+  const states = reachableStates(grid, piece);
+  const reachable = new Set(states.map((s) => key(s.rotation, s.row, s.col)));
+  const canReach = (rot: number, r: number, c: number) => reachable.has(key(rot, r, c));
+  const rotations = ORIENTATIONS[piece].length;
+
+  const visited = new Set<number>();
+  const queue: RestingPlacement[] = [];
+  const seed = (s: RestingPlacement) => {
+    const k = key(s.rotation, s.row, s.col);
+    if (visited.has(k)) return;
+    visited.add(k);
+    queue.push(s);
+  };
+  // Entry seeds: every rotation/column that fits at the top row.
+  for (let rotation = 0; rotation < rotations; rotation++) {
+    for (let col = 0; col < COLS; col++) {
+      if (canReach(rotation, 0, col)) seed({ rotation, row: 0, col });
+    }
+  }
+  for (let i = 0; i < queue.length; i++) {
+    const { rotation, row, col } = queue[i];
+    for (const dir of [-1, 1] as const) {
+      const next = lateralMove(grid, piece, rotation, row, col, dir, states);
+      if (next) seed(next);
+    }
+    if (canReach(rotation, row + 1, col)) seed({ rotation, row: row + 1, col }); // soft-drop
+    if (canReach(rotation, row - 1, col)) seed({ rotation, row: row - 1, col }); // raise
+    if (rotations > 1) {
+      const cw = (rotation + 1) % rotations;
+      const ccw = (rotation - 1 + rotations) % rotations;
+      if (canReach(cw, row, col)) seed({ rotation: cw, row, col });
+      if (canReach(ccw, row, col)) seed({ rotation: ccw, row, col });
+    }
+  }
+  return visited;
+}
+
+function key(rotation: number, row: number, col: number): number {
+  return (rotation * ROWS + row) * COLS + col;
+}
 
 describe('pieceCells / fitsAt / isResting', () => {
   it('places a piece at a board offset (bounding-box top-left at row,col)', () => {
@@ -163,20 +219,89 @@ describe('lateralMove (free lateral movement #68)', () => {
     // over game-realistic boards, every piece, and both directions.
     for (const grid of sampleBoards()) {
       for (const piece of PIECES) {
+        const states = reachableStates(grid, piece);
         const reachable = new Set(
-          reachableStates(grid, piece).map(
-            (s) => (s.rotation * ROWS + s.row) * COLS + s.col,
-          ),
+          states.map((s) => (s.rotation * ROWS + s.row) * COLS + s.col),
         );
-        for (const s of reachableStates(grid, piece)) {
+        for (const s of states) {
           for (const dir of [-1, 1] as const) {
-            const next = lateralMove(grid, piece, s.rotation, s.row, s.col, dir);
+            // Reuse the precomputed reachable set so the exhaustive sweep does
+            // not recompute the BFS per press (#76 moveToColumn reads it).
+            const next = lateralMove(grid, piece, s.rotation, s.row, s.col, dir, states);
             if (next === null) continue;
             const key = (next.rotation * ROWS + next.row) * COLS + next.col;
             expect(reachable.has(key), `${piece} ${JSON.stringify(s)} dir ${dir}`).toBe(true);
           }
         }
       }
+    }
+  });
+
+  it('tucks INTO a pocket below the press row instead of ejecting to the top (#76)', () => {
+    // col 4 carries a wall at rows 10..15 with an open pocket below it (rows
+    // 16..19) and open columns to the side for entry. Pressing toward col 4 from
+    // row 12 does NOT fit at the press row (the wall), but the pocket below is
+    // reachable. The OLD ride-up rule ejected the piece UP to rest on the wall
+    // top (~row 8); tuck-seeking instead drops it DOWN into the pocket (row 16).
+    const grid = emptyBoard();
+    for (let r = 10; r <= 15; r++) grid[r][4] = 1;
+
+    const moved = moveToColumn(grid, 'O', 0, 12, 4);
+    expect(moved).not.toBeNull();
+    expect(moved!.col).toBe(4);
+    // Tucked DOWN (at or below the press row), not ejected up over the wall.
+    expect(moved!.row).toBe(16);
+    expect(moved!.row).toBeGreaterThanOrEqual(12);
+  });
+
+  it('navigation-completeness: input moves reach every resting placement (#76)', () => {
+    // The model and the player input set must agree: a BFS over the ACTUAL input
+    // moves (tuck-seeking lateral, soft-drop, raise, rotate) must reach every
+    // placement the generator enumerates — no resting placement is gradeable but
+    // unreachable. Checked exhaustively over game-realistic boards and pieces.
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        const reachableByInput = inputReachableStates(grid, piece);
+        for (const p of enumerateResting(grid, piece)) {
+          expect(
+            reachableByInput.has(key(p.rotation, p.row, p.col)),
+            `${piece} resting ${JSON.stringify(p)} unreachable by input`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("reaches the J tucks into puzzle 1374's right-side col-4 / col-8 holes (#76)", () => {
+    // The real board pulled from the live bank (puzzle #1374): a J could not be
+    // tucked into the right-opening pockets at col 3 row 13 and col 7 row 15
+    // (1-indexed "columns 4 and 8") because the ride-up rule ejected it. Both
+    // tucks must now be reachable by input.
+    const grid = decodeBoard(
+      '00000000000000000000000000000000000000000000000000000000000000000000000000000000' +
+        '1000000000100000000010000000001010000000111100000011100000001111001100111111100' +
+        '01111111100111111111011111111101111111110',
+    );
+    const reachableByInput = inputReachableStates(grid, 'J');
+
+    // Pockets: an empty cell capped by a filled cell above, opening to the right.
+    const pockets: Array<[number, number]> = [
+      [13, 3],
+      [15, 7],
+    ];
+    for (const [pr, pc] of pockets) {
+      expect(grid[pr][pc], `(${pr},${pc}) should be an empty pocket`).toBe(0);
+      expect(grid[pr - 1][pc], `(${pr - 1},${pc}) should cap the pocket`).toBe(1);
+
+      // A J resting placement that fills the pocket cell, reachable by input.
+      const fills = enumerateResting(grid, 'J').filter((p) =>
+        pieceCells('J', p.rotation, p.row, p.col).some(([r, c]) => r === pr && c === pc),
+      );
+      expect(fills.length, `no J resting placement fills (${pr},${pc})`).toBeGreaterThan(0);
+      expect(
+        fills.some((p) => reachableByInput.has(key(p.rotation, p.row, p.col))),
+        `J tuck into (${pr},${pc}) not reachable by input`,
+      ).toBe(true);
     }
   });
 });
