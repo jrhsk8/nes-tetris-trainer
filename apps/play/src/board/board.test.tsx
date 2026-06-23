@@ -170,7 +170,7 @@ describe('PlacementInput', () => {
     expect(afterMove).not.toEqual(before); // the ghost actually moved
 
     await user.click(screen.getByRole('button', { name: 'Rotate clockwise' }));
-    const shownAtConfirm = ghostKeys();
+    const shownAtConfirm = landingKeys();
 
     await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -190,11 +190,18 @@ describe('PlacementInput', () => {
     render(<PlacementInput board={board} piece="L" onConfirm={onConfirm} />);
 
     await user.click(screen.getByLabelText('placement input'));
+    // ArrowLeft shifts + settles, ArrowUp lifts one row (so the active piece now
+    // floats just above its landing, partially over the drop-shadow).
     await user.keyboard('{ArrowLeft}{ArrowUp}{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const emitted = onConfirm.mock.calls[0][0];
-    expect(keysOf(restingCells(board, 'L', emitted)!)).toEqual(ghostKeys());
+    // What you confirm is what's shown: every cell of the landing is visibly drawn
+    // — as the drop-shadow, or (where the lifted piece overlaps it) as the active
+    // piece itself.
+    const shown = new Set([...ghostKeys(), ...cellsInState('active')]);
+    const landed = keysOf(restingCells(board, 'L', emitted)!);
+    expect([...landed].every((k) => shown.has(k))).toBe(true);
   });
 
   it('rotates clockwise with x and counter-clockwise with z (inverses)', async () => {
@@ -274,12 +281,13 @@ describe('PlacementInput', () => {
     expect(keysOf(landed)).toEqual(landingKeys());
   });
 
-  it('seats on top of a wall by shifting over the column while high (#81)', async () => {
+  it('seats on top of a wall by lifting over it, then shifting on (#81)', async () => {
     const user = userEvent.setup();
-    // Same col-9 wall. The drop-shadow makes the landing visible at any column, so
-    // to rest ON the wall you simply shift the piece over col 9 near the top — the
-    // shadow shows it landing on the wall (rows 4..7) — and confirm. No ride-up
-    // hack needed: what the shadow shows is what you get.
+    // col-9 wall, rows 8-19. With gravity-on-shift the piece walks the floor, so
+    // moving right settles it in the col-8 well — it cannot slide onto the wall at
+    // that low row. To rest ON the wall you lift it above the wall top (▲), then
+    // shift right: it falls onto the wall (rows 4..7). The active piece then shows
+    // the seated landing.
     const board = emptyBoard();
     for (let r = 8; r < 20; r++) board[r][9] = 1;
     const onConfirm = vi.fn<(p: Placement) => void>();
@@ -287,9 +295,10 @@ describe('PlacementInput', () => {
 
     await user.click(screen.getByLabelText('placement input'));
     await user.keyboard('x'); // vertical I
-    for (let i = 0; i < 9; i++) await user.keyboard('{ArrowRight}'); // shift over col 9 (high)
-    // The shadow already shows the landing seated on the wall.
-    expect(ghostKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
+    for (let i = 0; i < 9; i++) await user.keyboard('{ArrowRight}'); // walk to the col-8 well floor
+    for (let i = 0; i < 16; i++) await user.keyboard('{ArrowUp}'); // lift above the wall top
+    await user.keyboard('{ArrowRight}'); // shift onto col 9 — falls to rest on the wall
+    expect(landingKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
     await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -334,7 +343,7 @@ describe('PlacementInput', () => {
     expect(keysOf(landed)).toEqual(landingKeys());
   });
 
-  it('drag positions against a wall by the same pure-translation rule as L/R (#69, #81)', () => {
+  it('drag positions against a wall by the same shift-then-settle rule as L/R (#69, #81)', () => {
     const board = emptyBoard();
     for (let r = 8; r < 20; r++) board[r][9] = 1; // wall in col 9
     const onConfirm = vi.fn<(p: Placement) => void>();
@@ -344,14 +353,14 @@ describe('PlacementInput', () => {
     mockGrid(container);
 
     const surface = screen.getByLabelText('board drag surface');
-    // Drag the horizontal I toward the wall column at the top — the drop-shadow
-    // shows it landing ON top of the wall (right end on col 9 at row 7), never
-    // off-board, never below the wall.
+    // Drag the horizontal I toward the wall column — it walks over and the piece
+    // settles ON top of the wall (right end on col 9 at row 7), never off-board,
+    // never below the wall.
     fireEvent(surface, ptr('pointerdown', 315));
 
-    const ghost = ghostKeys();
-    expect([...ghost].every((k) => Number(k.split('-')[0]) <= 7)).toBe(true);
-    expect(ghost.has('7-9')).toBe(true);
+    const landing = landingKeys();
+    expect([...landing].every((k) => Number(k.split('-')[0]) <= 7)).toBe(true);
+    expect(landing.has('7-9')).toBe(true);
   });
 
   it('a board drag only moves while the pointer is down, not after release (#69)', () => {

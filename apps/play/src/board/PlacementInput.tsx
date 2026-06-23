@@ -96,11 +96,17 @@ export function PlacementInput({
   const [col, setCol] = useState(() => spawnColumn(board, piece));
   const [row, setRow] = useState(0);
 
-  // Auto-focus the board on puzzle/piece load (#64) so the whole loop is no-mouse:
-  // keystrokes land on the placement input immediately, no click required. Re-runs
-  // when the piece changes (placement 1 → 2) and on each new puzzle.
+  // Reset the floating piece to spawn AND auto-focus the board on puzzle/piece
+  // load (#64, #81). The component instance is reused across placement 1 → 2
+  // (and new puzzles), so without this the second piece would inherit the first's
+  // column/row/rotation — harmless under pure translation, but with gravity-on
+  // -shift a stale low row sits inside the piece just placed and blocks every
+  // lateral, stranding the piece. Re-runs whenever the piece or board changes.
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    setRotation(0);
+    setCol(spawnColumn(board, piece));
+    setRow(0);
     rootRef.current?.focus();
   }, [board, piece]);
 
@@ -143,28 +149,36 @@ export function PlacementInput({
     [piece, rotation, restRow, col],
   );
 
-  // Lateral movement (#81): a pure one-column translation at the current row —
-  // move iff the piece still fits one column over (a reachable state). No row
-  // teleport: to tuck, soft-drop beside the overhang first, THEN shift under. This
-  // replaces the old tuck-seeking rule whose row jumps made the maneuver opaque.
+  // Lateral movement (#81): shift one column at the current row, then let the
+  // piece FALL to rest in that column (gravity). So moving across the top walks
+  // the piece along the stack's surface, and moving into an open well drops it in
+  // — no manual soft-dropping. A tuck is then just: walk the piece into the well
+  // beside the overhang and press once more toward it; from that low row the shift
+  // slides UNDER the overhang and rests in the pocket. The shift itself is a pure
+  // one-column step gated on the reachable set (no teleport to a far pocket); only
+  // the settle that follows changes the row, by ordinary gravity. Blocked when the
+  // adjacent column is filled at this row (lift with ▲ to clear it).
   const lateral = useCallback(
     (dir: -1 | 1) => {
       const c = col + dir;
-      if (canReach(rotation, row, c)) setCol(c);
+      if (!canReach(rotation, row, c)) return;
+      setCol(c);
+      setRow(settleRow(board, piece, rotation, row, c));
     },
-    [canReach, rotation, row, col],
+    [canReach, board, piece, rotation, row, col],
   );
 
   const moveLeft = useCallback(() => lateral(-1), [lateral]);
   const moveRight = useCallback(() => lateral(1), [lateral]);
 
-  // Mobile drag-to-position (#69): the whole board is one control surface — drag
-  // anywhere and the piece's column follows the finger (no need to grab the few
-  // -cell piece), using the SAME free/ride-up rule as L/R (#68). Depth (tucks)
-  // stays on the ▲/▼ buttons and rotation on the rotate buttons — NOT vertical
-  // drag — so the gesture is unambiguous; commit is the explicit Confirm button,
-  // NOT lift-to-place, so a stray touch can never drop the piece. Desktop
-  // keyboard/buttons are untouched (this is an additional input).
+  // Mobile drag-to-position (#69, #81): the whole board is one control surface —
+  // drag anywhere and the piece's column follows the finger (no need to grab the
+  // few-cell piece), using the SAME shift-then-settle rule as L/R, so the piece
+  // walks the surface and drops into a well under the finger. Depth fine-tuning
+  // (lifting for a spin) stays on the ▲/▼ buttons and rotation on the rotate
+  // buttons — NOT vertical drag — so the gesture is unambiguous; commit is the
+  // explicit Confirm button, NOT lift-to-place, so a stray touch can never drop
+  // the piece. Desktop keyboard/buttons are untouched (this is an additional input).
   const boardSurfaceRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
 
@@ -183,15 +197,18 @@ export function PlacementInput({
       const lo = -minC;
       const hi = COLS - 1 - maxC;
       const targetCol = Math.min(hi, Math.max(lo, fingerCol - Math.round((minC + maxC) / 2)));
-      // Translate toward the finger as far as the piece can slide at the current
-      // row (#81): one column at a time while the next still fits, stopping at the
-      // first wall. Pure translation — no row teleport — matching keyboard L/R.
+      // Walk toward the finger as far as the piece can slide at the current row
+      // (#81): one column at a time while the next still fits, stopping at the
+      // first wall, then let it fall to rest in that column — matching keyboard L/R.
       const step = targetCol > col ? 1 : -1;
       let c = col;
       while (c !== targetCol && canReach(rotation, row, c + step)) c += step;
-      if (c !== col) setCol(c);
+      if (c !== col) {
+        setCol(c);
+        setRow(settleRow(board, piece, rotation, row, c));
+      }
     },
-    [canReach, piece, rotation, row, col],
+    [canReach, board, piece, rotation, row, col],
   );
 
   const onPointerDown = useCallback(
