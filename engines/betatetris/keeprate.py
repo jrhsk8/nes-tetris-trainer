@@ -14,8 +14,8 @@ where our optimal is BetaTetris's top-1 / in top-3 / in top-5 / reachable, plus
 the mean policy mass π_BT(optimal). Those are the candidate keep-rates the #54
 Phase-2 gate would use. Offline / generator-only (GPLv3 BetaTetris).
 
-  bt-run python betatetris-spike/keeprate.py            # full bank
-  bt-run python betatetris-spike/keeprate.py 40         # first 40 (quick)
+  bt-run python engines/betatetris/keeprate.py            # full bank
+  bt-run python engines/betatetris/keeprate.py 40         # first 40 (quick)
 """
 import sys, os, re, json, time
 BT_HOME = os.environ.get('BT_HOME', '/home/dev/bt-spike')

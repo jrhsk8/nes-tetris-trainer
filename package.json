@@ -25,6 +25,12 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "all",
+    "printWidth": 100
+  },
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.10.0",
     "@eslint/js": "^9.17.0",

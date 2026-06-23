@@ -1,6 +1,6 @@
 /**
  * #54 Phase 1 helper — export the bank's canonical outcome keys for the
- * BetaTetris keep-rate measurement (`betatetris-spike/keeprate.py`).
+ * BetaTetris keep-rate measurement (`engines/betatetris/keeprate.py`).
  *
  * For each puzzle it computes, in the *production* convention (core's
  * `applyPlacement` + `boardKey`), the board key after our stored optimal's

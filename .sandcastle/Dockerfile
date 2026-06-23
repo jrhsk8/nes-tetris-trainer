@@ -75,7 +75,7 @@ WORKDIR /home/agent
 # app (per CLAUDE.md "engine offline-only"). Needs an AVX2/BMI2 CPU (the host has
 # one). Adds ~1.2-1.5 GB to the image (pytorch-cpu + ~166 MB weights).
 #
-# Env replicates the *proven* supervised setup (see betatetris-spike/README.md): a
+# Env replicates the *proven* supervised setup (see engines/betatetris/README.md): a
 # userspace micromamba env `bt` (python 3.12 + pytorch-cpu). The image has apt,
 # but we mirror the validated env exactly to avoid a python-3.11-vs-3.12 build
 # risk against the C++ extension.
@@ -110,7 +110,7 @@ RUN mkdir -p ${BT_MODELS} \
   && test -s ${BT_MODELS}/model-v1.0.0-perfect.pth \
   && test -s ${BT_MODELS}/model-v1.0.0-normal.pth
 # Convenience wrapper so the generator can run a script inside the env, e.g.
-#   bt-run python betatetris-spike/compare.py
+#   bt-run python engines/betatetris/compare.py
 RUN printf '#!/usr/bin/env bash\nexec micromamba run -n %s "$@"\n' "${BT_ENV}" \
      > /home/agent/.local/bin/bt-run \
   && chmod +x /home/agent/.local/bin/bt-run

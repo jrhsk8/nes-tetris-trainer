@@ -24,6 +24,11 @@ build/
 /FINDINGS-*.md
 /verify-*.mjs
 
+# Claude memory — junctioned here from ~/.claude/projects/.../memory so it's
+# locally monitorable, but it holds infra/run notes that must not ship to this
+# PUBLIC repo. Keep it out of git. (.claude/settings.local.json stays untracked too.)
+.claude/memory/
+
 # Editor / OS
 .vscode/
 .idea/

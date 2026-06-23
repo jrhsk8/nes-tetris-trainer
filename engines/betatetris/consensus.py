@@ -20,7 +20,7 @@ flaky BT run never silently inflates the cull:
   - `inject-mismatch` — injected board0 round-trips wrong (engine/convention bug).
   - `bt-error`        — any exception while judging this puzzle.
 
-  bt-run python betatetris-spike/consensus.py [keys.json] [out.json] [limit]
+  bt-run python engines/betatetris/consensus.py [keys.json] [out.json] [limit]
 
 Defaults: keys = $BT_OUT/bank_keys.json, out = $BT_OUT/consensus_verdict.json.
 Offline / generator-only (GPLv3 BetaTetris).

@@ -26,8 +26,8 @@ treat the issues that need them as blocked.
   - Move endpoints take query-string args (`board`, `currentPiece`, `nextPiece`, `level`, `lines`, `inputFrameTimeline`, …); e.g. `GET /get-move-cpp?...`, `GET /rate-move-cpp?...`.
   - Per CLAUDE.md, the engine is **offline/generator-only** — wrap it behind the typed client in `src/generator`; never call it from the play app.
 - **BetaTetris cross-check engine (issue #55)** — now baked into the image (offline, CPU):
-  - A userspace micromamba env `bt` (python 3.12 + pytorch-cpu) + the built `tetris` C++ extension + the v1.0.0 perfect/normal weights. Run scripts inside it with the `bt-run` wrapper, e.g. `bt-run python betatetris-spike/pull.py && bt-run python betatetris-spike/compare.py`.
-  - Paths are in the env: `BT_HOME`, `BT_REPO_PY`, `BT_MODELS`, `BT_OUT`. Method/verdict: `docs/decisions.md` (2026-06-21 — Consensus bank); harness + paths table + board-injection gotchas: `betatetris-spike/README.md`.
+  - A userspace micromamba env `bt` (python 3.12 + pytorch-cpu) + the built `tetris` C++ extension + the v1.0.0 perfect/normal weights. Run scripts inside it with the `bt-run` wrapper, e.g. `bt-run python engines/betatetris/pull.py && bt-run python engines/betatetris/compare.py`.
+  - Paths are in the env: `BT_HOME`, `BT_REPO_PY`, `BT_MODELS`, `BT_OUT`. Method/verdict: `docs/decisions.md` (2026-06-21 — Consensus bank); harness + paths table + board-injection gotchas: `engines/betatetris/README.md`.
   - Same guardrail as StackRabbit: **offline / generator-only** (and GPLv3 — never link it into or ship it with the play app).
 
 ## Run scope (this run)

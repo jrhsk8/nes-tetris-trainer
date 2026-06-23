@@ -23,7 +23,7 @@
  * equally — never deployed, never called from `apps/play`; GPLv3). The actual
  * net is reached through an injectable {@link ConsensusJudge}, so this stage is
  * unit-tested without PyTorch; the production judge ({@link betaTetrisJudge})
- * shells to `betatetris-spike/consensus.py`.
+ * shells to `engines/betatetris/consensus.py`.
  */
 
 import { spawn } from 'node:child_process';
@@ -164,7 +164,7 @@ export async function filterByConsensus<T extends ConsensusPuzzle>(
 }
 
 /** Where the production Python adapter lives, relative to the repo root. */
-const CONSENSUS_PY = 'betatetris-spike/consensus.py';
+const CONSENSUS_PY = 'engines/betatetris/consensus.py';
 
 /**
  * The production {@link ConsensusJudge}: write the keyed rows to a temp file,

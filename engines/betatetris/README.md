@@ -1,4 +1,4 @@
-# betatetris-spike (BetaTetris cross-check adapters)
+# betatetris (BetaTetris cross-check adapters)
 
 Adapter scripts for the BetaTetris cross-check — born as a feasibility spike, now also
 the harness for the **#54 true-consensus filter**. They depend on the external GPLv3
@@ -19,8 +19,8 @@ The scripts read these env vars, defaulting to the WSL `~/bt-spike` supervised l
 | `BT_ENV_FILE` | unused — creds are in the process env | `…/.sandcastle/.env` |
 
 **In sandcastle** (the engine + env are baked into the image by `.sandcastle/Dockerfile`):
-run inside the `bt` env via the `bt-run` wrapper — e.g. `bt-run python betatetris-spike/pull.py`
-then `bt-run python betatetris-spike/compare.py`. `DATABASE_URL` is already in the env.
+run inside the `bt` env via the `bt-run` wrapper — e.g. `bt-run python engines/betatetris/pull.py`
+then `bt-run python engines/betatetris/compare.py`. `DATABASE_URL` is already in the env.
 
 ## Files
 - `consensus.py` — **#55 standard gate**: per-puzzle BetaTetris **normal-net top-1**
@@ -28,12 +28,12 @@ then `bt-run python betatetris-spike/compare.py`. `DATABASE_URL` is already in t
   shells to this). Reuses `keeprate.py`'s machinery but runs the **normal net only**
   (the `perfect` net is off-objective and dropped) and is **fail-closed** (a puzzle BT
   cannot cleanly judge is dropped; `bt-error` counted apart from genuine disagree).
-  Run: `bt-run python betatetris-spike/consensus.py [keys.json] [out.json] [limit]`.
+  Run: `bt-run python engines/betatetris/consensus.py [keys.json] [out.json] [limit]`.
 - `keeprate.py` — **#54 Phase-1 keep-rate harness** (the current one). Reads
   `bank_keys.json` (written by `generator/src/bt-bank-keys.ts`), injects each board0,
   and ranks our stored optimal's after-piece-1 outcome in BetaTetris's *adjustment-phase*
   policy → `keeprate_{perfect,normal}.json` + a top-1/3/5 / `π_BT` keep-rate summary.
-  Run: `bt-run python betatetris-spike/keeprate.py [limit]`. Results + methodology:
+  Run: `bt-run python engines/betatetris/keeprate.py [limit]`. Results + methodology:
   `../FINDINGS-betatetris-consensus.md`.
 - `pull.py` — pull the sample from Supabase (13 quarantined + 20 current) → `sample.json`.
   Reads `DATABASE_URL` from `.sandcastle/.env`.
