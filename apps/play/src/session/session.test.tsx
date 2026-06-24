@@ -37,6 +37,7 @@ function makePuzzle(): Puzzle {
     colors: '',
     // The optimal line is the rank-1 combo (score 100); anything else is unranked.
     combos: { entries: [{ rot1: 0, col1: 3, rot2: 0, col2: 6, score: 100 }], total: 18 },
+    tags: [],
     acceptCount: null,
     margin: null,
     firstValues: [],

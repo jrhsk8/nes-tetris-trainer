@@ -9,10 +9,14 @@ import type { BoardMetrics } from '@trainer/core';
 import type { Piece } from '@trainer/core';
 import type { Placement } from '@trainer/core';
 import type { ComboTable } from '@trainer/core';
+import type { PuzzleTag } from '@trainer/core';
 
 // The combo model is shared puzzle logic, so it lives in @trainer/core (#34);
 // re-exported here for data-layer consumers that import it from @trainer/data.
 export type { ComboEntry, ComboTable } from '@trainer/core';
+// Puzzle type-tags (#81/#90) live in @trainer/core; re-exported for data-layer
+// consumers (drill filter #85, curation analytics #87).
+export type { PuzzleTag } from '@trainer/core';
 
 /** Glicko-2 rating triple carried by both players and puzzles. */
 export interface Glicko {
@@ -71,6 +75,13 @@ export interface Puzzle {
    */
   combos: ComboTable;
   /**
+   * Puzzle type-tags (#81/#90): the closed {@link PuzzleTag} set describing the
+   * optimal line (and avoid-dependency contrast traps). Empty `[]` for untagged
+   * / legacy rows. Drives display chips (#84), drill filtering (#85), and
+   * per-type stats (#86/#87).
+   */
+  tags: PuzzleTag[];
+  /**
    * v2 difficulty (#40): the number of combos scoring ≥ 95 (the accept count)
    * and the score `margin` between the best combo and the best below the accept
    * threshold. Raw inputs to the seed rating; null for legacy pre-v2 rows.
@@ -102,6 +113,8 @@ export interface NewPuzzle {
   colors?: string;
   /** The ranked two-piece combo table (#33); omitted for legacy rows. */
   combos?: ComboTable;
+  /** Puzzle type-tags (#81/#90); omitted defaults to `[]`. */
+  tags?: PuzzleTag[];
   /** v2 difficulty inputs (#40): combos ≥ 95 count and the accept-threshold margin. */
   acceptCount?: number;
   margin?: number;
@@ -188,6 +201,8 @@ export interface PuzzleRow {
   colors: string | null;
   /** The ranked two-piece combo table (#33); null for legacy rows. */
   combos: ComboTable | null;
+  /** Puzzle type-tags (#81/#90); `text[]` defaulting to `{}` (never null). */
+  tags: string[];
   /** v2 difficulty (#40): combos ≥ 95 count; null for legacy rows. */
   accept_count: number | null;
   /** v2 difficulty (#40): accept-threshold score margin; null for legacy rows. */

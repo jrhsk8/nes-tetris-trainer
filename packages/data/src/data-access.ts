@@ -78,6 +78,7 @@ function rowToPuzzle(row: PuzzleRow): Puzzle {
     glicko: { rating: row.rating, deviation: row.deviation, volatility: row.volatility },
     colors: row.colors ?? '',
     combos: row.combos ?? { entries: [], total: 0 },
+    tags: (row.tags ?? []) as Puzzle['tags'],
     acceptCount: row.accept_count ?? null,
     margin: row.margin ?? null,
     firstValues: row.first_values ?? [],
@@ -256,6 +257,7 @@ function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
   if (puzzle.glicko?.volatility !== undefined) row.volatility = puzzle.glicko.volatility;
   if (puzzle.colors !== undefined) row.colors = puzzle.colors;
   if (puzzle.combos !== undefined) row.combos = puzzle.combos;
+  if (puzzle.tags !== undefined) row.tags = puzzle.tags;
   if (puzzle.acceptCount !== undefined) row.accept_count = puzzle.acceptCount;
   if (puzzle.margin !== undefined) row.margin = puzzle.margin;
   if (puzzle.firstValues !== undefined) row.first_values = puzzle.firstValues;

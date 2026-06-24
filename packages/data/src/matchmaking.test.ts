@@ -20,6 +20,7 @@ function puzzleAt(id: string, rating: number): Puzzle {
     glicko: { rating, deviation: 350, volatility: 0.06 },
     colors: '',
     combos: { entries: [], total: 0 },
+    tags: [],
     acceptCount: null,
     margin: null,
     firstValues: [],

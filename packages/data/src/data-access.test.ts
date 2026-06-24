@@ -68,6 +68,7 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
       optimalMetrics: boardMetrics(emptyBoard()),
       colors,
       combos,
+      tags: ['tetris-ready', 'tuck', 'avoid-s-dependency'],
       acceptCount: 4,
       margin: 12.5,
     });
@@ -85,6 +86,8 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     // v2 boardKey on each entry (#38).
     expect(fetched!.colors).toBe(colors);
     expect(fetched!.combos).toEqual(combos);
+    // The puzzle type-tags (#82) round-trip intact.
+    expect(fetched!.tags).toEqual(['tetris-ready', 'tuck', 'avoid-s-dependency']);
     // The v2 difficulty columns (#38) round-trip.
     expect(fetched!.acceptCount).toBe(4);
     expect(fetched!.margin).toBe(12.5);
@@ -126,6 +129,8 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     const fetched = await db!.getPuzzle(puzzle.id);
     expect(fetched!.acceptCount).toBeNull();
     expect(fetched!.margin).toBeNull();
+    // A puzzle inserted without tags reads back as an empty array (#82 default).
+    expect(fetched!.tags).toEqual([]);
   });
 
   it('selects a random puzzle from the bank', async () => {

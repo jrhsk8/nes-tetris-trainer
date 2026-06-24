@@ -53,6 +53,13 @@ alter table public.puzzles add column if not exists second_values jsonb;
 alter table public.puzzles add column if not exists accept_count int;
 alter table public.puzzles add column if not exists margin double precision;
 
+-- Puzzle type-tags (#82): the closed PuzzleTag set (#81/#90) computed at
+-- generation / re-tag (#83), e.g. {tetris-ready,tuck,avoid-s-dependency}.
+-- Additive + idempotent; a GIN index supports `&&` (overlap) / `@>` (contains)
+-- filtering for drill mode (#85) and curation analytics (#87).
+alter table public.puzzles add column if not exists tags text[] not null default '{}';
+create index if not exists puzzles_tags_idx on public.puzzles using gin (tags);
+
 -- #49: stable, human-friendly puzzle number (1, 2, 3 …) — the title + share key.
 -- Additive + idempotent: re-running this block is safe.
 alter table public.puzzles add column if not exists number int;
