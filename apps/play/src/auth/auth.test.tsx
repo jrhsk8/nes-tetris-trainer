@@ -93,6 +93,18 @@ describe('SignIn', () => {
     expect(auth.signInWithProvider).toHaveBeenCalledWith('discord');
   });
 
+  it('surfaces an OAuth failure instead of swallowing it (#77)', async () => {
+    const user = userEvent.setup();
+    const auth = fakeAuth({
+      linkWithProvider: vi.fn(async () => {
+        throw new Error('Manual linking is disabled');
+      }),
+    });
+    render(<SignIn auth={auth} link />);
+    await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Manual linking is disabled');
+  });
+
   it('in link mode, OAuth and email upgrade the session in place (UID-preserving), not a fresh sign-in (#77)', async () => {
     const user = userEvent.setup();
     const auth = fakeAuth();

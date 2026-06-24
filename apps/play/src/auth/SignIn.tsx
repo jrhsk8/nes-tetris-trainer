@@ -51,8 +51,17 @@ export function SignIn({ auth, link = false }: SignInProps) {
     }
   }
 
-  const oauth = (provider: 'google' | 'discord') =>
-    link ? auth.linkWithProvider(provider) : auth.signInWithProvider(provider);
+  async function oauth(provider: 'google' | 'discord') {
+    setError(null);
+    setNotice(null);
+    try {
+      await (link ? auth.linkWithProvider(provider) : auth.signInWithProvider(provider));
+    } catch (e) {
+      // Surface provider/linking failures (e.g. a provider not enabled, or Manual
+      // linking disabled) instead of swallowing them in an unhandled rejection.
+      setError(e instanceof Error ? e.message : 'Sign-in failed');
+    }
+  }
 
   const heading = link ? 'Save your progress' : mode === 'signin' ? 'Sign in' : 'Create an account';
   const submitLabel = link ? 'Save' : mode === 'signin' ? 'Sign in' : 'Sign up';
