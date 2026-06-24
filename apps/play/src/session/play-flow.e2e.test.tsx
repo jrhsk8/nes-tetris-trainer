@@ -39,6 +39,11 @@ async function place(user: ReturnType<typeof userEvent.setup>, target: Placement
       screen.getByRole('button', { name: current < target.col ? 'Move right' : 'Move left' }),
     );
   }
+  // Confirm is gated on the resting glow (#89): settle the outline to rest first.
+  input().focus();
+  for (let i = 0; i < 22 && input().getAttribute('data-resting') !== 'true'; i++) {
+    await user.keyboard('{ArrowDown}');
+  }
   await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
 }
 

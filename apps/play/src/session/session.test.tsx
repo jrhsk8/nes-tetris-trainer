@@ -87,7 +87,7 @@ function fakeDb() {
   return { db, ratings, attempts };
 }
 
-/** Drive the on-screen ghost to `target` and confirm. */
+/** Drive the on-screen outline to `target`, settle it to rest, and confirm (#89). */
 async function place(user: ReturnType<typeof userEvent.setup>, target: Placement) {
   const input = () => screen.getByLabelText('placement input');
   for (let i = 0; i < 8 && Number(input().getAttribute('data-rotation')) !== target.rotation; i++) {
@@ -98,6 +98,12 @@ async function place(user: ReturnType<typeof userEvent.setup>, target: Placement
     await user.click(
       screen.getByRole('button', { name: current < target.col ? 'Move right' : 'Move left' }),
     );
+  }
+  // Confirm is gated on the resting glow (#89): soft-drop the outline to the
+  // bottom of its column before locking.
+  input().focus();
+  for (let i = 0; i < 22 && input().getAttribute('data-resting') !== 'true'; i++) {
+    await user.keyboard('{ArrowDown}');
   }
   await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
 }

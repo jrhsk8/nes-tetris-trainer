@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyBoard, emptyColorGrid, restingCells, type Grid, type Placement } from '@trainer/core';
 import { Board } from './Board.js';
@@ -16,20 +16,24 @@ function cellsInState(state: string): Set<string> {
   );
 }
 
-/** The set of "row-col" keys currently rendered as the drop-shadow (ghost) cells. */
-function ghostKeys(): Set<string> {
-  return cellsInState('ghost');
+/**
+ * The set of "row-col" keys of the SINGLE free-floating outline (#89), whether
+ * it is plain (`outline`) or glowing because it rests (`outline-resting`). There
+ * is no separate drop-shadow, so this is the one cursor — and, once resting, the
+ * WYSIWYG target a confirmed placement equals.
+ */
+function outlineKeys(): Set<string> {
+  return new Set([...cellsInState('outline'), ...cellsInState('outline-resting')]);
 }
 
-/**
- * Where the piece visibly lands (#81): the drop-shadow when the piece floats
- * above its landing, or the bright active piece itself when it rests AT the
- * landing (then it occludes its own shadow). This is the WYSIWYG target a
- * confirmed placement must equal.
- */
-function landingKeys(): Set<string> {
-  const ghost = ghostKeys();
-  return ghost.size ? ghost : cellsInState('active');
+/** Drive the focused placement input down until the outline rests, then confirm. */
+async function settleAndConfirm(user: ReturnType<typeof userEvent.setup>) {
+  const input = screen.getByLabelText('placement input');
+  input.focus();
+  for (let i = 0; i < 22 && input.getAttribute('data-resting') !== 'true'; i++) {
+    await user.keyboard('{ArrowDown}');
+  }
+  await user.keyboard('{Enter}');
 }
 
 const keysOf = (cells: ReadonlyArray<readonly [number, number]>) =>
@@ -47,9 +51,25 @@ describe('Board', () => {
     expect(screen.getByTestId('cell-0-0')).toHaveAttribute('data-state', 'empty');
   });
 
-  it('draws ghost cells where asked', () => {
-    render(<Board grid={emptyBoard()} ghostCells={[[18, 4]]} />);
-    expect(screen.getByTestId('cell-18-4')).toHaveAttribute('data-state', 'ghost');
+  it('draws the single floating outline where asked (#89)', () => {
+    render(<Board grid={emptyBoard()} outlineCells={[[18, 4]]} />);
+    expect(screen.getByTestId('cell-18-4')).toHaveAttribute('data-state', 'outline');
+  });
+
+  it('glows the outline once the piece rests, the ready-to-lock cue (#89)', () => {
+    const { rerender } = render(<Board grid={emptyBoard()} outlineCells={[[18, 4]]} outlinePiece="Z" />);
+    const floating = screen.getByTestId('cell-18-4');
+    // Floating: a hollow outline (an inset border), NO outer glow.
+    expect(floating).toHaveAttribute('data-state', 'outline');
+    expect(floating.style.boxShadow).toContain('inset');
+    expect(floating.style.boxShadow).not.toMatch(/,\s*0 0/); // no outer glow term
+
+    rerender(<Board grid={emptyBoard()} outlineCells={[[18, 4]]} outlinePiece="Z" outlineResting />);
+    const resting = screen.getByTestId('cell-18-4');
+    expect(resting).toHaveAttribute('data-state', 'outline-resting');
+    // Resting: the same inset outline PLUS an outer glow.
+    expect(resting.style.boxShadow).toContain('inset');
+    expect(resting.style.boxShadow).toMatch(/,\s*0 0/); // outer glow present
   });
 
   it('renders filled cells as crisp NES block sprites, not flat squares (#18)', () => {
@@ -62,38 +82,37 @@ describe('Board', () => {
     expect(bg).toContain('shape-rendering="crispEdges"');
   });
 
-  it('colours the ghost in its piece colour (Z → $16 red) (#18)', () => {
-    render(<Board grid={emptyBoard()} ghostCells={[[18, 4]]} ghostPiece="Z" />);
-    const ghost = screen.getByTestId('cell-18-4');
-    expect(decodeURIComponent(ghost.style.backgroundImage)).toContain('#d82800');
+  it('colours the outline in its piece colour (Z → $16 red) (#18, #89)', () => {
+    render(<Board grid={emptyBoard()} outlineCells={[[18, 4]]} outlinePiece="Z" />);
+    const cell = screen.getByTestId('cell-18-4');
+    // The hollow outline is the piece colour drawn as an inset border (not a fill).
+    expect(cell.style.boxShadow).toContain('#d82800');
+    expect(cell.style.backgroundImage).toBe('');
   });
 
-  it('draws the positioning ghost as a muted-fill preview (no outline), distinct from a locked cell and the gold highlight (#48, #57)', () => {
+  it('draws a hollow outline (the well shows through), distinct from a locked cell and the gold highlight (#89)', () => {
     const grid: Grid = emptyBoard();
     grid[19][0] = 1; // a locked cell
     render(
       <Board
         grid={grid}
-        ghostCells={[[18, 4]]}
-        ghostPiece="Z"
+        outlineCells={[[18, 4]]}
+        outlinePiece="Z"
         highlightCells={[[17, 4]]}
         highlightPiece="Z"
       />,
     );
-    const ghost = screen.getByTestId('cell-18-4');
+    const outline = screen.getByTestId('cell-18-4');
     const locked = screen.getByTestId('cell-19-0');
     const highlight = screen.getByTestId('cell-17-4');
 
-    // The ghost reads as a movable preview via a muted (washed-down) fill alone —
-    // the dashed outline was dropped (#57); the opacity wash carries the read.
-    expect(ghost.style.outline).toBe('');
-    expect(ghost.style.backgroundImage).toContain('linear-gradient');
-    // It is still distinct from a locked cell (solid sprite, no wash)...
-    expect(locked.style.backgroundImage).not.toContain('linear-gradient');
-    // ...and from the feedback highlight's solid gold inset outline.
-    expect(ghost.style.boxShadow).not.toContain('#fcd000');
+    // The outline is hollow: no fill sprite, just a coloured inset border (the
+    // black well shows through), so it never reads as a locked block.
+    expect(outline.style.backgroundImage).toBe('');
+    expect(locked.style.backgroundImage).not.toBe('');
+    // ...and it is the piece colour, not the feedback highlight's gold.
+    expect(outline.style.boxShadow).not.toContain('#fcd000');
     expect(highlight.style.boxShadow).toContain('#fcd000');
-    expect(highlight.style.outline).toBe('');
   });
 
   it('never draws a cell outside the grid, even given out-of-bounds cells (#58 guard)', () => {
@@ -104,7 +123,7 @@ describe('Board', () => {
     render(
       <Board
         grid={emptyBoard()}
-        ghostCells={[
+        outlineCells={[
           [5, 10], // past the right wall
           [5, -1], // past the left wall
           [20, 0], // below the floor
@@ -118,7 +137,7 @@ describe('Board', () => {
     expect(screen.queryByTestId('cell-5--1')).toBeNull();
     expect(screen.queryByTestId('cell-20-0')).toBeNull();
     // ...and no on-board cell was mistakenly painted by the OOB input.
-    expect(ghostKeys().size).toBe(0);
+    expect(outlineKeys().size).toBe(0);
   });
 
   it('colours filled cells by their colour group from the colour grid (#28)', () => {
@@ -145,11 +164,47 @@ describe('Board', () => {
 });
 
 describe('PlacementInput', () => {
-  it('shows a ghost at the resting position from the start', () => {
+  it('spawns one floating outline at the top, not resting, with Confirm gated (#89)', () => {
     render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
-    // The ghost must equal a real resting placement of the T on the board.
-    const shown = ghostKeys();
+    // Exactly one outline (4 cells), spawned floating at the top row.
+    const shown = outlineKeys();
     expect(shown.size).toBe(4);
+    expect([...shown].every((k) => Number(k.split('-')[0]) <= 1)).toBe(true);
+    // Not resting yet: no glow, and Confirm is disabled until it rests.
+    expect(screen.getByLabelText('placement input')).toHaveAttribute('data-resting', 'false');
+    expect(cellsInState('outline-resting').size).toBe(0);
+    expect(screen.getByRole('button', { name: 'Confirm placement' })).toBeDisabled();
+  });
+
+  it('glows and enables Confirm once the outline rests (#89)', async () => {
+    const user = userEvent.setup();
+    render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
+    const input = screen.getByLabelText('placement input');
+    input.focus();
+    for (let i = 0; i < 22 && input.getAttribute('data-resting') !== 'true'; i++) {
+      await user.keyboard('{ArrowDown}');
+    }
+    // Rested on the floor: the outline glows and Confirm is enabled.
+    expect(input).toHaveAttribute('data-resting', 'true');
+    expect(cellsInState('outline-resting').size).toBe(4);
+    expect(screen.getByRole('button', { name: 'Confirm placement' })).toBeEnabled();
+  });
+
+  it('there is exactly ONE outline with the piece one row above its landing — no partial ghost (#89)', async () => {
+    const user = userEvent.setup();
+    render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
+    const input = screen.getByLabelText('placement input');
+    input.focus();
+    // Drop to rest, then lift one row so the piece floats just above its landing —
+    // the exact case that produced the old "awkward partial ghost".
+    for (let i = 0; i < 22 && input.getAttribute('data-resting') !== 'true'; i++) {
+      await user.keyboard('{ArrowDown}');
+    }
+    await user.keyboard('{ArrowUp}');
+    // Still exactly ONE outline (4 cells), now floating (not resting) — no second
+    // muted copy at the landing row.
+    expect(outlineKeys().size).toBe(4);
+    expect(input).toHaveAttribute('data-resting', 'false');
   });
 
   it('auto-focuses the board on load so the loop is no-mouse (#64)', () => {
@@ -158,50 +213,45 @@ describe('PlacementInput', () => {
     expect(screen.getByLabelText('placement input')).toHaveFocus();
   });
 
-  it('moves and rotates the ghost, then emits the placement that was shown', async () => {
+  it('moves and rotates the outline, then emits the resting cells that were shown (#89)', async () => {
     const user = userEvent.setup();
     const board = emptyBoard();
     const onConfirm = vi.fn<(p: Placement) => void>();
     render(<PlacementInput board={board} piece="T" onConfirm={onConfirm} />);
 
-    const before = ghostKeys();
+    const before = outlineKeys();
     await user.click(screen.getByRole('button', { name: 'Move right' }));
-    const afterMove = ghostKeys();
-    expect(afterMove).not.toEqual(before); // the ghost actually moved
-
+    expect(outlineKeys()).not.toEqual(before); // the outline actually moved
     await user.click(screen.getByRole('button', { name: 'Rotate clockwise' }));
-    const shownAtConfirm = landingKeys();
 
-    await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
+    // Settle to rest, then confirm: the emitted placement equals the resting
+    // outline that was shown — what you saw is what you get.
+    await settleAndConfirm(user);
+    const shownAtConfirm = outlineKeys();
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const emitted = onConfirm.mock.calls[0][0];
-
-    // The emitted placement, dropped on the same board, lands exactly where the
-    // ghost was shown — what you saw is what you get.
     const landed = restingCells(board, 'T', emitted);
     expect(landed).not.toBeNull();
     expect(keysOf(landed!)).toEqual(shownAtConfirm);
   });
 
-  it('supports keyboard control (arrows + enter)', async () => {
+  it('supports keyboard control (arrows + enter), confirming the resting outline (#89)', async () => {
     const user = userEvent.setup();
     const board = emptyBoard();
     const onConfirm = vi.fn<(p: Placement) => void>();
     render(<PlacementInput board={board} piece="L" onConfirm={onConfirm} />);
 
     await user.click(screen.getByLabelText('placement input'));
-    // ArrowLeft shifts + settles, ArrowUp lifts one row (so the active piece now
-    // floats just above its landing, partially over the drop-shadow).
-    await user.keyboard('{ArrowLeft}{ArrowUp}{Enter}');
+    // ArrowLeft shifts + settles to rest; Enter then locks the resting outline.
+    await user.keyboard('{ArrowLeft}');
+    const shown = outlineKeys();
+    await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const emitted = onConfirm.mock.calls[0][0];
-    // What you confirm is what's shown: every cell of the landing is visibly drawn
-    // — as the drop-shadow, or (where the lifted piece overlaps it) as the active
-    // piece itself.
-    const shown = new Set([...ghostKeys(), ...cellsInState('active')]);
+    // What you confirm is exactly the resting outline that was drawn.
     const landed = keysOf(restingCells(board, 'L', emitted)!);
-    expect([...landed].every((k) => shown.has(k))).toBe(true);
+    expect(landed).toEqual(shown);
   });
 
   it('rotates clockwise with x and counter-clockwise with z (inverses)', async () => {
@@ -224,6 +274,11 @@ describe('PlacementInput', () => {
     render(<PlacementInput board={board} piece="L" onConfirm={onConfirm} />);
 
     await user.click(screen.getByLabelText('placement input'));
+    // Settle to rest (Confirm is gated on resting), then the custom Space binds.
+    const input = screen.getByLabelText('placement input');
+    for (let i = 0; i < 22 && input.getAttribute('data-resting') !== 'true'; i++) {
+      await user.keyboard('{ArrowDown}');
+    }
     await user.keyboard('[Space]');
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
@@ -252,7 +307,7 @@ describe('PlacementInput', () => {
     const landed = restingCells(board, 'I', emitted)!;
     expect(landed).not.toBeNull();
     expect(keysOf(landed)).toEqual(new Set(['16-4', '17-4', '18-4', '19-4']));
-    expect(keysOf(landed)).toEqual(landingKeys());
+    expect(keysOf(landed)).toEqual(outlineKeys());
   });
 
   it('a settled piece slides onto a higher neighbour by riding up its surface (#81)', async () => {
@@ -273,14 +328,14 @@ describe('PlacementInput', () => {
     for (let i = 0; i < 5; i++) await user.keyboard('{ArrowRight}'); // walk to col 8 well
     for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop to the floor
     await user.keyboard('{ArrowRight}'); // press toward the wall — rides up onto it
-    expect(landingKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
+    expect(outlineKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
     await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const landed = restingCells(board, 'I', onConfirm.mock.calls[0][0])!;
     // Seated on top of the wall, reached by a single lateral press.
     expect(keysOf(landed)).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
-    expect(keysOf(landed)).toEqual(landingKeys());
+    expect(keysOf(landed)).toEqual(outlineKeys());
   });
 
   it('slides freely both ways: rides up onto a wall, then back down into the well (#81)', async () => {
@@ -299,9 +354,9 @@ describe('PlacementInput', () => {
     for (let i = 0; i < 5; i++) await user.keyboard('{ArrowRight}'); // walk to col 8 well
     for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop to the floor
     await user.keyboard('{ArrowRight}'); // ride up onto the wall
-    expect(landingKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
+    expect(outlineKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
     await user.keyboard('{ArrowLeft}'); // slide back off — falls into the well
-    expect(landingKeys()).toEqual(new Set(['16-8', '17-8', '18-8', '19-8']));
+    expect(outlineKeys()).toEqual(new Set(['16-8', '17-8', '18-8', '19-8']));
     await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -343,7 +398,7 @@ describe('PlacementInput', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const landed = restingCells(board, 'O', onConfirm.mock.calls[0][0])!;
     expect(keysOf(landed)).toEqual(new Set(['18-8', '18-9', '19-8', '19-9']));
-    expect(keysOf(landed)).toEqual(landingKeys());
+    expect(keysOf(landed)).toEqual(outlineKeys());
   });
 
   it('drag positions against a wall by the same shift-then-settle rule as L/R (#69, #81)', () => {
@@ -361,7 +416,7 @@ describe('PlacementInput', () => {
     // never below the wall.
     fireEvent(surface, ptr('pointerdown', 315));
 
-    const landing = landingKeys();
+    const landing = outlineKeys();
     expect([...landing].every((k) => Number(k.split('-')[0]) <= 7)).toBe(true);
     expect(landing.has('7-9')).toBe(true);
   });
@@ -373,10 +428,10 @@ describe('PlacementInput', () => {
     const surface = screen.getByLabelText('board drag surface');
 
     fireEvent(surface, ptr('pointerdown', 30)); // left side
-    const afterLeft = ghostKeys();
+    const afterLeft = outlineKeys();
     fireEvent(surface, ptr('pointerup', 30));
     fireEvent(surface, ptr('pointermove', 300)); // move after release — ignored
-    expect(ghostKeys()).toEqual(afterLeft);
+    expect(outlineKeys()).toEqual(afterLeft);
   });
 
   it('recovers from a soft-drop overshoot by raising back up to seat a tuck/spin (#56)', async () => {
@@ -405,6 +460,53 @@ describe('PlacementInput', () => {
     expect(landed).not.toBeNull();
     // Seated in the covered pocket — not stranded on the col-3 floor.
     expect(keysOf(landed)).toEqual(new Set(['12-2', '13-2', '14-2', '15-2']));
-    expect(keysOf(landed)).toEqual(landingKeys());
+    expect(keysOf(landed)).toEqual(outlineKeys());
+  });
+
+  it('spins a piece resting on the floor — rotation changes, no silent no-op (#88/#89)', async () => {
+    const user = userEvent.setup();
+    render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
+    const input = screen.getByLabelText('placement input');
+    input.focus();
+    // Drop the T onto the floor so it rests (the case the old code no-op'd on).
+    for (let i = 0; i < 22 && input.getAttribute('data-resting') !== 'true'; i++) {
+      await user.keyboard('{ArrowDown}');
+    }
+    expect(input).toHaveAttribute('data-resting', 'true');
+    const before = input.getAttribute('data-rotation');
+    await user.click(screen.getByRole('button', { name: 'Rotate clockwise' }));
+    // Spin kicks up to a reachable rotated state instead of doing nothing.
+    expect(input.getAttribute('data-rotation')).not.toBe(before);
+    expect(outlineKeys().size).toBe(4); // still exactly one outline
+  });
+
+  it('soft-drop button auto-repeats while held, carrying the piece down (#89)', () => {
+    vi.useFakeTimers();
+    try {
+      render(<PlacementInput board={emptyBoard()} piece="O" onConfirm={vi.fn()} />);
+      const input = screen.getByLabelText('placement input');
+      const drop = screen.getByRole('button', { name: 'Soft drop' });
+      const startRow = Number(input.getAttribute('data-row'));
+      // Press and HOLD: an immediate drop, then auto-repeats while held.
+      act(() => {
+        fireEvent(drop, new MouseEvent('pointerdown', { bubbles: true }));
+      });
+      act(() => {
+        vi.advanceTimersByTime(300); // several repeat ticks
+      });
+      act(() => {
+        fireEvent(drop, new MouseEvent('pointerup', { bubbles: true }));
+      });
+      // A single press carried the piece down many rows (not just one).
+      expect(Number(input.getAttribute('data-row'))).toBeGreaterThan(startRow + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('has no hard-drop / snap control — only soft-drop (#89)', () => {
+    render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /hard drop|snap|drop to bottom/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Soft drop' })).toBeInTheDocument();
   });
 });

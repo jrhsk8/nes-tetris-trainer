@@ -1,33 +1,31 @@
 /**
- * Free-positioning input (#10, #43, #56, #81) — the player flies the **active
- * piece** itself (drawn solid) to any collision-reachable resting position and
- * confirms it, with a dimmer **drop-shadow** marking where it would land. This
- * expresses **tucks and spins**: soft-drop the active piece down an open well
- * *beside* an overhang, then shift it one column **under** the overhang, and
- * lock.
+ * Free-positioning input (#10, #43, #56, #81, #89) — the player pilots a SINGLE
+ * free-floating piece **outline** to any collision-reachable resting position and
+ * confirms it. There is no second drop-shadow: the one hollow, colour-coded
+ * outline is drawn exactly where you are flying it (WYSIWYG), so the old "awkward
+ * partial ghost" (a bright active piece one row above a separate muted shadow) is
+ * gone at the root (#89).
  *
- * The input model is deliberately NES-faithful and predictable (#81): a
- * left/right press shifts ONE column, then the piece settles by gravity to the
- * nearest resting spot in that column — sliding straight across (and tucking
- * under an overhang) when it fits at the current row, or **riding up** the
- * neighbour's surface by a single step when that column is higher, so a settled
- * piece slides freely across the whole board instead of stalling at the first
- * bump. It never jumps to a far high pocket. Up/down move one row. Because the
- * active piece is drawn where you are flying it (not only its landing),
- * soft-dropping visibly carries it down beside the wall, and the slide-under
- * reads as a single sideways step — so the tuck is something you can see and
- * discover, not a hidden incantation.
+ * The piece spawns floating at the top row and never auto-falls — it is a free
+ * cursor. While floating the outline is hollow; the moment it **rests** (fits and
+ * cannot fall one row) the outline gains a **glow**, the unmistakable "ready to
+ * lock" cue. **Confirm is enabled only while resting**, so every locked placement
+ * is a gradeable resting placement.
+ *
+ * Inputs (NES-faithful, no SRS): a left/right press shifts ONE column then settles
+ * by gravity (tuck-seeking — slides under an overhang when it fits, rides up a
+ * higher neighbour by a step); **spin** (#88) rotates in place at a fixed column,
+ * snapping to the nearest reachable row at the new rotation (preferring at-or-
+ * below, riding up only on the floor) so a piece resting on the stack can still
+ * spin; soft-drop carries the piece down one row and **auto-repeats while held**;
+ * raise lifts one row (to lift off the floor for a spin). There is **no
+ * hard-drop**.
  *
  * Every move is gated on the {@link reachableStates} set — the SAME BFS the
- * generator enumerates placements with — so a confirmable position always
- * matches the generator's reachability cell-for-cell (parity, #56), and a pure
- * translation from a reachable state stays in that set. `move up` (the inverse of
- * soft-drop) lets an overshoot be undone.
- *
- * The active piece floats at `(rotation, row, col)`; the drop-shadow is drawn
- * where it would land (the floating position dropped straight to rest), and
- * confirming emits exactly that resting placement (carrying its `row`, so a tuck
- * is pinned and not re-dropped onto the ledge). What you see is what you get.
+ * generator enumerates placements with — so a confirmable position always matches
+ * the generator's reachability cell-for-cell (parity, #56). Confirm emits exactly
+ * the outlined resting cells (carrying `row`, so a tuck is pinned, never re-dropped
+ * onto a ledge). What you see is what you get.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,8 +34,10 @@ import {
   ROWS,
   ORIENTATIONS,
   fitsAt,
+  isResting,
   pieceCells,
   reachableStates,
+  spin,
   type ColorGrid,
   type Grid,
   type Piece,
@@ -134,22 +134,17 @@ export function PlacementInput({
     [reachable],
   );
 
-  // The active piece itself, drawn solid where the player is currently flying it
-  // (#81) — so soft-drop visibly carries it down beside an overhang and a shift
-  // reads as a sideways step into the pocket.
-  const activeCells = useMemo(
+  // The SINGLE free-floating outline (#89), drawn exactly where the player is
+  // piloting it — one cursor, no drop-shadow.
+  const outlineCells = useMemo(
     () => pieceCells(piece, rotation, row, col),
     [piece, rotation, row, col],
   );
-  // Where the piece would land from its current floating position — the drop
-  // -shadow, and what `confirm` emits (the displayed rest, pinned by `row`).
-  const restRow = useMemo(
-    () => settleRow(board, piece, rotation, row, col),
+  // Resting = fits here AND cannot fall one row (the lock condition). Drives the
+  // glow and gates Confirm, so every locked placement is a resting placement.
+  const resting = useMemo(
+    () => isResting(board, piece, rotation, row, col),
     [board, piece, rotation, row, col],
-  );
-  const ghostCells = useMemo(
-    () => pieceCells(piece, rotation, restRow, col),
-    [piece, rotation, restRow, col],
   );
 
   // One lateral step into the adjacent column `dir`, settled to the nearest
@@ -264,6 +259,24 @@ export function PlacementInput({
     setRow((r) => (canReach(rotation, r + 1, col) ? r + 1 : r));
   }, [canReach, rotation, col]);
 
+  // Hold-to-repeat soft-drop (#89): pressing ▼ drops once and then auto-repeats
+  // quickly while held, so the piece carries down with a single press; releasing
+  // (or the pointer leaving) stops it. There is no hard-drop. Keyboard soft-drop
+  // repeats via the browser's own key-repeat on the board handler.
+  const dropTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopSoftDrop = useCallback(() => {
+    if (dropTimer.current !== null) {
+      clearInterval(dropTimer.current);
+      dropTimer.current = null;
+    }
+  }, []);
+  const startSoftDrop = useCallback(() => {
+    softDrop();
+    if (dropTimer.current !== null) return;
+    dropTimer.current = setInterval(softDrop, 60);
+  }, [softDrop]);
+  useEffect(() => stopSoftDrop, [stopSoftDrop]);
+
   // The inverse of soft-drop (#56): step the floating piece UP one row so an
   // overshoot can be undone to reach a tuck/spin row. Gated on the reachable set,
   // so it can only revisit a genuinely reachable state — never lift the piece
@@ -272,24 +285,32 @@ export function PlacementInput({
     setRow((r) => (canReach(rotation, r - 1, col) ? r - 1 : r));
   }, [canReach, rotation, col]);
 
-  // Rotate by `delta` orientation steps (+1 = clockwise, -1 = counter-clockwise),
-  // in place — only if the rotated piece is reachable at the current position.
+  // Spin (#88/#89): rotate in place at the FIXED column, snapping to the nearest
+  // reachable row at the new rotation — preferring at-or-below (into a pocket),
+  // riding up only when forced (a piece resting on the floor/stack). Defers to
+  // the core `spin` helper, so the result is always a reachable, generator-
+  // enumerated state and a piece on the floor can still spin (no silent no-op).
   const rotateBy = useCallback(
-    (delta: number) => {
+    (dir: 'cw' | 'ccw') => {
       if (rotationCount < 2) return;
-      const next = (rotation + delta + rotationCount) % rotationCount;
-      if (canReach(next, row, col)) setRotation(next);
+      const next = spin(board, piece, rotation, row, col, dir, reachableList);
+      if (next) {
+        setRotation(next.rotation);
+        setRow(next.row);
+        setCol(next.col);
+      }
     },
-    [canReach, rotation, row, col, rotationCount],
+    [board, piece, rotation, row, col, reachableList, rotationCount],
   );
 
-  const rotateCw = useCallback(() => rotateBy(1), [rotateBy]);
-  const rotateCcw = useCallback(() => rotateBy(-1), [rotateBy]);
+  const rotateCw = useCallback(() => rotateBy('cw'), [rotateBy]);
+  const rotateCcw = useCallback(() => rotateBy('ccw'), [rotateBy]);
 
-  const confirm = useCallback(
-    () => onConfirm({ rotation, col, row: restRow }),
-    [onConfirm, rotation, col, restRow],
-  );
+  // Confirm locks exactly the outlined cells — gated on `resting`, so a confirm
+  // can only ever emit a gradeable resting placement (the glow is the cue).
+  const confirm = useCallback(() => {
+    if (resting) onConfirm({ rotation, col, row });
+  }, [resting, onConfirm, rotation, col, row]);
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -333,6 +354,7 @@ export function PlacementInput({
       data-rotation={rotation}
       data-col={col}
       data-row={row}
+      data-resting={resting}
     >
       {label ? <p className="placement-label">{label}</p> : null}
       <div
@@ -348,10 +370,9 @@ export function PlacementInput({
         <Board
           grid={board}
           colorGrid={colorGrid}
-          ghostCells={ghostCells}
-          ghostPiece={piece}
-          activeCells={activeCells}
-          activePiece={piece}
+          outlineCells={outlineCells}
+          outlinePiece={piece}
+          outlineResting={resting}
         />
       </div>
       <div className="placement-controls" role="group" aria-label="placement controls">
@@ -387,13 +408,21 @@ export function PlacementInput({
         </button>
         <button
           type="button"
-          onClick={softDrop}
+          onPointerDown={startSoftDrop}
+          onPointerUp={stopSoftDrop}
+          onPointerLeave={stopSoftDrop}
+          onPointerCancel={stopSoftDrop}
           aria-label="Soft drop"
           disabled={!canReach(rotation, row + 1, col)}
         >
           ▼
         </button>
-        <button type="button" onClick={confirm} aria-label="Confirm placement">
+        <button
+          type="button"
+          onClick={confirm}
+          aria-label="Confirm placement"
+          disabled={!resting}
+        >
           Confirm
         </button>
       </div>
