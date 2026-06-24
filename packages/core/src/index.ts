@@ -36,6 +36,7 @@ export {
   enumerateResting,
   moveToColumn,
   lateralMove,
+  spin,
   boardKey,
   resolveLineByOutcome,
 } from './placement.js';

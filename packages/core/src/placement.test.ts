@@ -12,6 +12,7 @@ import {
   enumerateResting,
   lateralMove,
   moveToColumn,
+  spin,
   boardKey,
   resolveLineByOutcome,
   ORIENTATIONS,
@@ -304,6 +305,127 @@ describe('lateralMove (free lateral movement #68)', () => {
         fills.some((p) => reachableByInput.has(key(p.rotation, p.row, p.col))),
         `J tuck into (${pr},${pc}) not reachable by input`,
       ).toBe(true);
+    }
+  });
+});
+
+describe('spin (rotational twin of tuck-seeking lateral #88)', () => {
+  it('floor spin: rides UP to the nearest reachable rotation instead of no-op', () => {
+    // A T resting flat on the floor. The horizontal orientation does not fit one
+    // row lower (floor); rotating to a vertical orientation does not fit at the
+    // exact resting row either, so the OLD in-place rule silently did nothing.
+    // spin() must kick UP to the nearest row where the new rotation is reachable.
+    const grid = emptyBoard();
+    // Vertical T (rot 1, say) is taller; resting T on the floor at the bottom row.
+    const reachable = reachableStates(grid, 'T');
+    // Find a resting horizontal placement on the floor at some column.
+    const flat = enumerateResting(grid, 'T').find((p) => p.col === 4);
+    expect(flat).toBeDefined();
+    const spun = spin(grid, 'T', flat!.rotation, flat!.row, flat!.col, 'cw', reachable);
+    expect(spun).not.toBeNull();
+    expect(spun!.col).toBe(4); // column never shifts
+    expect(spun!.rotation).not.toBe(flat!.rotation); // rotation actually changed
+    // Reachable member (superset invariant).
+    expect(
+      reachable.some((s) => s.rotation === spun!.rotation && s.row === spun!.row && s.col === spun!.col),
+    ).toBe(true);
+  });
+
+  it('into-pocket spin: snaps DOWN when the new orientation is reachable below', () => {
+    // A vertical T floating high in an open column with a notch below that admits
+    // the horizontal/other orientation lower down. Preferring at-or-below, spin
+    // should settle DOWN, not ride up.
+    const grid = emptyBoard();
+    const reachable = reachableStates(grid, 'T');
+    // Floating T high up (row 2) in col 4; spinning on an empty board the nearest
+    // reachable state at the new rotation at-or-below row 2 should have row >= 2.
+    const spun = spin(grid, 'T', 0, 2, 4, 'cw', reachable);
+    expect(spun).not.toBeNull();
+    expect(spun!.col).toBe(4);
+    expect(spun!.row).toBeGreaterThanOrEqual(2); // at-or-below preferred
+  });
+
+  it('returns null for a piece with one orientation (O)', () => {
+    const grid = emptyBoard();
+    expect(spin(grid, 'O', 0, 5, 4, 'cw')).toBeNull();
+    expect(spin(grid, 'O', 0, 5, 4, 'ccw')).toBeNull();
+  });
+
+  it('returns null when no reachable state exists at the new rotation in this column', () => {
+    // Fill the whole board except a 1-wide column-0 well: a vertical I lives there,
+    // but the horizontal orientation has no reachable state in col 0 (needs cols
+    // to the right). So spinning the vertical I in col 0 returns null.
+    const grid = emptyBoard();
+    for (let r = 0; r < ROWS; r++) for (let c = 1; c < COLS; c++) grid[r][c] = 1;
+    const reachable = reachableStates(grid, 'I');
+    const vert = enumerateResting(grid, 'I').find((p) => p.col === 0);
+    expect(vert).toBeDefined();
+    expect(spin(grid, 'I', vert!.rotation, vert!.row, vert!.col, 'cw', reachable)).toBeNull();
+  });
+
+  it('every state returned by spin is a member of reachableStates (parity invariant)', () => {
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        const states = reachableStates(grid, piece);
+        const set = new Set(states.map((s) => key(s.rotation, s.row, s.col)));
+        for (const s of states) {
+          for (const dir of ['cw', 'ccw'] as const) {
+            const next = spin(grid, piece, s.rotation, s.row, s.col, dir, states);
+            if (next === null) continue;
+            expect(next.col, `${piece} ${JSON.stringify(s)} ${dir}`).toBe(s.col); // never shifts column
+            expect(
+              set.has(key(next.rotation, next.row, next.col)),
+              `${piece} ${JSON.stringify(s)} ${dir} -> ${JSON.stringify(next)} not reachable`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('repeated spinning reaches every rotation that has a reachable state in the column', () => {
+    // For each piece with >1 orientation and a reachable seed, repeatedly spinning
+    // cw from that column must visit every rotation that HAS a reachable state in
+    // that column.
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        const rotations = ORIENTATIONS[piece].length;
+        if (rotations <= 1) continue;
+        const states = reachableStates(grid, piece);
+        // Group reachable rotations by column.
+        const byCol = new Map<number, Set<number>>();
+        for (const s of states) {
+          if (!byCol.has(s.col)) byCol.set(s.col, new Set());
+          byCol.get(s.col)!.add(s.rotation);
+        }
+        for (const [col, rotsInCol] of byCol) {
+          if (rotsInCol.size <= 1) continue;
+          // BFS over spin transitions (both directions) seeded from every
+          // reachable state in this column — "repeatedly spinning" reaches.
+          const seeds = states.filter((s) => s.col === col);
+          const visitedState = new Set<number>(seeds.map((s) => key(s.rotation, s.row, s.col)));
+          const visited = new Set<number>(seeds.map((s) => s.rotation));
+          const queue: RestingPlacement[] = [...seeds];
+          for (let i = 0; i < queue.length; i++) {
+            const cur = queue[i];
+            for (const dir of ['cw', 'ccw'] as const) {
+              const next = spin(grid, piece, cur.rotation, cur.row, cur.col, dir, states);
+              if (next === null) continue;
+              const k = key(next.rotation, next.row, next.col);
+              if (visitedState.has(k)) continue;
+              visitedState.add(k);
+              visited.add(next.rotation);
+              queue.push(next);
+            }
+          }
+          for (const r of rotsInCol) {
+            expect(
+              visited.has(r),
+              `${piece} col ${col}: rotation ${r} reachable but spin never visited it`,
+            ).toBe(true);
+          }
+        }
+      }
     }
   });
 });

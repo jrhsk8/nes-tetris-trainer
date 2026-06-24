@@ -203,10 +203,28 @@ export function moveToColumn(
   targetCol: number,
   reachable: readonly RestingPlacement[] = reachableStates(grid, piece),
 ): RestingPlacement | null {
+  return nearestReachableState(reachable, rotation, targetCol, row);
+}
+
+/**
+ * Pick from `reachable` the state at `(targetRotation, targetCol)` **nearest the
+ * current `row`, preferring at-or-below** (tuck/settle in), riding up only when
+ * nothing at-or-below is reachable. The shared selection law behind both the
+ * tuck-seeking lateral ({@link moveToColumn}, column-varying) and the
+ * column-fixed {@link spin} (rotation-varying) — the rotational twin of the
+ * lateral rule (#88). Returns `null` when no reachable state exists at that
+ * rotation/column.
+ */
+function nearestReachableState(
+  reachable: readonly RestingPlacement[],
+  targetRotation: number,
+  targetCol: number,
+  row: number,
+): RestingPlacement | null {
   let atOrBelow: RestingPlacement | null = null; // nearest reachable with row >= current (tuck in)
   let above: RestingPlacement | null = null; //     nearest reachable with row <  current (ride up)
   for (const s of reachable) {
-    if (s.rotation !== rotation || s.col !== targetCol) continue;
+    if (s.rotation !== targetRotation || s.col !== targetCol) continue;
     if (s.row >= row) {
       if (atOrBelow === null || s.row < atOrBelow.row) atOrBelow = s;
     } else if (above === null || s.row > above.row) {
@@ -214,6 +232,41 @@ export function moveToColumn(
     }
   }
   return atOrBelow ?? above;
+}
+
+/**
+ * Rotate `piece` in place by `dir` (`'cw'` / `'ccw'`) at the **fixed column**,
+ * snapping to the {@link reachableStates} candidate at the new rotation nearest
+ * the current `row` — preferring at-or-below, riding **up** only when forced (a
+ * piece resting on the floor/stack where the rotated shape does not fit in
+ * place). The rotational twin of the tuck-seeking lateral rule (#88): it shares
+ * {@link nearestReachableState} with {@link moveToColumn}.
+ *
+ * NES Tetris has no SRS / wall-or-floor kicks — every real spin works by
+ * rotating at a height where the rotated shape already fits, then settling.
+ * Because candidates come from {@link reachableStates}, every returned state is
+ * one the generator enumerated (the superset/soundness invariant), and the
+ * column never shifts (an offset-pocket spin is a spin-then-shift).
+ *
+ * Returns `null` when `piece` has ≤1 orientation, or no reachable state exists
+ * at the new rotation in this column.
+ *
+ * `reachable` defaults to {@link reachableStates}`(grid, piece)`; callers that
+ * already hold the set pass it in to skip recomputing the BFS per press.
+ */
+export function spin(
+  grid: Grid,
+  piece: Piece,
+  rotation: number,
+  row: number,
+  col: number,
+  dir: 'cw' | 'ccw',
+  reachable: readonly RestingPlacement[] = reachableStates(grid, piece),
+): RestingPlacement | null {
+  const rotations = ORIENTATIONS[piece].length;
+  if (rotations <= 1) return null;
+  const next = normRotation(piece, rotation + (dir === 'cw' ? 1 : -1));
+  return nearestReachableState(reachable, next, col, row);
 }
 
 /**
