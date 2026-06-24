@@ -118,9 +118,21 @@ async function main(): Promise<void> {
   if (!dryRun) backupBank(databaseUrl!, date);
 
   const client = createSupabaseClient(supabaseUrl, serviceKey);
-  const { data, error } = await client.from('puzzles').select('id, board, piece1, piece2, combos, tags');
-  if (error) throw new Error(`read puzzles failed: ${error.message}`);
-  const rows = (data ?? []) as BankRow[];
+  // Page past PostgREST's default 1000-row cap, or a bank over 1000 puzzles would
+  // be silently truncated and the tail never re-tagged.
+  const PAGE = 1000;
+  const rows: BankRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await client
+      .from('puzzles')
+      .select('id, board, piece1, piece2, combos, tags')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`read puzzles failed: ${error.message}`);
+    const batch = (data ?? []) as BankRow[];
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
   console.log(`re-tagging ${rows.length} puzzles${dryRun ? ' (dry run)' : ''}…`);
 
   const { updates, perTag, taggedPuzzles, failures } = computeRetag(rows);
