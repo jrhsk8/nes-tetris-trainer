@@ -17,6 +17,8 @@ function fakeAuth(user: AuthUser | null): AuthApi {
     signInWithEmail: vi.fn(async () => {}),
     signUpWithEmail: vi.fn(async () => {}),
     signInWithProvider: vi.fn(async () => {}),
+    linkEmail: vi.fn(async () => {}),
+    linkWithProvider: vi.fn(async () => {}),
     signOut: vi.fn(async () => {}),
   };
 }
@@ -116,8 +118,10 @@ describe('Authenticated anonymous-session gating (#39)', () => {
     const auth = fakeAuth({ id: 'anon-1', email: null, isAnonymous: true });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     render(<Authenticated db={emptyDb() as any} auth={auth} />);
+    // Dropped into the account shell (not the full-screen sign-in fallback): the
+    // account header is present and the in-place link panel starts closed (#77).
     await waitFor(() => expect(screen.getByTestId('account-email')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('signin-panel')).not.toBeInTheDocument();
   });
 
   it('falls back to sign-in when no session can be established', async () => {

@@ -17,6 +17,8 @@ function fakeAuth(): AuthApi {
     signInWithEmail: vi.fn(async () => {}),
     signUpWithEmail: vi.fn(async () => {}),
     signInWithProvider: vi.fn(async () => {}),
+    linkEmail: vi.fn(async () => {}),
+    linkWithProvider: vi.fn(async () => {}),
     signOut: vi.fn(async () => {}),
   };
 }

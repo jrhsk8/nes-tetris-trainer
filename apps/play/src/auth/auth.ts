@@ -35,6 +35,20 @@ export interface AuthApi {
   signInWithEmail(email: string, password: string): Promise<void>;
   signUpWithEmail(email: string, password: string): Promise<void>;
   signInWithProvider(provider: OAuthProvider): Promise<void>;
+  /**
+   * Attach an email + password to the CURRENT (anonymous) session in place (#77),
+   * upgrading it to a permanent account **without changing `auth.uid()`** — so the
+   * player's rating, attempts, prefs, seen-window and misses all carry over. A
+   * confirmation email is sent (if email confirmation is enabled on the project);
+   * the identity becomes permanent once the player confirms.
+   */
+  linkEmail(email: string, password: string): Promise<void>;
+  /**
+   * Link an OAuth identity (Google/Discord) to the CURRENT (anonymous) session in
+   * place (#77), preserving `auth.uid()` so all data carries over and the player
+   * gains cross-device sync. Requires "Manual linking" enabled on the project.
+   */
+  linkWithProvider(provider: OAuthProvider): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -88,6 +102,24 @@ export function createAuth(client: SupabaseClient): AuthApi {
         // Return to the app's base URL INCLUDING the GitHub Pages base path
         // (origin + BASE_URL), not the bare origin (#77): on Pages the app lives
         // under `/nes-tetris-trainer/`, so a bare-origin redirect lands off-app.
+        options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+      });
+      if (error) throw new Error(error.message);
+    },
+
+    async linkEmail(email, password) {
+      // Upgrade the anonymous user in place: attach an email + password to the
+      // SAME user id (#77). Supabase sends a confirmation email (if enabled); the
+      // account becomes permanent on confirm, and rating/attempts/prefs are kept.
+      const { error } = await client.auth.updateUser({ email, password });
+      if (error) throw new Error(error.message);
+    },
+
+    async linkWithProvider(provider) {
+      const { error } = await client.auth.linkIdentity({
+        provider: provider as Provider,
+        // Same Pages-base redirect as a fresh OAuth sign-in (#77), so the linking
+        // round-trip lands back inside the app.
         options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
       });
       if (error) throw new Error(error.message);

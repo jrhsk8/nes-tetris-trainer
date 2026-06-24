@@ -25,6 +25,7 @@ import { WORDMARK } from '../branding.js';
 import { parsePuzzleParam } from '../share.js';
 import type { AuthApi, AuthUser } from './auth.js';
 import { RatingHistory } from './RatingHistory.js';
+import { SignIn } from './SignIn.js';
 
 /** The persistence the account view needs (play loop + history + prefs). */
 export type AccountDb = PlayDb &
@@ -66,6 +67,10 @@ export function Account({ db, user, auth }: AccountProps) {
   // (#70), so the play screen keeps a slim single-line header. Open by default is
   // irrelevant on desktop (the toggle is hidden and the cluster always shows).
   const [menuOpen, setMenuOpen] = useState(false);
+  // An anonymous player can open the sign-in panel from the header (#77) to
+  // upgrade their session in place (Google/Discord/email) — the same UID is kept,
+  // so their rating/attempts carry over and become cross-device.
+  const [signInOpen, setSignInOpen] = useState(false);
   // A `?puzzle=N` share link (#49) opens that exact puzzle first; read once.
   const sharedPuzzleNumber = useMemo(
     () => (typeof window !== 'undefined' ? parsePuzzleParam(window.location.search) : null),
@@ -164,11 +169,28 @@ export function Account({ db, user, auth }: AccountProps) {
             ))}
           </nav>
           <span data-testid="account-email">{user.email ?? 'Signed in'}</span>
+          {user.isAnonymous ? (
+            <button
+              type="button"
+              onClick={() => setSignInOpen((open) => !open)}
+              aria-expanded={signInOpen}
+            >
+              Sign in
+            </button>
+          ) : null}
           <button type="button" onClick={() => void auth.signOut()}>
             Sign out
           </button>
         </div>
       </header>
+
+      {/* Anonymous players get an in-place upgrade (#77): linking keeps the UID,
+          so their rating/attempts carry over and become cross-device. */}
+      {user.isAnonymous && signInOpen ? (
+        <div data-testid="signin-panel">
+          <SignIn auth={auth} link />
+        </div>
+      ) : null}
 
       {view === 'play' ? (
         <div data-testid="view-play">
