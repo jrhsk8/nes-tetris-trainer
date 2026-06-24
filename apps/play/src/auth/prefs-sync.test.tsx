@@ -40,7 +40,7 @@ function prefsDb(initial: UserPrefs | null, upserts: UserPrefs[]): AccountDb {
     async getMissPuzzleIds() {
       return [];
     },
-    async isCurator() {
+    async isAdmin() {
       return false;
     },
     async flagPuzzle() {},

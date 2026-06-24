@@ -75,7 +75,7 @@ function countingDb(): { db: PlayDb; calls: () => number } {
     async getMissPuzzleIds() {
       return [];
     },
-    async isCurator() {
+    async isAdmin() {
       return false;
     },
     async flagPuzzle() {},

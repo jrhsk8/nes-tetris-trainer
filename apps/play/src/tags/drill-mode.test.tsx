@@ -75,7 +75,7 @@ function drillDb() {
     async getMissPuzzleIds() {
       return [];
     },
-    async isCurator() {
+    async isAdmin() {
       return false;
     },
     async flagPuzzle() {},

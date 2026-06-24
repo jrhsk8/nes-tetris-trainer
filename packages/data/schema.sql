@@ -178,6 +178,52 @@ create table if not exists public.curators (
   created_at timestamptz not null default now()
 );
 
+-- Admin = email-allowlisted curator (#78). The gate is keyed by VERIFIED EMAIL
+-- (not UID), so the owner grants access by email with zero code change:
+--
+--   GRANT ADMIN LATER (one data step, no deploy):
+--     insert into public.admin_emails (email, note) values ('me@example.com', 'me');
+--
+-- EMPTY-SAFE like `curators`: with no rows, `is_admin()` is false for everyone,
+-- so the admin controls are inert/hidden and normal play is unaffected.
+create table if not exists public.admin_emails (
+  email text primary key,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+-- The admin predicate (#78): the session's VERIFIED, NON-ANONYMOUS email is on
+-- the allowlist. SECURITY: reads only signed JWT claims (email / email_verified /
+-- is_anonymous) — none of which the client can forge — plus the server-side
+-- allowlist table. Anonymous or unverified-email sessions are rejected.
+-- SECURITY DEFINER + a pinned search_path: the function reads `admin_emails`
+-- bypassing RLS, which BREAKS the circular dependency (the `admin_emails` SELECT
+-- policy below itself calls `is_admin()`). It only ever reads signed JWT claims +
+-- the allowlist, so this cannot leak data.
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    coalesce((auth.jwt() ->> 'is_anonymous')::boolean, false) = false
+    -- email_verified is a top-level claim in some flows, under user_metadata in
+    -- others — accept either, defaulting to NOT verified.
+    and coalesce(
+      (auth.jwt() ->> 'email_verified')::boolean,
+      (auth.jwt() -> 'user_metadata' ->> 'email_verified')::boolean,
+      false
+    ) = true
+    and (auth.jwt() ->> 'email') in (select email from public.admin_emails);
+$$;
+
+-- Seed the owner as an admin (#78). Idempotent.
+insert into public.admin_emails (email, note)
+values ('jrhsk8@gmail.com', 'owner')
+on conflict (email) do nothing;
+
 -- Soft-delete flag (#72): culled puzzles set this false; matchmaking filters
 -- `active = true`. Additive + idempotent; existing rows backfill to true.
 alter table public.puzzles add column if not exists active boolean not null default true;
@@ -216,6 +262,7 @@ alter table public.attempts enable row level security;
 alter table public.user_prefs enable row level security;
 alter table public.submissions enable row level security;
 alter table public.curators enable row level security;
+alter table public.admin_emails enable row level security;
 alter table public.puzzle_flags enable row level security;
 
 drop policy if exists puzzles_public_read on public.puzzles;
@@ -228,32 +275,37 @@ create policy puzzles_public_read on public.puzzles
 -- curators it is false for all, so curation is inert and play is unaffected.
 -- Mirrors the submissions allowlist/own-row pattern above.
 
--- A user can read their OWN curator row, so the client can self-detect whether to
--- reveal the dev controls (no row ⇒ not a curator ⇒ controls hidden).
-drop policy if exists curators_select_own on public.curators;
-create policy curators_select_own on public.curators
-  for select using (auth.uid() = user_id);
+-- Admin self-detect (#78): a user can read their OWN allowlist row, so the
+-- client reveals the admin controls only for an allowlisted, verified, non-anon
+-- email. A non-admin reads zero rows ⇒ controls hidden.
+drop policy if exists admin_emails_select_own on public.admin_emails;
+create policy admin_emails_select_own on public.admin_emails
+  for select using (public.is_admin() and (auth.jwt() ->> 'email') = email);
 
--- A curator may update puzzles (used to set active=false on a cull). The service
--- role (generator) bypasses RLS as before.
+-- An admin may update puzzles (used to set active=false on a cull). The service
+-- role (generator) bypasses RLS as before. (Replaces the UID-keyed curator gate.)
 drop policy if exists puzzles_curator_update on public.puzzles;
-create policy puzzles_curator_update on public.puzzles
+drop policy if exists puzzles_admin_update on public.puzzles;
+create policy puzzles_admin_update on public.puzzles
   for update
-  using (auth.uid() in (select user_id from public.curators))
-  with check (auth.uid() in (select user_id from public.curators));
+  using (public.is_admin())
+  with check (public.is_admin());
 
--- A curator may append to the flag log (own user_id) and read it back.
+-- An admin may append to the flag log (own user_id) and read it back.
 drop policy if exists puzzle_flags_curator_insert on public.puzzle_flags;
-create policy puzzle_flags_curator_insert on public.puzzle_flags
+drop policy if exists puzzle_flags_admin_insert on public.puzzle_flags;
+create policy puzzle_flags_admin_insert on public.puzzle_flags
   for insert
-  with check (
-    auth.uid() = user_id
-    and auth.uid() in (select user_id from public.curators)
-  );
+  with check (auth.uid() = user_id and public.is_admin());
 
 drop policy if exists puzzle_flags_curator_select on public.puzzle_flags;
-create policy puzzle_flags_curator_select on public.puzzle_flags
-  for select using (auth.uid() in (select user_id from public.curators));
+drop policy if exists puzzle_flags_admin_select on public.puzzle_flags;
+create policy puzzle_flags_admin_select on public.puzzle_flags
+  for select using (public.is_admin());
+
+-- The legacy UID self-detect on `curators` is retired with the gate (#78); the
+-- table is left in place but no longer drives any policy.
+drop policy if exists curators_select_own on public.curators;
 
 -- A user owns their rating row.
 drop policy if exists user_ratings_select_own on public.user_ratings;

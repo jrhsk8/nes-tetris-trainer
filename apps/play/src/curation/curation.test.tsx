@@ -9,7 +9,7 @@ afterEach(() => cleanup());
 
 function db(overrides: Partial<CurationDb> = {}): CurationDb {
   return {
-    async isCurator() {
+    async isAdmin() {
       return true;
     },
     async flagPuzzle() {},
@@ -22,7 +22,7 @@ function db(overrides: Partial<CurationDb> = {}): CurationDb {
 describe('Dev in-play curation (#72)', () => {
   it('renders nothing for a non-curator (empty-safe default)', async () => {
     const { container } = render(
-      <Curation db={db({ isCurator: async () => false })} userId="u1" puzzleId="p1" />,
+      <Curation db={db({ isAdmin: async () => false })} userId="u1" puzzleId="p1" />,
     );
     // No controls appear; the block has no presence for ordinary players.
     await waitFor(() => expect(container.querySelector('.curation')).toBeNull());

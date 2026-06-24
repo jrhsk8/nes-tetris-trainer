@@ -34,7 +34,7 @@ export type PlayDb = Pick<
   | 'upsertStarRating'
   | 'getMyStarRating'
   | 'getStarStats'
-  | 'isCurator'
+  | 'isAdmin'
   | 'flagPuzzle'
   | 'cullPuzzle'
   | 'setPuzzleActive'

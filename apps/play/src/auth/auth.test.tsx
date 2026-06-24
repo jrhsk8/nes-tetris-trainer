@@ -137,7 +137,7 @@ describe('Account', () => {
       async getMissPuzzleIds() {
         return [];
       },
-      async isCurator() {
+      async isAdmin() {
         return false;
       },
       async flagPuzzle() {},

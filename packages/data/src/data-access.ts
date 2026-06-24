@@ -226,18 +226,18 @@ export interface DataAccess {
     patch: { status: SubmissionStatus; reason?: string | null; parsed?: unknown },
   ): Promise<void>;
   /**
-   * Dev curation (#72): is this user an allowlisted curator? Self-detected via
-   * the `curators` table under RLS (a user reads only their own row). Returns
-   * false when not allowlisted (the empty-safe default), so the UI hides the
-   * curation controls for everyone until a curator is configured.
+   * Admin = email-allowlisted curator (#78): is the signed-in session an admin?
+   * Self-detected via the `admin_emails` table under RLS — the read returns the
+   * user's own row only when their VERIFIED, NON-ANONYMOUS email is on the
+   * allowlist (`is_admin()`), so no email is passed from the client. Returns
+   * false otherwise (the empty-safe default), hiding the admin controls until an
+   * email is allowlisted.
    *
-   * ADD A CURATOR LATER — a pure data step, NO code change and NO deploy: insert
-   * one row into `public.curators` keyed by the account's `auth.uid()` (see
-   * schema.sql for the exact SQL). The allowlist is the only thing to edit; no
-   * UID is hardcoded. With the table empty, `isCurator` is false for everyone and
-   * every curation write is RLS-denied, so the rest of the app is unaffected.
+   * GRANT ADMIN LATER — a pure data step, NO code change and NO deploy: insert one
+   * row into `public.admin_emails` (see schema.sql). With the table empty,
+   * `isAdmin` is false for everyone and every admin write is RLS-denied.
    */
-  isCurator(userId: string): Promise<boolean>;
+  isAdmin(): Promise<boolean>;
   /**
    * Flag a puzzle with a free-text comment (#72): appends a `flag` row to the
    * append-only `puzzle_flags` log for later pattern-mining. The puzzle stays
@@ -668,16 +668,15 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     if (error) throw new Error(`updateSubmission failed: ${error.message}`);
   }
 
-  async function isCurator(userId: string): Promise<boolean> {
-    const { data, error } = await client
-      .from('curators')
-      .select('user_id')
-      .eq('user_id', userId)
-      .maybeSingle();
-    // Empty-safe: no row (or an RLS-denied read) ⇒ not a curator. A genuine error
-    // is swallowed to a `false` so a curation-table hiccup never breaks play.
+  async function isAdmin(): Promise<boolean> {
+    // RLS (`admin_emails_select_own`) returns the caller's own row only when their
+    // verified, non-anon email is allowlisted (`is_admin()`), so selecting any row
+    // is the admin check — no email is sent from the client.
+    const { data, error } = await client.from('admin_emails').select('email').limit(1);
+    // Empty-safe: no row (or an RLS-denied read) ⇒ not an admin. A genuine error
+    // is swallowed to `false` so an allowlist hiccup never breaks play.
     if (error) return false;
-    return data !== null;
+    return (data ?? []).length > 0;
   }
 
   async function flagPuzzle(input: {
@@ -746,7 +745,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     insertSubmission,
     listPendingSubmissions,
     updateSubmission,
-    isCurator,
+    isAdmin,
     flagPuzzle,
     cullPuzzle,
     setPuzzleActive,

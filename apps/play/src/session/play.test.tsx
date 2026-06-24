@@ -71,7 +71,7 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
     async getMissPuzzleIds() {
       return [];
     },
-    async isCurator() {
+    async isAdmin() {
       return false;
     },
     async flagPuzzle() {},
@@ -148,7 +148,7 @@ function trackingDb() {
     async getMissPuzzleIds() {
       return [];
     },
-    async isCurator() {
+    async isAdmin() {
       return false;
     },
     async flagPuzzle() {},
@@ -208,7 +208,7 @@ describe('PuzzlePlay persistent anti-repeat window (#74)', () => {
       async getMissPuzzleIds() {
         return [];
       },
-      async isCurator() {
+      async isAdmin() {
         return false;
       },
       async flagPuzzle() {},
@@ -292,7 +292,7 @@ function missDb(opts: { misses?: string[]; window?: string[] } = {}) {
     async getStarStats() {
       return { avg: 0, count: 0 };
     },
-    async isCurator() {
+    async isAdmin() {
       return false;
     },
     async flagPuzzle() {},

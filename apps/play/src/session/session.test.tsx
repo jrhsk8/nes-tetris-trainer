@@ -77,7 +77,7 @@ function fakeDb() {
     async getStarStats() {
       return { avg: 0, count: 0 };
     },
-    async isCurator() {
+    async isAdmin() {
       return false;
     },
     async flagPuzzle() {},

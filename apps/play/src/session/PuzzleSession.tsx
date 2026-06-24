@@ -52,7 +52,7 @@ export type SessionDb = Pick<
   | 'upsertStarRating'
   | 'getMyStarRating'
   | 'getStarStats'
-  | 'isCurator'
+  | 'isAdmin'
   | 'flagPuzzle'
   | 'cullPuzzle'
   | 'setPuzzleActive'
