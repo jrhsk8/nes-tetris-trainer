@@ -24,7 +24,6 @@ import { DEFAULT_BINDINGS, sanitizeBindings, type KeyBindings } from '../board/k
 import { WORDMARK } from '../branding.js';
 import { parsePuzzleParam } from '../share.js';
 import type { AuthApi, AuthUser } from './auth.js';
-import { RatingHistory } from './RatingHistory.js';
 import { SignIn } from './SignIn.js';
 
 /** The persistence the account view needs (play loop + history + prefs). */
@@ -140,6 +139,17 @@ export function Account({ db, user, auth }: AccountProps) {
     <div className="account">
       <header className="top-bar">
         <span className="wordmark">{WORDMARK}</span>
+        {/* The player's rating lives in the top bar (v2 redesign) — a compact,
+            always-visible readout, so the play screen below stays board-first.
+            Kept outside `.top-bar-end` so it does not collapse behind the phone
+            menu. */}
+        <span className="top-bar-rating" aria-label="rating">
+          <span className="top-bar-rating-label">Rating</span>
+          <strong data-testid="current-rating">{Math.round(rating)}</strong>
+          <span className="top-bar-rating-count" data-testid="attempt-count">
+            {attempts.length} played
+          </span>
+        </span>
         {/* Collapses the nav + account actions behind a menu on phones (#70). The
             toggle is hidden on desktop, where the cluster always shows. */}
         <button
@@ -199,7 +209,6 @@ export function Account({ db, user, auth }: AccountProps) {
             userId={user.id}
             initialPuzzleNumber={sharedPuzzleNumber}
             onAdvance={() => void refresh()}
-            leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
             bindings={bindings}
             muted={muted}
           />
@@ -209,7 +218,6 @@ export function Account({ db, user, auth }: AccountProps) {
           <DrillMode
             db={db}
             userId={user.id}
-            leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
             bindings={bindings}
             muted={muted}
           />
@@ -221,7 +229,6 @@ export function Account({ db, user, auth }: AccountProps) {
             userId={user.id}
             reviewMode
             onAdvance={() => void refresh()}
-            leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
             bindings={bindings}
             muted={muted}
           />

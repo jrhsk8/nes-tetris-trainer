@@ -1,17 +1,18 @@
 /**
- * Board renderer (#10, #18, #89) — a presentational 20×10 NES playfield. Renders
- * the filled stack, plus an optional single **floating piece** (the one free-
- * floating cursor the player is piloting, a solid bright sprite that glows when
- * it rests) and optional
- * highlight cells (used by the feedback view, #12). No input or game logic lives
- * here; it is a pure function of its props.
+ * Board renderer (#10, #18, #89, v2 redesign) — a presentational 20×10 NES
+ * playfield. Renders the filled stack, an optional single **floating piece**
+ * (the cursor the player pilots), an optional **landing projection** (a faint
+ * ghost showing where that piece will come to rest — the v2 highlight cue), and
+ * optional highlight cells (used by the feedback view, #12). No input or game
+ * logic lives here; it is a pure function of its props.
  *
- * Cells are drawn as pixel-accurate NES level-18 block sprites (see `nes.ts`),
- * crisp at any scale. The current/optimal piece is coloured by its real NES
- * colour group. The existing stack is coloured per-cell from the optional
- * `colorGrid` (#28) — the puzzle's stored colour grid; a filled cell with no
- * colour-grid group (legacy puzzles, or the colour-blind unit tests) falls back
- * to the white block group.
+ * v2 changes:
+ *  - Slimmer, refined board well (2px bevel) instead of the chunky 4px frame.
+ *  - The piloted piece is the solid bright NES sprite with a thin white inset;
+ *    while it is still floating, a faint **landing projection** (`landingCells`)
+ *    marks where it will rest. When it actually rests it gains a soft glow.
+ *
+ * Cells are drawn as pixel-accurate NES level-18 block sprites (see `nes.ts`).
  */
 
 import type { ReactNode } from 'react';
@@ -24,52 +25,43 @@ export type Cell = readonly [number, number];
 export interface BoardProps {
   /** The board grid to render. */
   grid: Grid;
-  /**
-   * Optional colour grid parallel to `grid` (#28): the NES colour group that
-   * fills each cell. Filled cells with a group of `1`/`2`/`3` draw that group's
-   * sprite; `0` / out-of-range / absent falls back to the white group.
-   */
+  /** Optional colour grid parallel to `grid` (#28). */
   colorGrid?: ColorGrid;
-  /**
-   * Cells of the **single free-floating piece** the player is piloting (#89):
-   * the solid bright, colour-coded sprite drawn at the piece's current position —
-   * the one cursor, no separate drop-shadow. It is the rotational/positional twin
-   * of the resting cells the player will lock.
-   */
+  /** Cells of the single free-floating piece the player is piloting (#89). */
   outlineCells?: readonly Cell[];
   /** Colour the floating piece as this piece (defaults to the white group). */
   outlinePiece?: Piece;
-  /**
-   * Whether the floating piece is **resting** (#89): when true it gains an outer
-   * glow — the unmistakable "ready to lock" cue. While floating (false) it is the
-   * plain bright sprite with a light inset edge.
-   */
+  /** Whether the floating piece is resting (#89) — gains a soft glow. */
   outlineResting?: boolean;
+  /**
+   * v2 landing projection: cells where the floating piece would come to rest if
+   * dropped now. Drawn as a faint colour-coded ghost so the player can see the
+   * landing as they move. Omit (or pass the same cells as `outlineCells`) when
+   * the piece is already resting. Caller computes these (see HANDOFF.md).
+   */
+  landingCells?: readonly Cell[];
+  /** Colour the landing projection as this piece (defaults to `outlinePiece`). */
+  landingPiece?: Piece;
   /** Cells to draw as a highlight (e.g. the optimal placement in feedback). */
   highlightCells?: readonly Cell[];
   /** Colour the highlight cells as this piece (defaults to the white group). */
   highlightPiece?: Piece;
-  /**
-   * An absolutely-positioned layer drawn over the grid, exactly covering the
-   * cell area (the replay falling piece / line-clear flash, #25). It is the
-   * caller's job to make its content `position: absolute; inset: 0`.
-   */
+  /** An absolutely-positioned layer drawn over the grid (replay/flash, #25). */
   overlay?: ReactNode;
 }
 
 const keyOf = (r: number, c: number) => `${r}-${c}`;
 
-/**
- * Defensive render guard (#58): drop any cell outside the 20×10 grid. The
- * reachability model already proves no piece can reach past a wall (see
- * `placement.test.ts`), so this never fires in practice — it is belt-and-
- * suspenders against any future data/logic anomaly, so the board can never draw
- * a block past the right wall (the reported symptom) regardless of input.
- */
 const onBoard = (cells: readonly Cell[]): Cell[] =>
   cells.filter(([r, c]) => r >= 0 && r < ROWS && c >= 0 && c < COLS);
 
 const WHITE_GROUP: ColorGroup = 1;
+
+/** `r,g,b` channels of a `#rrggbb` colour, for building rgba() shadows. */
+function channels(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
 
 export function Board({
   grid,
@@ -77,14 +69,24 @@ export function Board({
   outlineCells = [],
   outlinePiece,
   outlineResting = false,
+  landingCells = [],
+  landingPiece,
   highlightCells = [],
   highlightPiece,
   overlay,
 }: BoardProps) {
   const outline = new Set(onBoard(outlineCells).map(([r, c]) => keyOf(r, c)));
+  const landing = new Set(onBoard(landingCells).map(([r, c]) => keyOf(r, c)));
   const highlight = new Set(onBoard(highlightCells).map(([r, c]) => keyOf(r, c)));
+
   const outlineGroup = outlinePiece ? PIECE_GROUP[outlinePiece] : WHITE_GROUP;
   const outlineColor = LEVEL18_PALETTE[outlineGroup];
+  const landingGroup = landingPiece
+    ? PIECE_GROUP[landingPiece]
+    : outlinePiece
+      ? PIECE_GROUP[outlinePiece]
+      : WHITE_GROUP;
+  const landingColor = LEVEL18_PALETTE[landingGroup];
   const highlightGroup = highlightPiece ? PIECE_GROUP[highlightPiece] : WHITE_GROUP;
 
   return (
@@ -92,10 +94,11 @@ export function Board({
       className="board-well"
       style={{
         display: 'inline-block',
-        padding: 6,
+        // v2: slimmer, refined bevel.
+        padding: 5,
         background: '#000',
-        border: '4px solid #bcbcbc',
-        boxShadow: '0 0 0 2px #000, 0 0 0 6px #6b6b6b',
+        border: '2px solid #a8a8a8',
+        boxShadow: '0 0 0 1px #000, 0 0 0 3px #555',
         lineHeight: 0,
       }}
     >
@@ -107,11 +110,7 @@ export function Board({
           display: 'grid',
           gridTemplateColumns: `repeat(${COLS}, 1fr)`,
           gap: 0,
-          // Sized as the centred hero in styles.css (#22): scales with the
-          // viewport height, no fixed pixel cap. Falls back to a sane width if
-          // the stylesheet is absent (e.g. unit tests).
           width: 'var(--board-width, min(86vw, 320px))',
-          // Anchors the optional replay overlay (#25) to the cell area.
           position: 'relative',
         }}
       >
@@ -123,9 +122,11 @@ export function Board({
                 ? outlineResting
                   ? 'outline-resting'
                   : 'outline'
-                : highlight.has(keyOf(r, c))
-                  ? 'highlight'
-                  : 'empty';
+                : landing.has(keyOf(r, c))
+                  ? 'landing'
+                  : highlight.has(keyOf(r, c))
+                    ? 'highlight'
+                    : 'empty';
 
             const style: React.CSSProperties = {
               aspectRatio: '1 / 1',
@@ -136,22 +137,21 @@ export function Board({
               const group = (colorGrid?.[r]?.[c] || WHITE_GROUP) as ColorGroup;
               style.backgroundImage = blockBackground(group);
             } else if (state === 'outline' || state === 'outline-resting') {
-              // The single free-floating piece (#89, restyled #90): the full
-              // bright, colour-coded sprite — one cursor that can tuck, spin, and
-              // freely move. Rendered solid (not a hollow outline) with a light
-              // inset edge so it reads as the live, movable piece, distinct from a
-              // locked block (no edge). The moment it RESTS (can't fall) it gains
-              // an outer glow — the "ready to lock" cue that gates Confirm. There
-              // is no separate drop-shadow, so the old "awkward partial ghost" is
-              // gone.
+              // v2: the piloted piece is the solid bright sprite with a thin
+              // white inset; resting adds a soft outer glow ("ready to lock").
               style.backgroundImage = blockBackground(outlineGroup);
               style.boxShadow =
                 state === 'outline-resting'
-                  ? `inset 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 8px 2px ${outlineColor}`
-                  : 'inset 0 0 0 2px rgba(255, 255, 255, 0.85)';
+                  ? `inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 0 14px 1px rgba(${channels(outlineColor)}, 0.7)`
+                  : 'inset 0 0 0 1px rgba(255, 255, 255, 0.55)';
+            } else if (state === 'landing') {
+              // v2: landing projection — a faint colour-coded ghost of where the
+              // floating piece will rest.
+              style.backgroundColor = `rgba(${channels(landingColor)}, 0.09)`;
+              style.boxShadow = `inset 0 0 0 2px rgba(${channels(landingColor)}, 0.5)`;
             } else if (state === 'highlight') {
               style.backgroundImage = blockBackground(highlightGroup);
-              style.boxShadow = 'inset 0 0 0 1px #fcd000';
+              style.boxShadow = 'inset 0 0 0 1px #d98b6a';
             }
 
             return (

@@ -12,10 +12,13 @@ describe('Site design (#19)', () => {
     expect(css).toMatch(/#fcfcfc/i); // NES white
   });
 
-  it('commits to the retro aesthetic: pixel font + hard offset shadows', () => {
+  it('reserves the pixel font for gameplay, with soft editorial chrome (v2)', () => {
+    // The NES pixel font is kept — but, in the v2 editorial-dark redesign, only
+    // for board-attached gameplay (NEXT label + grade banner), not all chrome.
     expect(css).toMatch(/Press Start 2P/i);
-    // Chunky 8-bit chrome: hard offset shadows on panels (no soft blur radius).
-    expect(css).toMatch(/--shadow-hard:\s*4px 4px 0/i);
+    expect(css).toMatch(/--font-pixel/i);
+    // Panels carry a soft layered shadow now (the chunky 4px hard offset is gone).
+    expect(css).toMatch(/box-shadow:\s*0 14px 40px/i);
   });
 
   it('has no full-viewport CRT overlay (scroll-jank fix, #21)', () => {

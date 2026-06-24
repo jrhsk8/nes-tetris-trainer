@@ -12,25 +12,36 @@
  */
 
 :root {
-  --nes-black: #0b0c10;
+  /* Playfield stays the true NES level-18 set (the board is untouched). */
   --nes-field: #000000;
   --nes-white: #fcfcfc;
   --nes-red: #d82800;
   --nes-blue: #0058f8;
-  --nes-grey: #bcbcbc;
-  --nes-grey-dark: #4a4a52;
-  --nes-gold: #fcd000;
 
-  --panel: #14151c;
-  --panel-edge: #2a2c38;
-  --ink: #e8e8ee;
-  --ink-dim: #9aa0b4;
+  /* App chrome — warm editorial dark (v2 redesign). */
+  --nes-black: #1a1815;     /* app background */
+  --nes-grey: #a8a8a8;      /* board bevel (inner) */
+  --nes-grey-dark: #555555; /* board bevel (outer) */
+  --nes-gold: #d98b6a;      /* REMAPPED gold -> clay accent: re-tints every accent at once */
 
-  --font-pixel: 'Press Start 2P', 'Courier New', monospace;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --accent: #d98b6a;
+  --accent-hover: #e49b7c;
+  --good: #6cc28d;
+  --bad: #ec8468;
+  --raised: #2a2620;
+
+  --panel: #221f1b;
+  --panel-edge: #34302a;
+  --ink: #efe9e0;
+  --ink-dim: #a8a096;
+  --ink-faint: #6d665c;
+
+  /* ONE UI typeface. Pixel font is reserved for gameplay (board labels + grade). */
+  --font-pixel: 'Press Start 2P', monospace;
+  --font-body: 'Schibsted Grotesk', system-ui, -apple-system, sans-serif;
 
   --space: 16px;
-  --shadow-hard: 4px 4px 0 0 #000;
+  --shadow-hard: 0 14px 40px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -108,7 +119,7 @@ main {
 }
 
 .wordmark {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: clamp(10px, 2vw, 15px);
   line-height: 1.4;
   letter-spacing: 1px;
@@ -136,7 +147,7 @@ main {
 }
 
 h2 {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: clamp(11px, 2vw, 15px);
   line-height: 1.6;
   letter-spacing: 1px;
@@ -517,7 +528,7 @@ h2 {
 }
 
 [data-testid='account-email'] {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 10px;
   color: var(--nes-blue);
   word-break: break-all;
@@ -568,7 +579,7 @@ section[aria-label='controls'] {
 }
 
 .next-box-label {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 9px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -616,7 +627,7 @@ section[aria-label='controls'] {
 }
 
 [data-testid='current-rating'] {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 22px;
   color: var(--nes-white);
 }
@@ -639,7 +650,7 @@ section[aria-label='controls'] {
 /* ---- Buttons: 8-bit blocks -------------------------------------------- */
 
 button {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 10px;
   line-height: 1.4;
   letter-spacing: 0.5px;
@@ -711,7 +722,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 9px;
   letter-spacing: 0.5px;
   color: var(--ink-dim);
@@ -763,7 +774,7 @@ input:focus-visible {
   align-items: center;
   justify-content: center;
   padding: 8px 6px;
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: clamp(14px, 4.2vmin, 30px);
   letter-spacing: 1px;
   line-height: 1;
@@ -784,7 +795,7 @@ input:focus-visible {
 
 /* The primary "Next puzzle" action, centred directly under the board (#65). */
 .next-puzzle-btn {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -809,7 +820,7 @@ input:focus-visible {
 }
 
 .combo-list-label {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 8px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -847,21 +858,21 @@ input:focus-visible {
 }
 
 .combo-rank {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 9px;
   color: var(--ink);
   min-width: 4.5ch;
 }
 
 .combo-score {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 9px;
   color: var(--nes-white);
   margin-left: auto;
 }
 
 .combo-you {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 8px;
   color: var(--nes-red);
 }
@@ -892,7 +903,7 @@ input:focus-visible {
   margin-top: var(--space);
 }
 .curation-label {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 8px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -951,7 +962,7 @@ input:focus-visible {
 
 .controls-table button {
   min-width: 7ch;
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
 }
 
 .control-listening {
@@ -976,7 +987,7 @@ input:focus-visible {
 }
 
 .history-table th button {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 9px;
   text-transform: uppercase;
   color: var(--nes-gold);
@@ -1001,7 +1012,7 @@ input:focus-visible {
 }
 
 .history-review-result {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   color: var(--nes-gold);
 }
 
@@ -1010,13 +1021,13 @@ input:focus-visible {
 }
 
 [data-testid='rating-change'] {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 11px;
   color: var(--nes-white);
 }
 
 [data-testid='puzzle-stats'] {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 11px;
   color: var(--nes-white);
 }
@@ -1028,7 +1039,7 @@ input:focus-visible {
 }
 
 .star-rating-prompt {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 11px;
   color: var(--nes-white);
   margin: 0 0 4px;
@@ -1049,7 +1060,7 @@ input:focus-visible {
 }
 
 .star-rating-community {
-  font-family: var(--font-pixel);
+  font-family: var(--font-body);
   font-size: 11px;
   color: var(--nes-gold);
   margin: 4px 0 0;
@@ -1110,3 +1121,237 @@ input:focus-visible {
     animation: none;
   }
 }
+
+
+/* ===================================================================
+ * v2 REDESIGN OVERRIDES (generated handoff)
+ * Editorial dark, single typeface (Schibsted Grotesk), refined chrome,
+ * color-coded rounded tag chips, landing-projection piece cue.
+ * Appended last so it wins the cascade; every original selector is intact.
+ * =================================================================== */
+
+/* Numbers align everywhere. */
+body { font-variant-numeric: tabular-nums; }
+#root { max-width: 1140px; }
+
+/* Gameplay keeps the NES pixel font; nothing else does. */
+.next-box-label,
+.grade-banner { font-family: var(--font-pixel); }
+
+/* --- Top bar: drop the rainbow marquee for a clean hairline bar -------- */
+.top-bar::before { display: none; }
+.top-bar {
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  background: #1c1a16;
+}
+
+/* Wordmark: clean type + a small NES block mark. */
+.wordmark {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+  text-shadow: none;
+  display: inline-flex;
+  align-items: center;
+}
+.wordmark::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+  border-radius: 3px;
+  background: linear-gradient(135deg, var(--nes-red) 0 50%, var(--nes-blue) 50% 100%);
+}
+
+/* Rating readout in the top bar (v2): a compact, quiet cluster sitting just
+   right of the wordmark and always visible (never collapses behind the phone
+   menu). The number is the emphasis; the label + attempt count are muted. */
+.top-bar-rating {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-left: 18px;
+  white-space: nowrap;
+}
+.top-bar-rating-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.top-bar-rating [data-testid='current-rating'] {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.top-bar-rating-count {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* Nav: understated text links, accent underline when active. */
+.app-nav button {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-dim);
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 4px 1px;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+}
+.app-nav button:hover { background: none; color: var(--ink); }
+.app-nav button.nav-active {
+  color: var(--ink);
+  font-weight: 600;
+  background: none;
+  border-bottom-color: var(--accent);
+}
+
+/* --- Panels: soft radius + soft shadow instead of hard 8-bit chrome ---- */
+section[aria-label='rating'],
+section[aria-label='sign in'],
+section[aria-label='history'],
+section[aria-label='controls'],
+.result-panel,
+.next-box {
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+}
+
+/* --- Buttons: quiet secondary by default; clay for primary CTAs -------- */
+button {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 11px 18px;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+button:hover { background: #322d27; border-color: #4a443c; }
+button:active { transform: translateY(1px); box-shadow: none; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled {
+  background: #221f1b;
+  border-color: var(--panel-edge);
+  color: var(--ink-faint);
+  box-shadow: none;
+}
+
+/* Primary CTAs in clay. */
+.next-puzzle-btn,
+.drill-start,
+.placement-controls button:last-child,
+form button[type='submit'] {
+  background: var(--accent);
+  color: #1a1815;
+  border: none;
+  border-radius: 8px;
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.next-puzzle-btn:hover,
+.drill-start:hover,
+.placement-controls button:last-child:hover,
+form button[type='submit']:hover { background: var(--accent-hover); }
+
+/* Inputs */
+input {
+  font-family: var(--font-body);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: #13110e;
+}
+input:focus-visible { border-color: var(--accent); outline: none; }
+
+/* Headings read as clean type, not pixel. */
+h2 { color: var(--ink); font-weight: 700; letter-spacing: -0.3px; }
+
+/* Next-piece well: slim refined bevel (matches the board well in Board.tsx). */
+.next-well {
+  padding: 5px;
+  border: 2px solid var(--nes-grey);
+  box-shadow: 0 0 0 1px #000, 0 0 0 3px var(--nes-grey-dark);
+}
+
+/* --- Tag chips: rounded, color-coded boxes with a dot ------------------ */
+.tag-chip {
+  font-family: var(--font-body);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 5px 11px 5px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.tag-chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.tag-chip.tag-clear    { color: #6cc28d; border-color: rgba(108, 194, 141, 0.34); background: rgba(108, 194, 141, 0.12); }
+.tag-chip.tag-maneuver { color: #6f9bf0; border-color: rgba(111, 155, 240, 0.34); background: rgba(111, 155, 240, 0.12); }
+.tag-chip.tag-stack    { color: #b69be6; border-color: rgba(182, 155, 230, 0.34); background: rgba(182, 155, 230, 0.12); }
+.tag-chip.tag-avoid    { color: #ec8468; border-color: rgba(236, 132, 104, 0.34); background: rgba(236, 132, 104, 0.12); }
+
+/* Drill chips reuse .tag-chip; selected fills solid with dark text. */
+.drill-chips .tag-chip { opacity: 1; cursor: pointer; }
+.drill-chips .tag-chip.is-selected { background: currentColor; }
+.drill-chips .tag-chip.is-selected,
+.drill-chips .tag-chip.is-selected::before { color: #1a1815; }
+.drill-chips .tag-chip.is-selected::before { background: rgba(26, 24, 21, 0.55); }
+
+/* --- Ranked combo list ------------------------------------------------- */
+.combo-row {
+  font-family: var(--font-body);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  box-shadow: none;
+}
+.combo-row.is-selected {
+  border-color: var(--accent);
+  background: rgba(217, 139, 106, 0.1);
+}
+.combo-row.is-player {
+  border-left-width: 3px;
+  border-left-color: var(--accent);
+}
+.combo-rank,
+.combo-score,
+.combo-you { font-family: var(--font-body); }
+
+/* Data read-outs in clean tabular type (were pixel). */
+[data-testid='current-rating'],
+[data-testid='rating-change'],
+[data-testid='puzzle-stats'],
+[data-testid='attempt-count'] { font-family: var(--font-body); }
+
+/* Result banner: softer NES greens/reds, clean type. */
+.grade-banner { letter-spacing: 0.5px; }
+.grade-banner.is-win   { background: rgba(33, 130, 70, 0.92); }
+.grade-banner.is-below { background: rgba(196, 60, 40, 0.92); }
+
+/* Sound toggle / sundry gold accents now read clay via --nes-gold remap. */

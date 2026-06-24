@@ -70,7 +70,27 @@ describe('Board', () => {
     // Resting: the same inset edge PLUS an outer glow in the piece colour.
     expect(resting.style.boxShadow).toContain('inset');
     expect(resting.style.boxShadow).toMatch(/,\s*0 0/); // outer glow present
-    expect(resting.style.boxShadow).toContain('#d82800'); // glow is the piece colour
+    expect(resting.style.boxShadow).toContain('rgba(216, 40, 0'); // glow is the piece colour ($16 red)
+  });
+
+  it('draws a faint landing projection where the floating piece would rest (v2)', () => {
+    render(
+      <Board
+        grid={emptyBoard()}
+        outlineCells={[[1, 4]]}
+        outlinePiece="Z"
+        landingCells={[[19, 4]]}
+        landingPiece="Z"
+      />,
+    );
+    // The floating piece stays at its current spot; the landing cell is a
+    // distinct faint ghost down where it would settle.
+    expect(screen.getByTestId('cell-1-4')).toHaveAttribute('data-state', 'outline');
+    const landing = screen.getByTestId('cell-19-4');
+    expect(landing).toHaveAttribute('data-state', 'landing');
+    // Faint colour-coded ghost, not a solid sprite: no block image, a soft inset.
+    expect(landing.style.backgroundImage).toBe('');
+    expect(landing.style.boxShadow).toContain('inset');
   });
 
   it('renders filled cells as crisp NES block sprites, not flat squares (#18)', () => {
@@ -112,9 +132,9 @@ describe('Board', () => {
     expect(locked.style.backgroundImage).not.toBe('');
     expect(outline.style.boxShadow).toContain('inset');
     expect(locked.style.boxShadow).toBe('');
-    // ...and it never carries the feedback highlight's gold.
-    expect(outline.style.boxShadow).not.toContain('#fcd000');
-    expect(highlight.style.boxShadow).toContain('#fcd000');
+    // ...and it never carries the feedback highlight's accent.
+    expect(outline.style.boxShadow).not.toContain('#d98b6a');
+    expect(highlight.style.boxShadow).toContain('#d98b6a');
   });
 
   it('never draws a cell outside the grid, even given out-of-bounds cells (#58 guard)', () => {

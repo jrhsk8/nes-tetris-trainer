@@ -147,6 +147,16 @@ export function PlacementInput({
     [board, piece, rotation, row, col],
   );
 
+  // Landing projection (v2 redesign): while the piece is still floating, show a
+  // faint ghost of where it would come to rest if dropped straight down from
+  // here — the highlight cue. Omitted once it actually rests (the resting glow
+  // already marks the spot). Same straight-down drop as the soft-drop gravity.
+  const landingCells = useMemo(() => {
+    if (resting) return undefined;
+    const landRow = settleRow(board, piece, rotation, row, col);
+    return pieceCells(piece, rotation, landRow, col);
+  }, [resting, board, piece, rotation, row, col]);
+
   // One lateral step into the adjacent column `dir`, settled to the nearest
   // reachable resting spot there (#81). Two behaviours fall out of one rule:
   //   - If the piece fits at the CURRENT row in the target column, slide straight
@@ -373,6 +383,8 @@ export function PlacementInput({
           outlineCells={outlineCells}
           outlinePiece={piece}
           outlineResting={resting}
+          landingCells={landingCells}
+          landingPiece={piece}
         />
       </div>
       <div className="placement-controls" role="group" aria-label="placement controls">
