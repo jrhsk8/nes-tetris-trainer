@@ -246,6 +246,37 @@ h2 {
   border-color: var(--ink);
 }
 
+/* Puzzle type chips (#84): small colour-coded labels under the title. */
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3rem;
+  list-style: none;
+  margin: 0 0 0.4rem;
+  padding: 0;
+}
+.tag-chip {
+  font-size: 7px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border: 2px solid currentColor;
+  color: var(--ink-dim);
+}
+.tag-chip.tag-clear {
+  color: var(--nes-gold);
+}
+.tag-chip.tag-maneuver {
+  color: var(--nes-blue);
+}
+.tag-chip.tag-stack {
+  color: var(--nes-grey);
+}
+.tag-chip.tag-avoid {
+  color: var(--nes-red);
+}
+
 /* The board hero: scales with the viewport, preserving its 1:2 aspect (10 wide
  * cells → height = 2 × width). No fixed pixel cap (#22). The board is now the
  * dominant element (#32): width grows toward 36vh (≈ 72vh tall) but is also

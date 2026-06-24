@@ -40,6 +40,7 @@ import { Feedback, StarRating } from '../feedback/index.js';
 import { Curation } from '../curation/index.js';
 import { PlayScreen } from './PlayScreen.js';
 import { PuzzleTitle } from './PuzzleTitle.js';
+import { TagChips } from '../tags/TagChips.js';
 
 /** The persistence the session needs (rating read/write + attempt insert + curation). */
 export type SessionDb = Pick<
@@ -206,6 +207,7 @@ export function PuzzleSession({
       <PlayScreen leftFlank={flank}>
         <div className="play-center" data-testid="board-center">
           <PuzzleTitle number={puzzle.number} />
+          <TagChips tags={puzzle.tags} />
           <p className="play-instruction">
             Place the <strong>{puzzle.piece1}</strong>.
           </p>
@@ -229,6 +231,7 @@ export function PuzzleSession({
       <PlayScreen leftFlank={flank}>
         <div className="play-center" data-testid="board-center">
           <PuzzleTitle number={puzzle.number} />
+          <TagChips tags={puzzle.tags} />
           <p className="play-instruction">
             Place the <strong>{puzzle.piece2}</strong>. <em>(no next piece)</em>
           </p>
@@ -263,6 +266,7 @@ export function PuzzleSession({
     <PlayScreen leftFlank={flank}>
       <Feedback
         number={puzzle.number}
+        tags={puzzle.tags}
         board0={board0}
         piece1={puzzle.piece1}
         piece2={puzzle.piece2}

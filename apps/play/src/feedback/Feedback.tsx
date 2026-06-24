@@ -32,6 +32,7 @@ import {
   type Line,
   type Piece,
   type Placement,
+  type PuzzleTag,
 } from '@trainer/core';
 import { Board } from '../board/Board.js';
 import { PIECE_GROUP, blockBackground } from '../board/nes.js';
@@ -41,6 +42,7 @@ import { formatScore } from './grade.js';
 import { playResultSound } from './sound.js';
 import { buildReplay, type Keyframe, type ReplayOverlay } from './replay.js';
 import { PuzzleTitle } from '../session/PuzzleTitle.js';
+import { TagChips } from '../tags/TagChips.js';
 import { useMediaQuery } from '../useMediaQuery.js';
 
 /** A player rating change to surface alongside the verdict. */
@@ -53,6 +55,8 @@ export interface RatingChange {
 export interface FeedbackProps {
   /** The puzzle's stable number (#49) — shown as the title; null for legacy. */
   number?: number | null;
+  /** The puzzle's type-tags (#84) — rendered as chips under the title. */
+  tags?: readonly PuzzleTag[];
   /** The starting board. */
   board0: Grid;
   piece1: Piece;
@@ -192,6 +196,7 @@ function selectedOutcomeKey(combos: ComboTable, selected: Line): string {
 
 export function Feedback({
   number = null,
+  tags = [],
   board0,
   piece1,
   piece2,
@@ -293,6 +298,7 @@ export function Feedback({
     <div className="feedback">
       <div className="play-center feedback-board" data-testid="board-center">
         <PuzzleTitle number={number} />
+        <TagChips tags={tags} />
         <Board
           grid={frame.grid}
           colorGrid={frame.colorGrid}
