@@ -56,5 +56,14 @@ export {
 } from './combo.js';
 export type { ComboEntry, ComboTable, ComboResult } from './combo.js';
 
-export { tagPuzzle, WELL_DEPTH } from './tags.js';
-export type { PuzzleTag } from './tags.js';
+export {
+  tagPuzzle,
+  WELL_DEPTH,
+  singlePieceDependencies,
+  AVOID_DEPENDENCY_TAG,
+  I_WELL_MIN_DEPTH,
+  TRAP_BAND_MIN,
+  TRAP_BAND_MAX,
+  TRAP_MAX_RANK,
+} from './tags.js';
+export type { PuzzleTag, Dependency } from './tags.js';

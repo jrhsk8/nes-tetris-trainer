@@ -7,10 +7,17 @@ import {
   boardKey,
   restingLineForEntry,
   tagPuzzle,
+  singlePieceDependencies,
+  AVOID_DEPENDENCY_TAG,
+  TRAP_BAND_MIN,
+  TRAP_BAND_MAX,
+  ROWS,
+  COLS,
   type Grid,
   type Piece,
   type RestingPlacement,
   type ComboEntry,
+  type ComboTable,
 } from './index.js';
 
 /** Fill `cells` ([row,col]) of a fresh empty board. */
@@ -155,5 +162,148 @@ describe('tagPuzzle (#81)', () => {
     // A (rotation, col) with no boardKey and no matching reachable resting line.
     const entry: ComboEntry = { rot1: 0, col1: 0, rot2: 0, col2: 0, score: 100, boardKey: 'x'.repeat(200) };
     expect(tagPuzzle(start, 'O', 'O', entry)).toEqual([]);
+  });
+});
+
+// --- #90 avoid-<piece>-dependency contrast tags ----------------------------
+
+// Boards whose surface carries a single-piece dependency, discovered by the
+// detector over random stacks (one distinct dependency piece each). The piece
+// each forces is named in the constant.
+const DEP_I =
+  '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000010000001000001000101100101010111111101011101110100';
+const DEP_S =
+  '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000010001000001001110000100111100010011110000001001001011';
+const DEP_Z =
+  '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001100000001110000000111000000011111100110011101011111111101111';
+const DEP_J =
+  '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000101100100110111010011111111';
+const DEP_L =
+  '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000011010010011101001001111100000111110010011011101000101110100';
+// A trap alt board with TWO distinct dependencies (S at col 4, L at col 8).
+const DEP_MULTI =
+  '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000001010000010111000100111000011110100011011111101111011110';
+// A flat board: zero single-piece dependencies (the clean rank-1 outcome).
+const CLEAN =
+  '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011111111111111111111';
+
+describe('singlePieceDependencies (#90 detector)', () => {
+  it('returns the forcing piece for each of I/S/Z/J/L', () => {
+    const pieceOf = (s: string): Piece[] => [
+      ...new Set(singlePieceDependencies(decodeBoard(s)).map((d) => d.piece)),
+    ];
+    expect(pieceOf(DEP_I)).toContain('I');
+    expect(pieceOf(DEP_S)).toContain('S'); // depth-1 staircase
+    expect(pieceOf(DEP_Z)).toContain('Z'); // mirror staircase
+    expect(pieceOf(DEP_J)).toContain('J');
+    expect(pieceOf(DEP_L)).toContain('L');
+  });
+
+  it('returns nothing for a flat board, a T-slot, and a tetris-ready well', () => {
+    // flat
+    const flat = decodeBoard(CLEAN);
+    expect(singlePieceDependencies(flat)).toEqual([]);
+
+    // T-slot: a centre-low 1-deep notch only a T (excluded) could fill.
+    const tslot = emptyBoard();
+    for (const c of [0, 1, 2, 3, 4, 6, 7, 8, 9]) {
+      tslot[18][c] = 1;
+      tslot[19][c] = 1;
+    }
+    tslot[19][5] = 1; // col 5 one shallower than both neighbours
+    expect(singlePieceDependencies(tslot)).toEqual([]);
+
+    // tetris-ready well: a depth-4 well whose vertical-I fill CLEARS — not a dep.
+    const well = emptyBoard();
+    for (let r = 16; r <= 19; r++) for (let c = 0; c <= 8; c++) well[r][c] = 1;
+    expect(singlePieceDependencies(well)).toEqual([]);
+  });
+
+  it('ignores an edge depth-1 notch but keeps the same notch in the interior', () => {
+    // DEP_J carries an interior J-notch at col 1. Sliding the whole stack one
+    // column left moves that notch to col 0 (the edge), where it must vanish.
+    const shiftLeft = (g: Grid): Grid => {
+      const n = emptyBoard();
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS - 1; c++) n[r][c] = g[r][c + 1];
+      return n;
+    };
+    const interior = singlePieceDependencies(decodeBoard(DEP_J));
+    expect(interior.some((d) => d.col === 1 && d.piece === 'J')).toBe(true);
+
+    const edge = singlePieceDependencies(shiftLeft(decodeBoard(DEP_J)));
+    expect(edge.some((d) => d.col === 0)).toBe(false); // edge depth-1 ignored
+  });
+
+  it('O and T carry no dependency tag (single source of truth)', () => {
+    expect(AVOID_DEPENDENCY_TAG.O).toBeNull();
+    expect(AVOID_DEPENDENCY_TAG.T).toBeNull();
+    expect(AVOID_DEPENDENCY_TAG.S).toBe('avoid-s-dependency');
+  });
+});
+
+describe('tagPuzzle avoid-<piece>-dependency trap (#90)', () => {
+  // A combo table whose rank-1 outcome is CLEAN and whose rank-2 alt outcome is
+  // `altBoard`, scoring `altScore`. `board`/pieces are chosen so the rank-1 line
+  // is unreconstructable (isolating the contrast tags), unless overridden.
+  const trapTable = (altBoard: string, altScore: number, rank = 2): ComboTable => {
+    const entries: ComboEntry[] = [
+      { rot1: 0, col1: 0, rot2: 0, col2: 0, score: 100, boardKey: CLEAN },
+    ];
+    while (entries.length < rank - 1) {
+      entries.push({ rot1: 0, col1: 1, rot2: 0, col2: 1, score: 98, boardKey: CLEAN });
+    }
+    entries.push({ rot1: 1, col1: 1, rot2: 1, col2: 1, score: altScore, boardKey: altBoard });
+    return { entries, total: entries.length };
+  };
+  const avoidTags = (table: ComboTable): string[] =>
+    tagPuzzle(emptyBoard(), 'O', 'O', table.entries[0], table).filter((t) =>
+      t.startsWith('avoid-'),
+    );
+
+  it('emits the avoid tag when a rank-2 alt in [90,97) creates a dependency', () => {
+    expect(avoidTags(trapTable(DEP_S, 95))).toEqual(['avoid-s-dependency']);
+  });
+
+  it('emits one tag PER distinct dependency piece a trap alt creates (multi-tag)', () => {
+    const tags = avoidTags(trapTable(DEP_MULTI, 94));
+    expect(tags).toContain('avoid-s-dependency');
+    expect(tags).toContain('avoid-l-dependency');
+  });
+
+  it('respects the score band boundaries (96.9 qualifies, 97.0 does not)', () => {
+    expect(avoidTags(trapTable(DEP_S, TRAP_BAND_MAX - 0.1))).toEqual(['avoid-s-dependency']);
+    expect(avoidTags(trapTable(DEP_S, TRAP_BAND_MAX))).toEqual([]); // >= 97 graded right
+    expect(avoidTags(trapTable(DEP_S, TRAP_BAND_MIN))).toEqual(['avoid-s-dependency']);
+    expect(avoidTags(trapTable(DEP_S, TRAP_BAND_MIN - 0.1))).toEqual([]); // < 90 too low
+  });
+
+  it('only rank-2 / rank-3 alts spring the trap (rank 4 ignored)', () => {
+    expect(avoidTags(trapTable(DEP_S, 95, 3))).toEqual(['avoid-s-dependency']);
+    expect(avoidTags(trapTable(DEP_S, 95, 4))).toEqual([]); // beyond rank 3
+  });
+
+  it('no tag when the rank-1 outcome itself carries a dependency (not clean)', () => {
+    const entries: ComboEntry[] = [
+      { rot1: 0, col1: 0, rot2: 0, col2: 0, score: 100, boardKey: DEP_S }, // rank-1 not clean
+      { rot1: 1, col1: 1, rot2: 1, col2: 1, score: 95, boardKey: DEP_L },
+    ];
+    expect(avoidTags({ entries, total: 2 })).toEqual([]);
+  });
+
+  it('does not regress the #81 rank-1 tags when a combo table is supplied', () => {
+    // A reconstructable clean-stacking rank-1 (two flat O's) PLUS a trap alt.
+    const start = emptyBoard();
+    const p1 = hardDrop(start, 'O', 0, 0);
+    const b1 = applyRestingPlacement(start, 'O', p1);
+    const p2 = hardDrop(b1, 'O', 0, 2);
+    const rank1 = entryFor(start, 'O', p1, 'O', p2);
+    const table: ComboTable = {
+      entries: [rank1, { rot1: 1, col1: 1, rot2: 1, col2: 1, score: 95, boardKey: DEP_S }],
+      total: 2,
+    };
+    const tags = tagPuzzle(start, 'O', 'O', rank1, table);
+    expect(tags).toContain('clean-stacking'); // #81 tag intact
+    expect(tags).toContain('avoid-s-dependency'); // #90 tag added
   });
 });

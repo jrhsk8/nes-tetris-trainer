@@ -15,15 +15,16 @@
  * and additionally read the full combo table.
  */
 
-import { ROWS, COLS, type Grid } from './board.js';
+import { ROWS, COLS, decodeBoard, type Grid } from './board.js';
 import { ORIENTATIONS, type Piece } from './pieces.js';
-import { fitsAt, enumerateResting, type RestingPlacement } from './placement.js';
+import { fitsAt, pieceCells, enumerateResting, type RestingPlacement } from './placement.js';
 import { holes } from './metrics.js';
 import {
   restingLineForEntry,
   lockAndClear,
   lineClearsTetris,
   type ComboEntry,
+  type ComboTable,
 } from './combo.js';
 
 /**
@@ -38,7 +39,28 @@ export type PuzzleTag =
   | 'spin'
   | 'clean-stacking'
   | 'dig'
-  | 'well-maintenance';
+  | 'well-maintenance'
+  | 'avoid-i-dependency'
+  | 'avoid-s-dependency'
+  | 'avoid-z-dependency'
+  | 'avoid-j-dependency'
+  | 'avoid-l-dependency';
+
+/**
+ * The single source of truth mapping a **dependency piece** to its
+ * `avoid-<piece>-dependency` tag (#90) — so the detector, the tagger, and the
+ * future chip/drill vocabulary all agree. O and T have no single-piece
+ * dependency, so they map to `null`.
+ */
+export const AVOID_DEPENDENCY_TAG: Record<Piece, PuzzleTag | null> = {
+  I: 'avoid-i-dependency',
+  S: 'avoid-s-dependency',
+  Z: 'avoid-z-dependency',
+  J: 'avoid-j-dependency',
+  L: 'avoid-l-dependency',
+  O: null,
+  T: null,
+};
 
 /**
  * How much deeper than BOTH its neighbours a column must be to count as an open
@@ -158,21 +180,184 @@ function maneuver(
     : 'spin';
 }
 
+// --- Single-piece dependencies + avoid-<piece> contrast tags (#90) ----------
+
+/**
+ * A **single-piece dependency**: a notch on the resulting board that exactly one
+ * piece can hard-drop to fill cleanly (no new hole, no line clear). `col` is the
+ * notch's deepest column.
+ */
+export interface Dependency {
+  piece: Piece;
+  col: number;
+}
+
+/** The candidate fillers for any non-well notch — O and T are excluded (#90). */
+const DEP_CANDIDATES: readonly Piece[] = ['S', 'Z', 'J', 'L'];
+/** A 1-wide vertical well this deep (or deeper) is an I-dependency. */
+export const I_WELL_MIN_DEPTH = 3;
+
+/** Lowest row a piece reaches by a straight drop in `col` at `rotation`, or null. */
+function straightDropRow(grid: Grid, piece: Piece, rotation: number, col: number): number | null {
+  if (!fitsAt(grid, piece, rotation, 0, col)) return null;
+  let row = 0;
+  while (fitsAt(grid, piece, rotation, row + 1, col)) row++;
+  return row;
+}
+
+/** True if hard-dropping `piece` at `placement` adds no new hole and clears no line. */
+function isCleanFill(grid: Grid, piece: Piece, placement: RestingPlacement): boolean {
+  const before = holes(grid);
+  const { cleared, board } = lockAndClear(grid, piece, placement);
+  if (cleared > 0) return false;
+  return holes(board) <= before;
+}
+
+/** Does `placement` of `piece` occupy board cell `(r, c)`? */
+function coversCell(piece: Piece, placement: RestingPlacement, r: number, c: number): boolean {
+  return pieceCells(piece, placement.rotation, placement.row, placement.col).some(
+    ([pr, pc]) => pr === r && pc === c,
+  );
+}
+
+/** Which of {S,Z,J,L} can hard-drop to clean-fill the cell `(r, c)`. */
+function fittersForCell(grid: Grid, r: number, c: number): Piece[] {
+  const out: Piece[] = [];
+  for (const piece of DEP_CANDIDATES) {
+    let fits = false;
+    for (let rot = 0; rot < ORIENTATIONS[piece].length && !fits; rot++) {
+      for (let col = 0; col < COLS; col++) {
+        const row = straightDropRow(grid, piece, rot, col);
+        if (row === null) continue;
+        const pl = { rotation: rot, row, col };
+        if (coversCell(piece, pl, r, c) && isCleanFill(grid, piece, pl)) {
+          fits = true;
+          break;
+        }
+      }
+    }
+    if (fits) out.push(piece);
+  }
+  return out;
+}
+
+/**
+ * The **single-piece dependencies** of a board (#90): every notch that exactly
+ * one piece can hard-drop to fill cleanly (no new hole, no line clear), keyed by
+ * which piece. The detector:
+ *
+ * - **I is reserved** for a 1-wide vertical well of depth ≥ {@link I_WELL_MIN_DEPTH}
+ *   whose fill clears no line (a tetris-ready well is NOT a dependency). I never
+ *   counts as a filler for any other notch.
+ * - **O and T are excluded** as fillers; the candidate set for any non-well
+ *   notch is exactly {@link DEP_CANDIDATES} (S/Z/J/L). A notch is a dependency
+ *   iff **exactly one** of them fits cleanly — including depth-1 staircases where
+ *   S/Z live.
+ * - **Edge depth-1 notches** (col 0 / col 9) are ignored as noise; interior
+ *   depth-1 staircases are kept. (Edge columns can still hold a deep I-well.)
+ *
+ * Pure: computed entirely from the board (decoded from a combo entry's
+ * `boardKey`) — no engine.
+ */
+export function singlePieceDependencies(grid: Grid): Dependency[] {
+  const h = columnHeights(grid);
+  const deps: Dependency[] = [];
+  for (let c = 0; c < COLS; c++) {
+    if (h[c] >= ROWS) continue; // full column — no landing cell
+    const leftH = c > 0 ? h[c - 1] : Infinity; // walls are infinitely tall
+    const rightH = c < COLS - 1 ? h[c + 1] : Infinity;
+    const notchRow = ROWS - h[c] - 1;
+
+    // I-dependency: a 1-wide well deep enough that only a vertical I fits, whose
+    // fill clears no line.
+    if (Math.min(leftH, rightH) - h[c] >= I_WELL_MIN_DEPTH) {
+      const vert = ORIENTATIONS.I.length - 1;
+      const row = straightDropRow(grid, 'I', vert, c);
+      if (row !== null && isCleanFill(grid, 'I', { rotation: vert, row, col: c })) {
+        deps.push({ piece: 'I', col: c });
+      }
+      continue; // I reserved — never test S/Z/J/L on a well column
+    }
+
+    // Non-well notch: interior only (edge depth-1 notches are noise), and a real
+    // recess (lower than at least one neighbour).
+    if (c === 0 || c === COLS - 1) continue;
+    if (h[c] >= leftH && h[c] >= rightH) continue;
+    const fitters = fittersForCell(grid, notchRow, c);
+    if (fitters.length === 1) deps.push({ piece: fitters[0], col: c });
+  }
+  return deps;
+}
+
+/** The distinct dependency pieces of a board, as avoid-<piece> tags. */
+function avoidTagsFor(grid: Grid): Set<PuzzleTag> {
+  const tags = new Set<PuzzleTag>();
+  for (const dep of singlePieceDependencies(grid)) {
+    const tag = AVOID_DEPENDENCY_TAG[dep.piece];
+    if (tag) tags.add(tag);
+  }
+  return tags;
+}
+
+/** Lowest tempting-but-wrong alt score that still earns a trap tag (inclusive). */
+export const TRAP_BAND_MIN = 90;
+/** Correct-threshold ceiling: an alt at or above this is graded right, not a trap (exclusive). */
+export const TRAP_BAND_MAX = 97;
+/** Only rank-2 / rank-3 alts can spring the trap. */
+export const TRAP_MAX_RANK = 3;
+
+/**
+ * The `avoid-<piece>-dependency` contrast tags (#90): emitted when the rank-1
+ * outcome is clean (0 single-piece dependencies) but a **tempting near-optimal
+ * alternative** — a rank-2/3 combo scoring in [{@link TRAP_BAND_MIN},
+ * {@link TRAP_BAND_MAX}) (below the 97 correct-threshold, so graded wrong) —
+ * **creates** one or more dependencies. One tag per distinct dependency piece
+ * the trap alt creates.
+ *
+ * Computed entirely from the stored combo table: each entry's `boardKey` decodes
+ * to its resulting board. Legacy entries missing a `boardKey` are skipped
+ * (consistent with the re-tag path).
+ */
+function avoidDependencyTags(combos: ComboTable): Set<PuzzleTag> {
+  const tags = new Set<PuzzleTag>();
+  const rank1 = combos.entries[0];
+  if (!rank1 || !rank1.boardKey) return tags;
+  // Rank-1 must be clean/flexible.
+  if (singlePieceDependencies(decodeBoard(rank1.boardKey)).length > 0) return tags;
+  for (let i = 1; i < TRAP_MAX_RANK && i < combos.entries.length; i++) {
+    const alt = combos.entries[i];
+    if (!alt.boardKey) continue;
+    if (alt.score < TRAP_BAND_MIN || alt.score >= TRAP_BAND_MAX) continue;
+    for (const tag of avoidTagsFor(decodeBoard(alt.boardKey))) tags.add(tag);
+  }
+  return tags;
+}
+
 /**
  * Tag a puzzle by its optimal / rank-1 line (#81). Reconstructs the rank-1
  * resting line from `rank1` (via {@link restingLineForEntry}, which uses the
  * entry's `boardKey`), replays it, and emits every matching {@link PuzzleTag}.
  * Returns `[]` when nothing matches — or when the line cannot be reconstructed
  * (a legacy entry with no recoverable rows), consistent with the re-tag path.
+ *
+ * When the full `combos` table is supplied, the `avoid-<piece>-dependency`
+ * contrast tags (#90) are also computed — they compare the rank-1 outcome
+ * against the rank-2/3 alternatives. Omitting `combos` yields only the
+ * rank-1-only tags (backward-compatible).
  */
 export function tagPuzzle(
   board: Grid,
   piece1: Piece,
   piece2: Piece,
   rank1: ComboEntry,
+  combos?: ComboTable,
 ): PuzzleTag[] {
   const line = restingLineForEntry(board, piece1, piece2, rank1);
-  if (line === null) return [];
+  if (line === null) {
+    // The rank-1 line could not be reconstructed, but the contrast tags read
+    // only the stored combo outcomes, so they can still be computed.
+    return combos ? [...avoidDependencyTags(combos)] : [];
+  }
   const { p1, p2 } = line;
 
   // Replay, tracking lines cleared by each placement and the intermediate board
@@ -215,6 +400,9 @@ export function tagPuzzle(
   if (wells.length === 1 && wellColumns(after).includes(wells[0])) {
     tags.add('well-maintenance');
   }
+
+  // avoid-<piece>-dependency contrast tags (#90), when the combo table is given.
+  if (combos) for (const tag of avoidDependencyTags(combos)) tags.add(tag);
 
   return [...tags];
 }
