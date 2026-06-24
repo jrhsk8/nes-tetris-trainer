@@ -57,6 +57,8 @@ export interface FeedbackProps {
   number?: number | null;
   /** The puzzle's type-tags (#84) — rendered as chips under the title. */
   tags?: readonly PuzzleTag[];
+  /** Drill mode (#85): show an "unrated practice" note instead of a rating change. */
+  drill?: boolean;
   /** The starting board. */
   board0: Grid;
   piece1: Piece;
@@ -197,6 +199,7 @@ function selectedOutcomeKey(combos: ComboTable, selected: Line): string {
 export function Feedback({
   number = null,
   tags = [],
+  drill = false,
   board0,
   piece1,
   piece2,
@@ -299,6 +302,11 @@ export function Feedback({
       <div className="play-center feedback-board" data-testid="board-center">
         <PuzzleTitle number={number} />
         <TagChips tags={tags} />
+        {drill ? (
+          <p className="drill-note" data-testid="drill-note">
+            Drill — unrated practice
+          </p>
+        ) : null}
         <Board
           grid={frame.grid}
           colorGrid={frame.colorGrid}

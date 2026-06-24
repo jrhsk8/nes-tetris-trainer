@@ -19,6 +19,7 @@ import { PuzzlePlay, type PlayDb } from '../session/index.js';
 import { Controls } from '../controls/index.js';
 import { History } from '../history/index.js';
 import { SubmitScreenshot } from '../submit/index.js';
+import { DrillMode } from '../tags/DrillMode.js';
 import { DEFAULT_BINDINGS, sanitizeBindings, type KeyBindings } from '../board/keybindings.js';
 import { WORDMARK } from '../branding.js';
 import { parsePuzzleParam } from '../share.js';
@@ -44,10 +45,11 @@ export interface AccountProps {
   auth: AuthApi;
 }
 
-type View = 'play' | 'review' | 'history' | 'controls' | 'submit';
+type View = 'play' | 'drill' | 'review' | 'history' | 'controls' | 'submit';
 
 const NAV: { view: View; label: string }[] = [
   { view: 'play', label: 'Play' },
+  { view: 'drill', label: 'Drill' },
   { view: 'review', label: 'Review misses' },
   { view: 'history', label: 'History' },
   { view: 'controls', label: 'Controls' },
@@ -175,6 +177,16 @@ export function Account({ db, user, auth }: AccountProps) {
             userId={user.id}
             initialPuzzleNumber={sharedPuzzleNumber}
             onAdvance={() => void refresh()}
+            leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
+            bindings={bindings}
+            muted={muted}
+          />
+        </div>
+      ) : view === 'drill' ? (
+        <div data-testid="view-drill">
+          <DrillMode
+            db={db}
+            userId={user.id}
             leftFlank={<RatingHistory currentRating={rating} attempts={attempts} />}
             bindings={bindings}
             muted={muted}

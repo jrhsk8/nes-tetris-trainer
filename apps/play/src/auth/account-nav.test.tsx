@@ -51,6 +51,9 @@ function emptyDb(): AccountDb {
     async getMatchmadePuzzle() {
       return null;
     },
+    async fetchPuzzlesByTags() {
+      return [];
+    },
     async getPuzzleByNumber() {
       return null;
     },

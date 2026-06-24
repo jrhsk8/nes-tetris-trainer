@@ -52,6 +52,9 @@ function prefsDb(initial: UserPrefs | null, upserts: UserPrefs[]): AccountDb {
     async getMatchmadePuzzle() {
       return null;
     },
+    async fetchPuzzlesByTags() {
+      return [];
+    },
     async getPuzzleByNumber() {
       return null;
     },

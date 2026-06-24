@@ -71,6 +71,12 @@ export interface PuzzleSessionProps {
   bindings?: KeyBindings;
   /** Mute the NES result chiptune (#61); defaults to off (sound plays). */
   muted?: boolean;
+  /**
+   * Drill mode (#85): unrated practice. When true the attempt is graded and
+   * feedback shown as usual, but the player/puzzle rating is NOT updated and NO
+   * `attempts` row is written (so per-type stats stay rated-mainline-only).
+   */
+  drill?: boolean;
 }
 
 interface RatingChange {
@@ -81,7 +87,8 @@ interface RatingChange {
 
 interface SessionResult {
   solved: boolean;
-  rating: RatingChange;
+  /** The rating change to show; `null` in drill mode (#85) — unrated practice. */
+  rating: RatingChange | null;
   userLine: readonly Placement[];
   /** Live community solve stats (#79); null if the fetch failed. */
   solveStats: { total: number; solved: number } | null;
@@ -97,6 +104,7 @@ export function PuzzleSession({
   leftFlank,
   bindings = DEFAULT_BINDINGS,
   muted = false,
+  drill = false,
 }: PuzzleSessionProps) {
   const board0 = useMemo(() => decodeBoard(puzzle.board), [puzzle.board]);
   // The puzzle's stored colour grid (#28), decoded once. Legacy puzzles carry
@@ -127,6 +135,20 @@ export function PuzzleSession({
   const finish = useCallback(
     async (userLine: Placement[], solved: boolean, score: number | null) => {
       setPhase('grading');
+      // Drill mode (#85): unrated practice — grade + feedback as usual, but never
+      // touch the rating and never write an `attempts` row (so per-type stats
+      // stay rated-mainline-only). The attempt is ephemeral.
+      if (drill) {
+        let drillStats: { total: number; solved: number } | null = null;
+        try {
+          drillStats = await db.getPuzzleSolveStats(puzzle.id);
+        } catch (err) {
+          console.error('solve-stats fetch failed:', err);
+        }
+        setResult({ solved, rating: null, userLine, solveStats: drillStats });
+        setPhase('done');
+        return;
+      }
       // Graded reward (#51): the rating moves by answer quality, not pass/fail.
       // An unranked combo (score null) falls back to the binary solved signal.
       const outcome = attemptOutcome(score, solved);
@@ -167,7 +189,7 @@ export function PuzzleSession({
       setResult({ solved, rating, userLine, solveStats });
       setPhase('done');
     },
-    [db, userId, puzzle.glicko, puzzle.id],
+    [db, userId, puzzle.glicko, puzzle.id, drill],
   );
 
   // The left rail carries the rating plus the dev curation controls (#72). The
@@ -273,7 +295,8 @@ export function PuzzleSession({
         baseColors={colors0}
         combos={puzzle.combos}
         userLine={result!.userLine}
-        ratingChange={result!.rating}
+        ratingChange={result!.rating ?? undefined}
+        drill={drill}
         puzzleRating={puzzle.glicko.rating}
         solveStats={result!.solveStats}
         starControl={<StarRating db={db} userId={userId} puzzleId={puzzle.id} />}

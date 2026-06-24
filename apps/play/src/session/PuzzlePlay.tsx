@@ -13,6 +13,7 @@ import {
   type DataAccess,
   type Puzzle,
 } from '@trainer/data';
+import type { PuzzleTag } from '@trainer/core';
 import { PuzzleSession } from './PuzzleSession.js';
 import { PlayScreen } from './PlayScreen.js';
 import { type KeyBindings } from '../board/keybindings.js';
@@ -21,6 +22,7 @@ import { type KeyBindings } from '../board/keybindings.js';
 export type PlayDb = Pick<
   DataAccess,
   | 'getMatchmadePuzzle'
+  | 'fetchPuzzlesByTags'
   | 'getPuzzle'
   | 'getPuzzleByNumber'
   | 'getRecentAttemptedPuzzleIds'
@@ -71,6 +73,13 @@ export interface PuzzlePlayProps {
    * (which still ~1-in-10 auto-injects a due miss).
    */
   reviewMode?: boolean;
+  /**
+   * Drill mode (#85): unrated practice filtered to these type-tags. When set and
+   * non-empty, serve random puzzles carrying ANY of the tags (OR), bypassing
+   * matchmaking; attempts are graded but neither rated nor written. Empty/unset
+   * = normal rated matchmaking.
+   */
+  drillTags?: readonly PuzzleTag[];
   /** Injectable RNG in `[0, 1)` for the miss auto-injection (#75); tests override. */
   random?: () => number;
 }
@@ -84,8 +93,10 @@ export function PuzzlePlay({
   bindings,
   muted,
   reviewMode = false,
+  drillTags,
   random = Math.random,
 }: PuzzlePlayProps) {
+  const drill = (drillTags?.length ?? 0) > 0;
   // undefined = loading, null = empty bank, Puzzle = ready.
   const [puzzle, setPuzzle] = useState<Puzzle | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +127,16 @@ export function PuzzlePlay({
   // all have been served it cycles back to the oldest.
   const reviewServedRef = useRef<Set<string>>(new Set());
 
+  // Drill-mode (#85) anti-repeat cursor + latest tag set (read via a ref so a
+  // fresh `drillTags` array per render does not re-create `load`, #17). The
+  // stable `drillKey` below is what actually re-triggers a reload on tag change.
+  const drillServedRef = useRef<Set<string>>(new Set());
+  const drillTagsRef = useRef(drillTags);
+  useEffect(() => {
+    drillTagsRef.current = drillTags;
+  }, [drillTags]);
+  const drillKey = drill ? [...(drillTags ?? [])].slice().sort().join(',') : '';
+
   // Latest RNG in a ref so `load`'s identity does not change per render (#17).
   const randomRef = useRef(random);
   useEffect(() => {
@@ -130,6 +151,22 @@ export function PuzzlePlay({
       const wanted = pendingNumberRef.current;
       pendingNumberRef.current = null; // one-shot — the loop is matchmade hereafter
       let next = wanted != null ? await db.getPuzzleByNumber(wanted) : null;
+      if (!next && drill) {
+        // Drill mode (#85): serve random puzzles carrying ANY selected tag (OR),
+        // bypassing matchmaking + the rating band. Walk them without repeats this
+        // session; once exhausted, cycle from the start.
+        const tags = drillTagsRef.current ?? [];
+        const served = drillServedRef.current;
+        let pool = await db.fetchPuzzlesByTags(tags, { excludeIds: [...served] });
+        if (pool.length === 0 && served.size > 0) {
+          served.clear();
+          pool = await db.fetchPuzzlesByTags(tags);
+        }
+        next = pool[0] ?? null;
+        if (next) served.add(next.id);
+        setPuzzle(next);
+        return;
+      }
       if (!next) {
         // Hydrate the persistent window once, before the first matchmade serve,
         // so the very first puzzle already excludes the last 200 attempted.
@@ -191,7 +228,7 @@ export function PuzzlePlay({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load a puzzle');
     }
-  }, [db, userId, reviewMode]);
+  }, [db, userId, reviewMode, drill, drillKey]);
 
   useEffect(() => {
     void load();
@@ -207,6 +244,8 @@ export function PuzzlePlay({
             <p>Loading puzzle…</p>
           ) : reviewMode ? (
             <p>No misses to review — solve more puzzles first.</p>
+          ) : drill ? (
+            <p>No puzzles match the selected types.</p>
           ) : (
             <p>No puzzles in the bank yet.</p>
           )}
@@ -225,6 +264,7 @@ export function PuzzlePlay({
       leftFlank={leftFlank}
       bindings={bindings}
       muted={muted}
+      drill={drill}
     />
   );
 }

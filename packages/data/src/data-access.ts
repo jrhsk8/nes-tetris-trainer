@@ -6,7 +6,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { isPiece, type Piece } from '@trainer/core';
+import { isPiece, type Piece, type PuzzleTag } from '@trainer/core';
 import { sniffImageMime, extensionFor, MAX_UPLOAD_BYTES } from './image-sniff.js';
 import { selectMatchmadePuzzle, distinctRecent, type MatchmakeOptions } from './matchmaking.js';
 import { missPuzzleIds } from './misses.js';
@@ -138,6 +138,16 @@ export interface DataAccess {
    * the recently-seen cooldown ids, auto-widening the band if too few qualify.
    */
   getMatchmadePuzzle(opts: MatchmakeOptions): Promise<Puzzle | null>;
+  /**
+   * Drill-mode selection (#85): every active puzzle whose `tags` OVERLAP the
+   * given set (`tags && ARRAY[...]` — ANY selected tag matches), shuffled for a
+   * varied serve, optionally excluding recently-served ids. Returns `[]` for an
+   * empty tag set or when nothing matches.
+   */
+  fetchPuzzlesByTags(
+    tags: readonly PuzzleTag[],
+    opts?: { excludeIds?: readonly string[] },
+  ): Promise<Puzzle[]>;
   countPuzzles(): Promise<number>;
   insertPuzzle(puzzle: NewPuzzle): Promise<Puzzle>;
   insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]>;
@@ -322,6 +332,29 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
       if (error) throw new Error(`getMatchmadePuzzle failed: ${error.message}`);
       return (data ?? []).map((row) => rowToPuzzle(row as PuzzleRow));
     }, opts);
+  }
+
+  async function fetchPuzzlesByTags(
+    tags: readonly PuzzleTag[],
+    opts: { excludeIds?: readonly string[] } = {},
+  ): Promise<Puzzle[]> {
+    if (tags.length === 0) return [];
+    let query = client
+      .from('puzzles')
+      .select('*')
+      .eq('active', true) // skip soft-deleted (culled) puzzles (#72)
+      .overlaps('tags', tags as string[]); // tags && ARRAY[...] — ANY selected tag (OR)
+    const exclude = opts.excludeIds ?? [];
+    if (exclude.length > 0) query = query.not('id', 'in', `(${exclude.join(',')})`);
+    const { data, error } = await query;
+    if (error) throw new Error(`fetchPuzzlesByTags failed: ${error.message}`);
+    const rows = (data ?? []).map((row) => rowToPuzzle(row as PuzzleRow));
+    // Shuffle for a varied serve (no DB ORDER BY random()): Fisher–Yates.
+    for (let i = rows.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rows[i], rows[j]] = [rows[j], rows[i]];
+    }
+    return rows;
   }
 
   async function insertPuzzles(puzzles: NewPuzzle[]): Promise<Puzzle[]> {
@@ -680,6 +713,7 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     getPuzzleByNumber,
     getRandomPuzzle,
     getMatchmadePuzzle,
+    fetchPuzzlesByTags,
     countPuzzles,
     insertPuzzle,
     insertPuzzles,

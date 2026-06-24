@@ -277,6 +277,62 @@ h2 {
   color: var(--nes-red);
 }
 
+/* Drill mode (#85): type picker + unrated-practice affordance. */
+.drill-picker {
+  max-width: 36rem;
+  margin: 1rem auto;
+  padding: 0 1rem;
+  text-align: center;
+}
+.drill-chips {
+  margin: 1rem 0;
+}
+.drill-chips .tag-chip {
+  font: inherit;
+  font-size: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  background: transparent;
+  opacity: 0.55;
+}
+.drill-chips .tag-chip.is-selected {
+  opacity: 1;
+  background: currentColor;
+}
+.drill-chips .tag-chip.is-selected {
+  color: var(--nes-black);
+}
+.drill-start {
+  font: inherit;
+  font-size: 8px;
+  padding: 6px 10px;
+  border: 2px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.drill-start:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.drill-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  font-size: 8px;
+  color: var(--nes-gold);
+  margin: 0.4rem 0;
+}
+.drill-note,
+.drill-tag-note {
+  color: var(--nes-gold);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 /* The board hero: scales with the viewport, preserving its 1:2 aspect (10 wide
  * cells → height = 2 × width). No fixed pixel cap (#22). The board is now the
  * dominant element (#32): width grows toward 36vh (≈ 72vh tall) but is also

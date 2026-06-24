@@ -159,4 +159,23 @@ describe('PuzzleSession (headline play loop)', () => {
     await user.click(await screen.findByRole('button', { name: 'Next puzzle' }));
     expect(onNext).toHaveBeenCalledTimes(1);
   });
+
+  it('drill mode grades + shows feedback but writes NO rating and NO attempt (#85)', async () => {
+    const user = userEvent.setup();
+    const puzzle = makePuzzle();
+    const { db, attempts, ratings } = fakeDb();
+    render(<PuzzleSession puzzle={puzzle} userId="u4" db={db} drill />);
+
+    await place(user, puzzle.optimalLine[0]); // correct first placement
+    await place(user, puzzle.optimalLine[1]); // correct second placement
+
+    // Graded + feedback as usual…
+    expect(await screen.findByTestId('grade-banner')).toHaveAttribute('data-correct', 'true');
+    // …flagged as unrated practice, with no rating delta shown.
+    expect(screen.getByTestId('drill-note')).toBeInTheDocument();
+    expect(screen.queryByTestId('rating-change')).not.toBeInTheDocument();
+    // The ephemeral attempt moved neither rating nor the attempts table.
+    expect(attempts).toHaveLength(0);
+    expect(ratings.get('u4')).toBeUndefined();
+  });
 });

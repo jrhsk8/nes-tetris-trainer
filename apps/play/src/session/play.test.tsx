@@ -39,6 +39,9 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
     async getMatchmadePuzzle() {
       return puzzle;
     },
+    async fetchPuzzlesByTags() {
+      return [];
+    },
     async getPuzzleByNumber() {
       return null;
     },
@@ -112,6 +115,9 @@ function trackingDb() {
       calls.push('matchmade');
       return numbered(99);
     },
+    async fetchPuzzlesByTags() {
+      return [];
+    },
     async getPuzzleByNumber(n) {
       calls.push(`byNumber:${n}`);
       return n === 5 ? numbered(5) : null; // only #5 exists
@@ -169,6 +175,9 @@ describe('PuzzlePlay persistent anti-repeat window (#74)', () => {
       async getMatchmadePuzzle(opts) {
         passed = opts.recentIds;
         return samplePuzzle();
+      },
+      async fetchPuzzlesByTags() {
+        return [];
       },
       async getPuzzleByNumber() {
         return null;
@@ -250,6 +259,9 @@ function missDb(opts: { misses?: string[]; window?: string[] } = {}) {
     async getMatchmadePuzzle() {
       calls.push('matchmade');
       return numbered(99);
+    },
+    async fetchPuzzlesByTags() {
+      return [];
     },
     async getPuzzle(id) {
       calls.push(`getPuzzle:${id}`);

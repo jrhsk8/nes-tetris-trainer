@@ -43,6 +43,9 @@ function countingDb(): { db: PlayDb; calls: () => number } {
       n += 1;
       return samplePuzzle(`p${n}`);
     },
+    async fetchPuzzlesByTags() {
+      return [];
+    },
     async getPuzzleByNumber() {
       return null;
     },

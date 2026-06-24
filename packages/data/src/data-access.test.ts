@@ -139,6 +139,35 @@ describe.skipIf(!configured)('DataAccess (live Supabase)', () => {
     expect(await db!.countPuzzles()).toBeGreaterThan(0);
   });
 
+  it('fetches puzzles by tag OVERLAP — ANY selected tag matches (#85)', async () => {
+    const base = {
+      board: encodeBoard(emptyBoard()),
+      piece1: 'T' as const,
+      piece2: 'L' as const,
+      optimalLine: sampleLine,
+      optimalMetrics: boardMetrics(emptyBoard()),
+    };
+    const onlyBurn = await db!.insertPuzzle({ ...base, tags: ['burn'] });
+    const onlySpin = await db!.insertPuzzle({ ...base, tags: ['spin'] });
+    const neither = await db!.insertPuzzle({ ...base, tags: ['dig'] });
+    createdPuzzleIds.push(onlyBurn.id, onlySpin.id, neither.id);
+
+    const matched = await db!.fetchPuzzlesByTags(['burn', 'spin']);
+    const ids = new Set(matched.map((p) => p.id));
+    // OR overlap: a puzzle tagged with ANY of the requested tags is returned…
+    expect(ids.has(onlyBurn.id)).toBe(true);
+    expect(ids.has(onlySpin.id)).toBe(true);
+    // …and one carrying none of them is not.
+    expect(ids.has(neither.id)).toBe(false);
+
+    // An empty tag set returns nothing (no over-broad serve).
+    expect(await db!.fetchPuzzlesByTags([])).toEqual([]);
+
+    // excludeIds drops a recently-served puzzle from the pool.
+    const excluded = await db!.fetchPuzzlesByTags(['burn'], { excludeIds: [onlyBurn.id] });
+    expect(excluded.some((p) => p.id === onlyBurn.id)).toBe(false);
+  });
+
   it('round-trips a user rating via upsert and read', async () => {
     const userId = crypto.randomUUID();
     createdUserIds.push(userId);

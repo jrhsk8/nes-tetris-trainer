@@ -149,6 +149,9 @@ describe('Account', () => {
       async getMatchmadePuzzle() {
         return null;
       },
+      async fetchPuzzlesByTags() {
+        return [];
+      },
       async getPuzzleByNumber() {
         return null;
       },

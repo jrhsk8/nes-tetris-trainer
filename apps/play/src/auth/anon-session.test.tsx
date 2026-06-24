@@ -33,6 +33,9 @@ function emptyDb() {
     async getMatchmadePuzzle() {
       return null;
     },
+    async fetchPuzzlesByTags() {
+      return [];
+    },
     async getPuzzleByNumber() {
       return null;
     },
