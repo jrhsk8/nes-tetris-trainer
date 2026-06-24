@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
-import { perTypeStats } from './perTypeStats.js';
+import { perTypeStats } from './tagStats.js';
 import { PerTypeStats } from './PerTypeStats.js';
 
 afterEach(() => cleanup());

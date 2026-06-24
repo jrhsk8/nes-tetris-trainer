@@ -1,7 +1,8 @@
 /**
  * Board renderer (#10, #18, #89) — a presentational 20×10 NES playfield. Renders
- * the filled stack, plus an optional single piece **outline** (the one free-
- * floating cursor the player is piloting, glowing when it rests) and optional
+ * the filled stack, plus an optional single **floating piece** (the one free-
+ * floating cursor the player is piloting, a solid bright sprite that glows when
+ * it rests) and optional
  * highlight cells (used by the feedback view, #12). No input or game logic lives
  * here; it is a pure function of its props.
  *
@@ -30,18 +31,18 @@ export interface BoardProps {
    */
   colorGrid?: ColorGrid;
   /**
-   * Cells of the **single free-floating piece outline** the player is piloting
-   * (#89): a hollow, colour-coded outline drawn at the piece's current position —
+   * Cells of the **single free-floating piece** the player is piloting (#89):
+   * the solid bright, colour-coded sprite drawn at the piece's current position —
    * the one cursor, no separate drop-shadow. It is the rotational/positional twin
    * of the resting cells the player will lock.
    */
   outlineCells?: readonly Cell[];
-  /** Colour the outline as this piece (defaults to the white group). */
+  /** Colour the floating piece as this piece (defaults to the white group). */
   outlinePiece?: Piece;
   /**
-   * Whether the outlined piece is **resting** (#89): when true the outline gains
-   * a glow — the unmistakable "ready to lock" cue. While floating (false) it is
-   * a plain hollow outline.
+   * Whether the floating piece is **resting** (#89): when true it gains an outer
+   * glow — the unmistakable "ready to lock" cue. While floating (false) it is the
+   * plain bright sprite with a light inset edge.
    */
   outlineResting?: boolean;
   /** Cells to draw as a highlight (e.g. the optimal placement in feedback). */
@@ -135,16 +136,19 @@ export function Board({
               const group = (colorGrid?.[r]?.[c] || WHITE_GROUP) as ColorGroup;
               style.backgroundImage = blockBackground(group);
             } else if (state === 'outline' || state === 'outline-resting') {
-              // The single free-floating piece (#89): a hollow, colour-coded
-              // outline (the black well shows through) — one cursor that can tuck,
-              // spin, and freely move. While floating it is a plain outline; the
-              // moment it RESTS (can't fall) it gains a glow, the "ready to lock"
-              // cue that gates Confirm. No separate drop-shadow exists, so there
-              // is never the old "awkward partial ghost".
+              // The single free-floating piece (#89, restyled #90): the full
+              // bright, colour-coded sprite — one cursor that can tuck, spin, and
+              // freely move. Rendered solid (not a hollow outline) with a light
+              // inset edge so it reads as the live, movable piece, distinct from a
+              // locked block (no edge). The moment it RESTS (can't fall) it gains
+              // an outer glow — the "ready to lock" cue that gates Confirm. There
+              // is no separate drop-shadow, so the old "awkward partial ghost" is
+              // gone.
+              style.backgroundImage = blockBackground(outlineGroup);
               style.boxShadow =
                 state === 'outline-resting'
-                  ? `inset 0 0 0 2px ${outlineColor}, 0 0 7px 2px ${outlineColor}`
-                  : `inset 0 0 0 2px ${outlineColor}`;
+                  ? `inset 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 8px 2px ${outlineColor}`
+                  : 'inset 0 0 0 2px rgba(255, 255, 255, 0.85)';
             } else if (state === 'highlight') {
               style.backgroundImage = blockBackground(highlightGroup);
               style.boxShadow = 'inset 0 0 0 1px #fcd000';

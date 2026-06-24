@@ -1,14 +1,14 @@
 /**
  * Free-positioning input (#10, #43, #56, #81, #89) — the player pilots a SINGLE
- * free-floating piece **outline** to any collision-reachable resting position and
- * confirms it. There is no second drop-shadow: the one hollow, colour-coded
- * outline is drawn exactly where you are flying it (WYSIWYG), so the old "awkward
- * partial ghost" (a bright active piece one row above a separate muted shadow) is
- * gone at the root (#89).
+ * free-floating piece to any collision-reachable resting position and confirms
+ * it. There is no second drop-shadow: the one solid, colour-coded piece is drawn
+ * exactly where you are flying it (WYSIWYG), so the old "awkward partial ghost" (a
+ * bright active piece one row above a separate muted shadow) is gone at the root
+ * (#89).
  *
  * The piece spawns floating at the top row and never auto-falls — it is a free
- * cursor. While floating the outline is hollow; the moment it **rests** (fits and
- * cannot fall one row) the outline gains a **glow**, the unmistakable "ready to
+ * cursor. While floating it is the plain bright sprite; the moment it **rests**
+ * (fits and cannot fall one row) it gains a **glow**, the unmistakable "ready to
  * lock" cue. **Confirm is enabled only while resting**, so every locked placement
  * is a gradeable resting placement.
  *

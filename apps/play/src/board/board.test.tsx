@@ -59,7 +59,7 @@ describe('Board', () => {
   it('glows the outline once the piece rests, the ready-to-lock cue (#89)', () => {
     const { rerender } = render(<Board grid={emptyBoard()} outlineCells={[[18, 4]]} outlinePiece="Z" />);
     const floating = screen.getByTestId('cell-18-4');
-    // Floating: a hollow outline (an inset border), NO outer glow.
+    // Floating: a solid bright sprite with a light inset edge, NO outer glow.
     expect(floating).toHaveAttribute('data-state', 'outline');
     expect(floating.style.boxShadow).toContain('inset');
     expect(floating.style.boxShadow).not.toMatch(/,\s*0 0/); // no outer glow term
@@ -67,9 +67,10 @@ describe('Board', () => {
     rerender(<Board grid={emptyBoard()} outlineCells={[[18, 4]]} outlinePiece="Z" outlineResting />);
     const resting = screen.getByTestId('cell-18-4');
     expect(resting).toHaveAttribute('data-state', 'outline-resting');
-    // Resting: the same inset outline PLUS an outer glow.
+    // Resting: the same inset edge PLUS an outer glow in the piece colour.
     expect(resting.style.boxShadow).toContain('inset');
     expect(resting.style.boxShadow).toMatch(/,\s*0 0/); // outer glow present
+    expect(resting.style.boxShadow).toContain('#d82800'); // glow is the piece colour
   });
 
   it('renders filled cells as crisp NES block sprites, not flat squares (#18)', () => {
@@ -82,15 +83,14 @@ describe('Board', () => {
     expect(bg).toContain('shape-rendering="crispEdges"');
   });
 
-  it('colours the outline in its piece colour (Z → $16 red) (#18, #89)', () => {
+  it('colours the floating piece in its piece colour (Z → $16 red) (#18, #89)', () => {
     render(<Board grid={emptyBoard()} outlineCells={[[18, 4]]} outlinePiece="Z" />);
     const cell = screen.getByTestId('cell-18-4');
-    // The hollow outline is the piece colour drawn as an inset border (not a fill).
-    expect(cell.style.boxShadow).toContain('#d82800');
-    expect(cell.style.backgroundImage).toBe('');
+    // The floating piece is a solid bright sprite drawn in the piece colour.
+    expect(decodeURIComponent(cell.style.backgroundImage)).toContain('#d82800');
   });
 
-  it('draws a hollow outline (the well shows through), distinct from a locked cell and the gold highlight (#89)', () => {
+  it('draws the floating piece as a solid bright sprite, distinct from a locked cell and the gold highlight (#89)', () => {
     const grid: Grid = emptyBoard();
     grid[19][0] = 1; // a locked cell
     render(
@@ -106,11 +106,13 @@ describe('Board', () => {
     const locked = screen.getByTestId('cell-19-0');
     const highlight = screen.getByTestId('cell-17-4');
 
-    // The outline is hollow: no fill sprite, just a coloured inset border (the
-    // black well shows through), so it never reads as a locked block.
-    expect(outline.style.backgroundImage).toBe('');
+    // The floating piece is a solid sprite (like a locked block) but carries a
+    // light inset edge so it reads as the live, movable cursor.
+    expect(outline.style.backgroundImage).not.toBe('');
     expect(locked.style.backgroundImage).not.toBe('');
-    // ...and it is the piece colour, not the feedback highlight's gold.
+    expect(outline.style.boxShadow).toContain('inset');
+    expect(locked.style.boxShadow).toBe('');
+    // ...and it never carries the feedback highlight's gold.
     expect(outline.style.boxShadow).not.toContain('#fcd000');
     expect(highlight.style.boxShadow).toContain('#fcd000');
   });

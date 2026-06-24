@@ -4,7 +4,7 @@
  * Renders a zero state when the player has no tagged rated attempts yet.
  */
 
-import { perTypeStats, type TaggedAttempt } from './perTypeStats.js';
+import { perTypeStats, type TaggedAttempt } from './tagStats.js';
 import { TAG_VOCAB } from './tagVocab.js';
 
 export function PerTypeStats({ attempts }: { attempts: readonly TaggedAttempt[] }) {
