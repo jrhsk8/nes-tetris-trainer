@@ -45,5 +45,16 @@ export type { RestingPlacement } from './placement.js';
 export { columnHeights, aggregateHeight, bumpiness, holes, boardMetrics } from './metrics.js';
 export type { BoardMetrics } from './metrics.js';
 
-export { gradeCombo, comboOutcomeKey, CORRECT_SCORE_THRESHOLD } from './combo.js';
+export {
+  gradeCombo,
+  comboOutcomeKey,
+  CORRECT_SCORE_THRESHOLD,
+  restingLineForEntry,
+  lockAndClear,
+  lineClearsTetris,
+  entryClearsTetris,
+} from './combo.js';
 export type { ComboEntry, ComboTable, ComboResult } from './combo.js';
+
+export { tagPuzzle, WELL_DEPTH } from './tags.js';
+export type { PuzzleTag } from './tags.js';

@@ -13,9 +13,21 @@
  * (*Combo-threshold grading*, *Combo score*, *Verdict*).
  */
 
-import { applyPlacement, type Grid, type Line } from './board.js';
+import {
+  applyPlacement,
+  cloneBoard,
+  clearFullRows,
+  type Grid,
+  type Line,
+} from './board.js';
 import type { Piece } from './pieces.js';
-import { boardKey } from './placement.js';
+import {
+  applyRestingPlacement,
+  boardKey,
+  enumerateResting,
+  pieceCells,
+  type RestingPlacement,
+} from './placement.js';
 
 /**
  * One ranked two-piece combo: the placement of piece 1 (`rot1`/`col1`) and piece
@@ -103,6 +115,91 @@ export function comboOutcomeKey(board0: Grid, piece1: Piece, piece2: Piece, line
   const after1 = applyPlacement(board0, piece1, line[0]);
   const after2 = applyPlacement(after1, piece2, line[1]);
   return boardKey(after2);
+}
+
+/**
+ * Reconstruct a stored combo entry's resting placements (with their rows) by
+ * matching its `(rotation, col)` per piece against the reachable resting set,
+ * disambiguated by the entry's outcome key when present. Returns `null` when no
+ * matching reachable line is found (e.g. a legacy entry with no outcome key whose
+ * tuck row cannot be recovered) — the caller treats that as "no line".
+ *
+ * Shared by the generator's difficulty/tetris detection and the puzzle tagger
+ * (#81) — both must replay the rank-1 line from the stored combo without an
+ * engine.
+ */
+export function restingLineForEntry(
+  board0: Grid,
+  piece1: Piece,
+  piece2: Piece,
+  entry: ComboEntry,
+): { p1: RestingPlacement; p2: RestingPlacement } | null {
+  const p1s = enumerateResting(board0, piece1).filter(
+    (p) => p.rotation === entry.rot1 && p.col === entry.col1,
+  );
+  for (const p1 of p1s) {
+    const board1 = applyRestingPlacement(board0, piece1, p1);
+    const p2s = enumerateResting(board1, piece2).filter(
+      (p) => p.rotation === entry.rot2 && p.col === entry.col2,
+    );
+    for (const p2 of p2s) {
+      if (!entry.boardKey) return { p1, p2 };
+      const board2 = applyRestingPlacement(board1, piece2, p2);
+      if (boardKey(board2) === entry.boardKey) return { p1, p2 };
+    }
+  }
+  return null;
+}
+
+/**
+ * Lock a resting placement into `grid` WITHOUT clearing, count the rows THIS
+ * placement completed (only rows the piece itself occupies that are now full —
+ * so a 4-row clear must be one piece spanning four completed rows, never a
+ * pre-existing full row), then clear and return the resulting board.
+ */
+export function lockAndClear(
+  grid: Grid,
+  piece: Piece,
+  p: RestingPlacement,
+): { cleared: number; board: Grid } {
+  const next = cloneBoard(grid);
+  const touchedRows = new Set<number>();
+  for (const [r, c] of pieceCells(piece, p.rotation, p.row, p.col)) {
+    next[r][c] = 1;
+    touchedRows.add(r);
+  }
+  let cleared = 0;
+  for (const r of touchedRows) if (next[r].every((cell) => cell)) cleared++;
+  return { cleared, board: clearFullRows(next) };
+}
+
+/**
+ * True if the two-piece line, played in order on `board0`, clears a **tetris** —
+ * a single 4-row clear by ONE of the two placements (not a 2+2 split across both,
+ * #71). Pure: replays the placements and counts cleared rows; no StackRabbit.
+ */
+export function lineClearsTetris(
+  board0: Grid,
+  piece1: Piece,
+  piece2: Piece,
+  p1: RestingPlacement,
+  p2: RestingPlacement,
+): boolean {
+  const a = lockAndClear(board0, piece1, p1);
+  if (a.cleared === 4) return true;
+  const b = lockAndClear(a.board, piece2, p2);
+  return b.cleared === 4;
+}
+
+/** True if a single stored combo entry clears a tetris (#71). */
+export function entryClearsTetris(
+  board0: Grid,
+  piece1: Piece,
+  piece2: Piece,
+  entry: ComboEntry,
+): boolean {
+  const line = restingLineForEntry(board0, piece1, piece2, entry);
+  return line ? lineClearsTetris(board0, piece1, piece2, line.p1, line.p2) : false;
 }
 
 /**
