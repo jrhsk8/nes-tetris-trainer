@@ -81,6 +81,7 @@ function countingDb(): { db: PlayDb; calls: () => number } {
     async flagPuzzle() {},
     async cullPuzzle() {},
     async setPuzzleActive() {},
+    async getCurationTagStats() { return []; },
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
       return {
         id: 'a1',

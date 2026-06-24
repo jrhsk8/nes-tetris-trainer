@@ -83,6 +83,7 @@ function fakeDb() {
     async flagPuzzle() {},
     async cullPuzzle() {},
     async setPuzzleActive() {},
+    async getCurationTagStats() { return []; },
   };
   return { db, ratings, attempts };
 }

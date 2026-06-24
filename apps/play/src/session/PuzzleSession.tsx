@@ -37,7 +37,7 @@ import { PlacementInput } from '../board/PlacementInput.js';
 import { NextPieceBox } from '../board/NextPieceBox.js';
 import { DEFAULT_BINDINGS, type KeyBindings } from '../board/keybindings.js';
 import { Feedback, StarRating } from '../feedback/index.js';
-import { Curation } from '../curation/index.js';
+import { Curation, CurationAnalytics } from '../curation/index.js';
 import { PlayScreen } from './PlayScreen.js';
 import { PuzzleTitle } from './PuzzleTitle.js';
 import { TagChips } from '../tags/TagChips.js';
@@ -56,6 +56,7 @@ export type SessionDb = Pick<
   | 'flagPuzzle'
   | 'cullPuzzle'
   | 'setPuzzleActive'
+  | 'getCurationTagStats'
 >;
 
 export interface PuzzleSessionProps {
@@ -199,6 +200,8 @@ export function PuzzleSession({
     <>
       {leftFlank}
       <Curation db={db} userId={userId} puzzleId={puzzle.id} />
+      {/* Bank-wide per-type analytics (#87): admin-only reveal, same as Curation. */}
+      <CurationAnalytics db={db} />
     </>
   );
 

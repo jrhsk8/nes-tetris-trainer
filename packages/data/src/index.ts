@@ -35,6 +35,7 @@ export type {
   Attempt,
   NewAttempt,
   AttemptHistoryEntry,
+  CurationTagStat,
   UserPrefs,
   PuzzleRow,
   UserRatingRow,

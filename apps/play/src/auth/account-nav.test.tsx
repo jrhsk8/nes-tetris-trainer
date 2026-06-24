@@ -47,6 +47,7 @@ function emptyDb(): AccountDb {
     async flagPuzzle() {},
     async cullPuzzle() {},
     async setPuzzleActive() {},
+    async getCurationTagStats() { return []; },
     async getUserRating() {
       return null;
     },

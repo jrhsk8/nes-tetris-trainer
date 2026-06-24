@@ -463,3 +463,64 @@ $$;
 
 grant execute on function public.puzzle_star_stats(uuid) to anon, authenticated;
 grant execute on function public.puzzle_solve_stats(uuid) to anon, authenticated;
+
+-- #87 curation analytics by type-tag: per-tag flag/cull counts and avg stars +
+-- rating-count over EVERY user's `puzzle_flags` / `puzzle_star_ratings`, so the
+-- admin can pattern-mine which puzzle TYPES underperform ("spin puzzles get
+-- culled 3x more"). A puzzle may carry several tags, so each is unnested and the
+-- puzzle counts once per tag it has. SECURITY DEFINER so it aggregates past the
+-- own-row RLS on flags/ratings WITHOUT exposing any individual row; `puzzle_count`
+-- lets the UI show a rate (flags / puzzles in the tag). Granted to anon,
+-- authenticated and surfaced only behind the admin reveal (the client gate).
+create or replace function public.curation_tag_stats()
+returns table(
+  tag text,
+  puzzle_count bigint,
+  flag_count bigint,
+  cull_count bigint,
+  avg_stars double precision,
+  rating_count bigint
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  with tagged as (
+    select p.id as puzzle_id, unnest(p.tags) as tag
+      from public.puzzles p
+  ),
+  per_tag_puzzles as (
+    select tag, count(*)::bigint as puzzle_count
+      from tagged
+     group by tag
+  ),
+  per_tag_flags as (
+    select t.tag,
+           count(*) filter (where f.action = 'flag')::bigint as flag_count,
+           count(*) filter (where f.action = 'cull')::bigint as cull_count
+      from tagged t
+      join public.puzzle_flags f on f.puzzle_id = t.puzzle_id
+     group by t.tag
+  ),
+  per_tag_stars as (
+    select t.tag,
+           avg(s.stars)::double precision as avg_stars,
+           count(*)::bigint as rating_count
+      from tagged t
+      join public.puzzle_star_ratings s on s.puzzle_id = t.puzzle_id
+     group by t.tag
+  )
+  select ptp.tag,
+         ptp.puzzle_count,
+         coalesce(ptf.flag_count, 0)::bigint,
+         coalesce(ptf.cull_count, 0)::bigint,
+         coalesce(pts.avg_stars, 0)::double precision,
+         coalesce(pts.rating_count, 0)::bigint
+    from per_tag_puzzles ptp
+    left join per_tag_flags ptf on ptf.tag = ptp.tag
+    left join per_tag_stars pts on pts.tag = ptp.tag
+   order by ptp.tag;
+$$;
+
+grant execute on function public.curation_tag_stats() to anon, authenticated;

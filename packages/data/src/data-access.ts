@@ -14,6 +14,7 @@ import type {
   Attempt,
   AttemptHistoryEntry,
   AttemptRow,
+  CurationTagStat,
   Glicko,
   NewAttempt,
   NewPuzzle,
@@ -252,6 +253,14 @@ export interface DataAccess {
   cullPuzzle(input: { puzzleId: string; userId: string; reason?: string }): Promise<void>;
   /** Restore (un-cull) or re-hide a puzzle by setting `active` (#72 undo). */
   setPuzzleActive(puzzleId: string, active: boolean): Promise<void>;
+  /**
+   * Per-type curation analytics (#87): one {@link CurationTagStat} per puzzle
+   * type-tag — flag/cull counts and avg stars + rating-count over EVERY user —
+   * via the SECURITY DEFINER `curation_tag_stats` aggregate (no individual row
+   * exposed). Granted to anon/authenticated; the client surfaces it only behind
+   * the admin reveal. Sorted by tag.
+   */
+  getCurationTagStats(): Promise<CurationTagStat[]>;
 }
 
 function newPuzzleToRow(puzzle: NewPuzzle): Record<string, unknown> {
@@ -713,6 +722,30 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     await setPuzzleActive(input.puzzleId, false);
   }
 
+  async function getCurationTagStats(): Promise<CurationTagStat[]> {
+    // Aggregate flags/cull + stars per type-tag across ALL users; the SECURITY
+    // DEFINER `curation_tag_stats` reaches past the own-row RLS on flags/ratings
+    // without exposing any individual row (#87).
+    const { data, error } = await client.rpc('curation_tag_stats');
+    if (error) throw new Error(`getCurationTagStats failed: ${error.message}`);
+    const rows = (data ?? []) as {
+      tag: string;
+      puzzle_count: number;
+      flag_count: number;
+      cull_count: number;
+      avg_stars: number;
+      rating_count: number;
+    }[];
+    return rows.map((r) => ({
+      tag: r.tag as PuzzleTag,
+      puzzleCount: Number(r.puzzle_count ?? 0),
+      flagCount: Number(r.flag_count ?? 0),
+      cullCount: Number(r.cull_count ?? 0),
+      avgStars: Number(r.avg_stars ?? 0),
+      ratingCount: Number(r.rating_count ?? 0),
+    }));
+  }
+
   return {
     getPuzzle,
     getPuzzleByNumber,
@@ -749,5 +782,6 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     flagPuzzle,
     cullPuzzle,
     setPuzzleActive,
+    getCurationTagStats,
   };
 }

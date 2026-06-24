@@ -77,6 +77,7 @@ function makeDb(puzzle: Puzzle | null): PlayDb {
     async flagPuzzle() {},
     async cullPuzzle() {},
     async setPuzzleActive() {},
+    async getCurationTagStats() { return []; },
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
       return {
         id: 'a1',
@@ -154,6 +155,7 @@ function trackingDb() {
     async flagPuzzle() {},
     async cullPuzzle() {},
     async setPuzzleActive() {},
+    async getCurationTagStats() { return []; },
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
       return {
         id: 'a1',
@@ -214,6 +216,7 @@ describe('PuzzlePlay persistent anti-repeat window (#74)', () => {
       async flagPuzzle() {},
       async cullPuzzle() {},
       async setPuzzleActive() {},
+      async getCurationTagStats() { return []; },
       async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
         return { id: 'a1', createdAt: 'x', ratingAfter: null, ...attempt, score: null };
       },
@@ -298,6 +301,7 @@ function missDb(opts: { misses?: string[]; window?: string[] } = {}) {
     async flagPuzzle() {},
     async cullPuzzle() {},
     async setPuzzleActive() {},
+    async getCurationTagStats() { return []; },
     async insertAttempt(attempt: NewAttempt): Promise<Attempt> {
       return { id: 'a1', createdAt: 'x', ratingAfter: null, ...attempt, score: null };
     },

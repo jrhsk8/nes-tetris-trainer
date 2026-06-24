@@ -38,6 +38,7 @@ export type PlayDb = Pick<
   | 'flagPuzzle'
   | 'cullPuzzle'
   | 'setPuzzleActive'
+  | 'getCurationTagStats'
 >;
 
 /**

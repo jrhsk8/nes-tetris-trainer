@@ -59,6 +59,7 @@ const noopDb: SessionDb = {
   async flagPuzzle() {},
   async cullPuzzle() {},
   async setPuzzleActive() {},
+  async getCurationTagStats() { return []; },
 };
 
 describe('Authentic stack colours (#28)', () => {

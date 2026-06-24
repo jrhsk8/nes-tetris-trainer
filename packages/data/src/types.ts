@@ -175,6 +175,26 @@ export interface AttemptHistoryEntry extends Attempt {
   tags: PuzzleTag[];
 }
 
+/**
+ * Per-type curation analytics (#87): one row per puzzle type-tag, aggregated over
+ * EVERY user's flags / cull / star ratings, so the admin can pattern-mine which
+ * puzzle types underperform. Carries `puzzleCount` so the UI can show rates
+ * (flags / puzzles in the tag). Exposes no individual user row.
+ */
+export interface CurationTagStat {
+  tag: PuzzleTag;
+  /** Puzzles carrying this tag (the denominator for flag/cull rates). */
+  puzzleCount: number;
+  /** Total `flag` rows on puzzles with this tag. */
+  flagCount: number;
+  /** Total `cull` rows on puzzles with this tag. */
+  cullCount: number;
+  /** Mean star rating over puzzles with this tag (0 when none rated). */
+  avgStars: number;
+  /** Number of star ratings backing `avgStars`. */
+  ratingCount: number;
+}
+
 /** The fields needed to record an attempt. */
 export interface NewAttempt {
   userId: string;
