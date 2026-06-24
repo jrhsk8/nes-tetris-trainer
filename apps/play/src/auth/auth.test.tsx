@@ -29,21 +29,25 @@ function fakeAuth(overrides: Partial<AuthApi> = {}): AuthApi {
 }
 
 describe('createAuth OAuth redirect (#77)', () => {
-  it('redirects OAuth back to the app base URL (origin + BASE_URL), not bare origin', async () => {
+  it('redirects OAuth back to the live app URL, preserving the Pages repo subpath', async () => {
+    // Simulate being served under the GitHub Pages project subpath, with a hash
+    // route + query in play — the exact shape that produced the off-app 404.
+    window.history.pushState({}, '', '/nes-tetris-trainer/?x=1#/play');
     const signInWithOAuth = vi.fn(async () => ({ error: null }));
     const client = { auth: { signInWithOAuth } } as unknown as SupabaseClient;
     await createAuth(client).signInWithProvider('discord');
-    // The redirect carries the GitHub Pages base path (origin + BASE_URL), not
-    // the bare origin — so the OAuth round-trip lands back inside the app.
+    // Returns to origin + pathname (subpath kept, hash/query dropped) — NOT the
+    // bare origin, which on Pages is the user root with no site (404).
     expect(signInWithOAuth).toHaveBeenCalledWith({
       provider: 'discord',
-      options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+      options: { redirectTo: window.location.origin + '/nes-tetris-trainer/' },
     });
   });
 });
 
 describe('createAuth in-place linking (#77)', () => {
-  it('links an OAuth identity to the current session (preserving the UID), with the same base redirect', async () => {
+  it('links an OAuth identity to the current session (preserving the UID), returning to the live app URL', async () => {
+    window.history.pushState({}, '', '/nes-tetris-trainer/');
     const linkIdentity = vi.fn(async () => ({ error: null }));
     const client = { auth: { linkIdentity } } as unknown as SupabaseClient;
     await createAuth(client).linkWithProvider('google');
@@ -51,7 +55,7 @@ describe('createAuth in-place linking (#77)', () => {
     // the UID — and all the player's rating/attempts — is preserved.
     expect(linkIdentity).toHaveBeenCalledWith({
       provider: 'google',
-      options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+      options: { redirectTo: window.location.origin + '/nes-tetris-trainer/' },
     });
   });
 

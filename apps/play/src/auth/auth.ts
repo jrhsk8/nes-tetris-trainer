@@ -52,6 +52,18 @@ export interface AuthApi {
   signOut(): Promise<void>;
 }
 
+/**
+ * The URL OAuth should return to: the current page, minus any hash/query (#77).
+ * Using the live location preserves the GitHub Pages repo subpath
+ * (`/nes-tetris-trainer/`) that `base: './'` strips from import.meta.env.BASE_URL.
+ * Supabase appends the `#access_token=…` fragment to whatever we return here, so
+ * the URL MUST also be in the project's Auth → Redirect URLs allowlist.
+ */
+function appReturnUrl(): string {
+  const { origin, pathname } = window.location;
+  return origin + pathname;
+}
+
 function toAuthUser(user: User | null | undefined): AuthUser | null {
   return user
     ? { id: user.id, email: user.email ?? null, isAnonymous: user.is_anonymous ?? false }
@@ -99,10 +111,11 @@ export function createAuth(client: SupabaseClient): AuthApi {
     async signInWithProvider(provider) {
       const { error } = await client.auth.signInWithOAuth({
         provider: provider as Provider,
-        // Return to the app's base URL INCLUDING the GitHub Pages base path
-        // (origin + BASE_URL), not the bare origin (#77): on Pages the app lives
-        // under `/nes-tetris-trainer/`, so a bare-origin redirect lands off-app.
-        options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+        // Return to the exact page the user signed in from (#77). We can't
+        // rebuild this from BASE_URL: `base: './'` (relative, for Pages-subpath
+        // portability) makes import.meta.env.BASE_URL resolve to `/`, dropping
+        // the `/nes-tetris-trainer/` repo path and landing off-app (404).
+        options: { redirectTo: appReturnUrl() },
       });
       if (error) throw new Error(error.message);
     },
@@ -118,9 +131,9 @@ export function createAuth(client: SupabaseClient): AuthApi {
     async linkWithProvider(provider) {
       const { error } = await client.auth.linkIdentity({
         provider: provider as Provider,
-        // Same Pages-base redirect as a fresh OAuth sign-in (#77), so the linking
+        // Same in-app return as a fresh OAuth sign-in (#77), so the linking
         // round-trip lands back inside the app.
-        options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+        options: { redirectTo: appReturnUrl() },
       });
       if (error) throw new Error(error.message);
     },
