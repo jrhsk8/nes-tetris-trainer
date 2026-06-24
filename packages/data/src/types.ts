@@ -168,6 +168,11 @@ export interface UserPrefs {
  */
 export interface AttemptHistoryEntry extends Attempt {
   difficulty: number | null;
+  /**
+   * The attempted puzzle's type-tags (#86), joined for per-type accuracy stats.
+   * Empty `[]` for an untagged puzzle or an orphaned attempt.
+   */
+  tags: PuzzleTag[];
 }
 
 /** The fields needed to record an attempt. */

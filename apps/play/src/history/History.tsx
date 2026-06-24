@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { COLS, ROWS, decodeBoard, decodeColors } from '@trainer/core';
 import type { AttemptHistoryEntry, DataAccess, Puzzle } from '@trainer/data';
 import { Feedback } from '../feedback/index.js';
+import { PerTypeStats } from '../tags/PerTypeStats.js';
 
 /** The persistence the history view needs. */
 export type HistoryDb = Pick<DataAccess, 'getUserAttemptHistory' | 'getPuzzle'>;
@@ -147,6 +148,8 @@ export function History({ db, userId }: HistoryProps) {
       <h2>History</h2>
 
       {error ? <p role="alert">Could not load history: {error}</p> : null}
+
+      <PerTypeStats attempts={entries ?? []} />
 
       <div className="history-controls">
         <label>

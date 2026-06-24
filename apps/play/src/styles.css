@@ -333,6 +333,34 @@ h2 {
   letter-spacing: 0.06em;
 }
 
+/* Per-type accuracy panel (#86). */
+.per-type-stats {
+  margin: 0 0 1rem;
+}
+.per-type-title {
+  font-size: 9px;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.per-type-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8px;
+}
+.per-type-table th,
+.per-type-table td {
+  padding: 3px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--panel-edge);
+}
+.per-type-table td:nth-child(2),
+.per-type-table th:nth-child(2),
+.per-type-table td:nth-child(3),
+.per-type-table th:nth-child(3) {
+  text-align: right;
+}
+
 /* The board hero: scales with the viewport, preserving its 1:2 aspect (10 wide
  * cells → height = 2 × width). No fixed pixel cap (#22). The board is now the
  * dominant element (#32): width grows toward 36vh (≈ 72vh tall) but is also

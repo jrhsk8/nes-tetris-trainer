@@ -487,12 +487,18 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
     // null for an orphaned attempt (its puzzle was removed by a bank regen).
     const { data, error } = await client
       .from('attempts')
-      .select('*, puzzles(rating)')
+      .select('*, puzzles(rating, tags)')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (error) throw new Error(`getUserAttemptHistory failed: ${error.message}`);
-    const rows = (data ?? []) as (AttemptRow & { puzzles: { rating: number } | null })[];
-    return rows.map((row) => ({ ...rowToAttempt(row), difficulty: row.puzzles?.rating ?? null }));
+    const rows = (data ?? []) as (AttemptRow & {
+      puzzles: { rating: number; tags: string[] | null } | null;
+    })[];
+    return rows.map((row) => ({
+      ...rowToAttempt(row),
+      difficulty: row.puzzles?.rating ?? null,
+      tags: (row.puzzles?.tags ?? []) as AttemptHistoryEntry['tags'],
+    }));
   }
 
   async function getPuzzleSolveStats(

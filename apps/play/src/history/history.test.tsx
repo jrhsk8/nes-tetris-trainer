@@ -24,6 +24,7 @@ function entry(over: Partial<AttemptHistoryEntry> & { id: string }): AttemptHist
     ratingAfter: 1500,
     createdAt: '2026-06-01T00:00:00.000Z',
     difficulty: 1500,
+    tags: [],
     ...over,
   };
 }
