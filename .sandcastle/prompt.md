@@ -32,12 +32,24 @@ treat the issues that need them as blocked.
 
 ## Run scope (this run)
 
-_No batch queued._ The `prep-sandcastle` skill retargets this section to the next batch of open issues before each run (scope, dependency order, known blockers, completion signal). Until it does, the filtered open-issues list at the top of this prompt is the sole source of truth for what to work, in the priority order under **# Task** below.
+**Batch: Puzzle type-tags epic + spin/outline fixes (queued 2026-06-23).** The whole open backlog, dependency-ordered. Work the **autonomous** set below in this order (each later issue assumes the earlier one landed). Three issues are **`supervised` — SKIP them entirely** (they need a human: secrets, bank-rewrite supervision, curator-only surface): **#77, #83, #87**. Do not work or close those.
+
+Order (foundations → data → play; respects each issue's `Depends on`):
+
+1. **#88 [core]** Spin via `reachableStates` — _do early, independent._ `packages/core/src/placement.ts`. Factor `moveToColumn`'s "nearest reachable state, tuck-in-preferred" selection into a shared helper; add a column-fixed `spin(...)` that rides up only on the floor. Fixes spin no-op at the bottom. Parity: every returned state ∈ `reachableStates`. Autonomous. Unblocks #89.
+2. **#81 [core]** `tagPuzzle()` + `PuzzleTag` union — _epic foundation._ New pure `packages/core` module (`tags.ts`). Closed union (`burn|tetris|tetris-ready|tuck|spin|clean-stacking|dig|well-maintenance`); reconstruct rank-1 line via `restingLineForEntry`, emit tags by the predicate table in the issue. Pure, engine-free, deep fixtures. Autonomous. Unblocks #82, #90.
+3. **#90 [core]** `avoid-<piece>-dependency` contrast tags — extends #81 but **also sees the combo table** (contrast vs rank-1). Five tags (`avoid-i/s/z/j/l-dependency`); trap band = rank-1 clean + a rank-2/3 alt scoring [90,97) that creates ≥1 single-piece dependency; ignore edge depth-1 notches, keep interior staircases. Named/tunable thresholds. Curation-only — no play feedback, no gen gating. Prototype lives at `generator/src/avoid-dependency-eyeball.ts` (untracked working-tree file — reference it; don't rely on committing it). Computable from the stored combo table — **no engine.** Autonomous.
+4. **#82 [data]** `tags text[]` column + GIN index — _additive DDL only._ `schema.sql` idempotent `add column if not exists … default '{}'` + `puzzles_tags_idx` GIN; add `tags` to `Puzzle`/`NewPuzzle`/`PuzzleRow`; map in read/insert paths, default `[]`. Round-trip test. Autonomous. Unblocks #84/#85/#86.
+5. **#84 [play]** Puzzle type chips — render `tags` as readable chips; one shared tag→label/colour map; none when empty. Autonomous. Unblocks #86.
+6. **#85 [play]** Drill mode (unrated practice) — `fetchPuzzlesByTags` (`tags && ARRAY[...]`, OR overlap), type-picker entry; drill attempts are **ephemeral: no rating update, no `attempts` row.** Autonomous.
+7. **#86 [play]** Per-type accuracy in Account — pure aggregation helper over the user's own rated `attempts` joined to puzzle `tags`; per-tag solve-rate, weakest first. Autonomous.
+8. **#89 [play]** One free-floating outline — `apps/play/src/board/{PlacementInput,Board}.tsx` only. Collapse active+ghost to one hollow outline (no drop-shadow), spawn at row 0, resting **glow** gates Confirm, wire spin to #88's helper, soft-drop hold-to-repeat (no hard-drop). **UI bug — verify live in a browser, not just tests** (repo rule). Autonomous.
+9. **#78 [play]** Admin = email-allowlist (RLS) — `admin_emails` table (additive), RLS on `(auth.jwt()->>'email')` + `email_verified` + non-anon, rename curator→admin, seed `jrhsk8@gmail.com`. **Partial / acceptance-blocked on supervised #77** (needs a real verified-email login to exercise end-to-end). Build the allowlist/RLS/rename + RLS allow/deny tests autonomously; if the end-to-end "signed-in admin sees controls" check can't be exercised without #77, **leave the issue open with a comment** rather than closing.
 
 **Standing rules that always apply:**
-- **Engine stays OFFLINE / generator-only** (StackRabbit at `$STACKRABBIT_URL`; BetaTetris via `bt-run`) — never called from `apps/play`.
+- **Engine stays OFFLINE / generator-only** (StackRabbit at `$STACKRABBIT_URL`; BetaTetris via `bt-run`) — never called from `apps/play`. The whole tagging epic (#81/#90/#82) is computable from the **stored combo table** — no engine call needed.
 - **Do NOT deploy, push, or host** — the push + GitHub Pages redeploy stay a manual step after the run (`/push-deploy-sandcastle`).
-- **Defensive backup before any DDL:** `create table if not exists puzzles_bak_<date> as select * from puzzles;`. **Never drop** any `*_bak_*` / `*_quarantine_*` table.
+- **No bank regen this batch.** #82 is additive (new column, default `{}`); the row-rewriting re-tag of the existing bank is **supervised #83 — skipped here.** Still take the defensive backup before any DDL: `create table if not exists puzzles_bak_<date> as select * from puzzles;`. **Never drop** any `*_bak_*` / `*_quarantine_*` table.
 
 # Task
 
@@ -77,6 +89,8 @@ Pick the highest-priority open issue that is not blocked by another open issue.
 
 # Done
 
-When all actionable issues are complete (or you are blocked on all remaining ones), or the open-issues block at the top of this prompt is empty, output the completion signal:
+This run's autonomous batch is **#88, #81, #90, #82, #84, #85, #86, #89** (in that order), plus **#78 partial** (build + RLS tests; leave open if its login-gated acceptance can't be exercised without supervised #77). **#77, #83, #87 are `supervised` — never count toward completion.**
+
+When all eight autonomous batch issues (#88, #81, #90, #82, #84, #85, #86, #89) are closed — and #78 is either closed or left open with a blocked-on-#77 comment — and the only remaining open issues are the supervised three (#77, #83, #87), you are done. Also stop if you are blocked on all remaining actionable issues, or the open-issues block at the top of this prompt is empty. Output the completion signal:
 
 <promise>COMPLETE</promise>
