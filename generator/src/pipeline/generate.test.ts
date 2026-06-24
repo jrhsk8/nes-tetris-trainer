@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyPlacement,
+  decodeBoard,
   emptyBoard,
   emptyColorGrid,
   encodeBoard,
   holes,
   isPiece,
+  tagPuzzle,
   type Grid,
   type Piece,
 } from '@trainer/core';
@@ -278,6 +280,16 @@ describe('assemblePuzzle combo pipeline (#40)', () => {
     expect(puzzle.glicko!.rating!).toBeLessThanOrEqual(HARD_SEED);
 
     expect(puzzle.colors).toHaveLength(200);
+
+    // Type-tags are computed at generation (#83) and consistent with the stored
+    // combo table — exactly what the re-tag migration would recompute from the
+    // same stored data, so generation and migration agree (idempotent).
+    expect(Array.isArray(puzzle.tags)).toBe(true);
+    expect(puzzle.tags).toEqual(
+      tagPuzzle(decodeBoard(puzzle.board), puzzle.piece1, puzzle.piece2, puzzle.combos!.entries[0], puzzle.combos!),
+    );
+    // The empty-board O,O optimal stacks cleanly (no clears, no new holes).
+    expect(puzzle.tags).toContain('clean-stacking');
   });
 
   it('rejects a candidate below the board-health floor', async () => {

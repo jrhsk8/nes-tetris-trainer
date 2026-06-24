@@ -17,6 +17,7 @@ import {
   boardMetrics,
   encodeBoard,
   encodeColors,
+  tagPuzzle,
   CORRECT_SCORE_THRESHOLD,
   type Grid,
   type Line,
@@ -288,6 +289,12 @@ export async function assemblePuzzle(
     { rotation: best.p2.rotation, col: best.p2.col },
   ];
 
+  // Type-tags (#81/#90, wired at generation in #83): classify the puzzle by what
+  // its stored rank-1 line does (and the rank-2/3 contrast tags from the table),
+  // so newly generated puzzles are self-describing / drillable end-to-end. Pure —
+  // the rank-1 entry's `boardKey` reconstructs the line, no engine.
+  const tags = tagPuzzle(board, currentPiece, nextPiece, table.entries[0], table);
+
   return {
     ok: true,
     lane: classifyLane(board, config),
@@ -300,6 +307,7 @@ export async function assemblePuzzle(
       optimalMetrics: boardMetrics(best.board2),
       colors: encodeColors(candidate.colors),
       combos: table,
+      tags,
       acceptCount: difficulty.acceptCount,
       margin: difficulty.margin,
       glicko: { rating: seed },
