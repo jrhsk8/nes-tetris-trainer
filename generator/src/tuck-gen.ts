@@ -26,6 +26,8 @@ Object.assign(globalThis, { WebSocket: globalThis.WebSocket ?? ws });
 
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   PIECES,
@@ -56,7 +58,7 @@ import {
   DEFAULT_GENERATION_CONFIG,
 } from './pipeline/generate.js';
 import { restingLineForEntry } from '@trainer/core';
-import { betaTetrisJudge, filterByConsensus } from './pipeline/consensus.js';
+import { filterByConsensus, type ConsensusJudge } from './pipeline/consensus.js';
 import { isNearDuplicate, type BankKey } from './pipeline/dedup.js';
 
 const TIMELINE = 'X.';
@@ -196,6 +198,37 @@ function parseArgs(): CliArgs {
     }
   }
   return args;
+}
+
+/**
+ * Windows-safe BetaTetris consensus judge (matches the spin-bank generators):
+ * spawn `python consensus.py` directly with the BT env set, rather than the
+ * shared {@link betaTetrisJudge}'s `bt-run.cmd` shell, which EINVALs on modern
+ * Node/Windows. `repoRoot` locates `engines/betatetris`.
+ */
+function windowsSafeJudge(repoRoot: string): ConsensusJudge {
+  const BT = join(repoRoot, 'engines', 'betatetris');
+  const btEnv = {
+    ...process.env,
+    BT_HOME: BT + '\\',
+    BT_REPO_PY: join(BT, 'betatetris-tablebase', 'python'),
+    BT_MODELS: join(BT, 'models'),
+    BT_OUT: BT + '\\',
+  };
+  return async (rows) => {
+    const dir = mkdtempSync(join(tmpdir(), 'bt-tuck-'));
+    const inPath = join(dir, 'keys.json');
+    const outPath = join(dir, 'verdict.json');
+    writeFileSync(inPath, JSON.stringify(rows));
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn('python', [join(BT, 'consensus.py'), inPath, outPath], { env: btEnv, stdio: ['ignore', 'inherit', 'inherit'] });
+      child.on('error', reject);
+      child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`consensus.py exited ${code}`))));
+    });
+    const raw = JSON.parse(readFileSync(outPath, 'utf8')) as any[];
+    const byId = new Map(raw.map((v) => [v.id, v]));
+    return rows.map((r) => byId.get(r.id));
+  };
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────
@@ -409,10 +442,7 @@ async function main(): Promise<void> {
   let finalSurvivors = survivors;
   if (args.consensus && survivors.length > 0) {
     console.log(`\nrunning BetaTetris consensus on ${survivors.length} survivors…`);
-    const btRunner = process.platform === 'win32'
-      ? new URL('../../engines/betatetris/bt-run.cmd', import.meta.url).pathname.replace(/^\//, '')
-      : 'bt-run';
-    const judge = betaTetrisJudge({ runner: btRunner });
+    const judge = windowsSafeJudge(repoRoot);
     const result = await filterByConsensus(survivors, judge);
     finalSurvivors = result.kept as NewPuzzle[];
     console.log(
