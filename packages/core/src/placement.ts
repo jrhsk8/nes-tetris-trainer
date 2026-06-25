@@ -389,6 +389,76 @@ export function enumerateResting(grid: Grid, piece: Piece): RestingPlacement[] {
 }
 
 /**
+ * Every **resting** placement a player can actually navigate to and confirm with
+ * the real play input (#91, #94) — a BFS over the *actual* moves the move engine
+ * exposes: tuck-seeking lateral ({@link lateralMove}), soft-drop, raise, and the
+ * descending {@link spin} (rotate screws down, raise lifts back out), seeded from
+ * every entry-row state. This is a **strict subset** of {@link enumerateResting}:
+ * the generator over-enumerates a few overhang pockets the rotation column-offset
+ * can never spin into, which the player therefore cannot reach.
+ *
+ * The closing half of the generator↔play loop: a constructed maneuver is only
+ * shippable if its optimal placement appears here, so every published spin/tuck is
+ * executable under the input model. Pure (no DOM); shared by the generator gate.
+ */
+export function inputReachableRestingPlacements(grid: Grid, piece: Piece): RestingPlacement[] {
+  const states = reachableStates(grid, piece);
+  const reachable = new Set(states.map((s) => stateKey(s.rotation, s.row, s.col)));
+  const canReach = (rotation: number, row: number, col: number): boolean =>
+    row >= 0 && row < ROWS && col >= 0 && col < COLS && reachable.has(stateKey(rotation, row, col));
+  const rotations = ORIENTATIONS[piece].length;
+
+  const visited = new Set<number>();
+  const queue: RestingPlacement[] = [];
+  const seed = (s: RestingPlacement): void => {
+    const k = stateKey(s.rotation, s.row, s.col);
+    if (visited.has(k)) return;
+    visited.add(k);
+    queue.push(s);
+  };
+  // Entry seeds: every rotation/column that fits at the top row (pieces enter
+  // there and are manoeuvred down) — the player reaches all of these from spawn
+  // by free top-row lateral + rotation.
+  for (let rotation = 0; rotation < rotations; rotation++) {
+    for (let col = 0; col < COLS; col++) if (canReach(rotation, 0, col)) seed({ rotation, row: 0, col });
+  }
+  for (let i = 0; i < queue.length; i++) {
+    const { rotation, row, col } = queue[i];
+    for (const dir of [-1, 1] as const) {
+      const next = lateralMove(grid, piece, rotation, row, col, dir, states);
+      if (next) seed(next);
+    }
+    if (canReach(rotation, row + 1, col)) seed({ rotation, row: row + 1, col }); // soft-drop
+    if (canReach(rotation, row - 1, col)) seed({ rotation, row: row - 1, col }); // raise
+    if (rotations > 1) {
+      for (const dir of ['cw', 'ccw'] as const) {
+        const next = spin(grid, piece, rotation, row, col, dir, states);
+        if (next) seed(next);
+      }
+    }
+  }
+  return [...visited]
+    .map((k) => {
+      const rotation = Math.floor(k / (ROWS * COLS));
+      const rest = k % (ROWS * COLS);
+      return { rotation, row: Math.floor(rest / COLS), col: rest % COLS };
+    })
+    .filter(({ rotation, row, col }) => !fitsAt(grid, piece, rotation, row + 1, col));
+}
+
+/**
+ * Whether `placement` of `piece` on `grid` is reachable and confirmable by the
+ * real play input (#94 reachability gate) — i.e. it appears in
+ * {@link inputReachableRestingPlacements}. Used by the generator to refuse any
+ * constructed maneuver the player could not actually execute.
+ */
+export function isInputReachable(grid: Grid, piece: Piece, placement: RestingPlacement): boolean {
+  return inputReachableRestingPlacements(grid, piece).some(
+    (p) => p.rotation === placement.rotation && p.row === placement.row && p.col === placement.col,
+  );
+}
+
+/**
  * The canonical **outcome key** for a (resulting) board: its locked-cell set as
  * the 200-char binary string ({@link encodeBoard}). Matching by this key is
  * path- and rotation-numbering-independent — two placements (or encodings) that

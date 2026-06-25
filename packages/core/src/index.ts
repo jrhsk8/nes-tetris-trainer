@@ -34,6 +34,8 @@ export {
   applyRestingPlacement,
   reachableStates,
   enumerateResting,
+  inputReachableRestingPlacements,
+  isInputReachable,
   moveToColumn,
   lateralMove,
   spin,

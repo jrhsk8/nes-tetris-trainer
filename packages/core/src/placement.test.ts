@@ -10,6 +10,8 @@ import {
   applyRestingPlacement,
   reachableStates,
   enumerateResting,
+  inputReachableRestingPlacements,
+  isInputReachable,
   lateralMove,
   moveToColumn,
   spin,
@@ -557,6 +559,49 @@ describe('spin (descends into the pocket #91; floor-case ride-up from #88)', () 
     // The landed placement reproduces the stored optimal outcome.
     const stored = applyRestingPlacement(board1, 'T', { rotation: 2, row: 18, col: 5 });
     expect(boardKey(applyRestingPlacement(board1, 'T', after2!))).toBe(boardKey(stored));
+  });
+});
+
+describe('inputReachableRestingPlacements / isInputReachable (generator↔play gate #94)', () => {
+  it('is a strict subset of enumerateResting over game-realistic boards', () => {
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        const enumerated = new Set(
+          enumerateResting(grid, piece).map((p) => key(p.rotation, p.row, p.col)),
+        );
+        for (const p of inputReachableRestingPlacements(grid, piece)) {
+          expect(
+            enumerated.has(key(p.rotation, p.row, p.col)),
+            `${piece} ${JSON.stringify(p)} reachable-by-input but not enumerated`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('every returned placement is a genuine resting placement (cannot fall further)', () => {
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        for (const p of inputReachableRestingPlacements(grid, piece)) {
+          expect(isResting(grid, piece, p.rotation, p.row, p.col)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('accepts the puzzle 2443 t-spin into the notch (descending spin closes the loop #91)', () => {
+    const board0 = decodeBoard(
+      '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001001000000100100000110011000011001000111100110111',
+    );
+    const board1 = applyRestingPlacement(board0, 'O', { rotation: 0, row: 18, col: 2 });
+    // The stored t-spin (rot 2, row 18, col 5) is reachable by the real input.
+    expect(isInputReachable(board1, 'T', { rotation: 2, row: 18, col: 5 })).toBe(true);
+  });
+
+  it('rejects a placement that is not a reachable resting state', () => {
+    const grid = emptyBoard();
+    // A floating (non-resting) row is never a resting placement, so never reachable.
+    expect(isInputReachable(grid, 'O', { rotation: 0, row: 5, col: 4 })).toBe(false);
   });
 });
 
