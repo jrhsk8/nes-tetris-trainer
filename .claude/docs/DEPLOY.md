@@ -7,8 +7,9 @@
 ## How it's wired
 
 - **Bank:** the offline generator writes the puzzle bank to Supabase — each
-  puzzle a distinct board, the optimal two-ply line, precomputed optimal-result
-  metrics, and a flat seed rating. Regenerate/extend with:
+  puzzle a distinct board, the optimal two-ply line, the [combo table](../docs/glossary.md#combo-table)
+  (top-K ranked combos with scores), [type-tags](../docs/glossary.md#puzzle-type-tag),
+  and a [difficulty](../docs/glossary.md#difficulty)-seeded rating. Regenerate/extend with:
 
   ```sh
   npm run start --workspace @trainer/generator -- --count 300 --max 1500

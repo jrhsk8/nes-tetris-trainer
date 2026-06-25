@@ -2,6 +2,30 @@
 
 Lightweight log of decisions not captured in [PRD-v1.md](PRD-v1.md) (the PRD owns product/architecture decisions; this owns tooling, repo, and doc choices). Newest first.
 
+### 2026-06-24 — Guest auth bypass, tuck/spin puzzle generation, type-tags, editorial-dark UI
+
+**Guest auth (#continue-as-guest)**
+
+- **"Continue as guest" login bypass.** When Supabase anonymous sign-ins are disabled (or fail), the login page now offers a **Continue as guest** button that creates a **local-only guest user** (`guest-<UUID>`) and fires the `onChange` listeners to bypass the auth gate. The guest user has `isAnonymous: true` and a `crypto.randomUUID()` id; their data is device-local (no Supabase session, so no RLS-gated writes persist). This unblocks play on deployments where anonymous auth is not configured. Added to `AuthApi` as `continueAsGuest()` (`apps/play/src/auth/auth.ts`); the button is styled with a dashed border at reduced opacity (`apps/play/src/styles.css`).
+
+**Tuck/spin puzzle generation findings**
+
+- **Tuck-aware self-play.** Standard self-play misses tucks because it follows the engine's hard-drop-only placement. When the engine recommends a tuck move (i.e. `toHardDropPlacement` returns null for the engine's placement), the generator now **applies the engine's resulting board directly** instead of falling back to a random move. This builds boards with natural overhangs that produce tuck opportunities organically. Implemented in `generator/src/tuck-gen.ts`.
+- **Yield rates.** Tucks: **~1+ per self-play board** (common — most boards with overhangs have at least one tuck-optimal combo). Spins: **~1 per 20 boards** (rare — requires a pocket geometry that only rotation can reach). T-spins are the most common spin subtype.
+- **Engine crash management.** StackRabbit's C++ engine segfaults on certain board states (tall/messy boards with extreme configurations). On Windows, orphaned engine processes open console windows. Mitigations: `killEngine()` with `taskkill /T /F` for process-tree cleanup; a `consecutiveCrashes` counter (max 5) that aborts the run if the engine is unstable; process exit handlers (`process.on('exit'/'SIGINT'/'SIGTERM', killEngine)`); removed `detached: true` and `unref()` from spawn to prevent orphaned processes.
+- **`--spin-only` flag.** `tuck-gen.ts` supports `--spin-only` to filter out pure tucks and keep only spin/spintuck results, useful for targeted spin generation given their rarity.
+- **30 tuck puzzles inserted** (#2402–#2431) in the live bank; 70 earlier synthetic tuck/spin puzzles (#2332–#2401) remain deactivated. Spin puzzle insertion is pending (the generator finds them but no completed run has inserted them yet).
+
+**Puzzle type-tags (#81, #84, #90)**
+
+- **Auto-computed per-puzzle tags** describing what the puzzle teaches, added at generation time. Four tag families: **clear** (burn, tetris, tetris-ready, dig), **maneuver** (tuck, spin, t-spin), **stack** (clean-stacking, well-maintenance), **avoid** (avoid-{i,s,z,j,l}-dependency). The [maneuver](glossary.md#maneuver) classifier (`packages/core/src/tags.ts`) uses a BFS to distinguish hard-drops from tucks from spins. Tags display as coloured chips in the play app and power drill-mode filtering.
+- **T-spin tag.** A spin involving the T piece is additionally tagged `t-spin` — the most common spin type because the T's symmetric cross shape fits more pocket geometries.
+- **Avoid-dependency tags.** When the optimal combo's resulting board avoids creating a single-piece dependency that non-optimal combos create, the puzzle is tagged `avoid-<piece>-dependency`. Dependencies: I (deep well), S/Z/J/L (notch only one piece fills cleanly).
+
+**Editorial-dark UI redesign (v2)**
+
+- Applied the v2 editorial-dark visual redesign across the play app: dark background, refined typography, consistent spacing, updated colour palette for board cells and UI chrome. Purely cosmetic — no gameplay or data changes.
+
 ### 2026-06-23 — One free-floating piece outline: collapse the active/ghost split, spin-anywhere, resting glow (grill-with-docs #8)
 
 An eighth `/grill-with-docs` session: one owner report bundling three symptoms of the placement-input rendering — **(a)** a piece **can't spin when resting at the bottom**, **(b)** a piece one row off the bottom shows an **awkward partial ghost**, **(c)** the distinction between *ghost*, *piece at the top*, and *placement-ready-to-lock* is **unclear**. Root cause is the **#81 dual rendering**: a bright *active* piece at the floating `(row, col)` plus a muted *drop-shadow ghost* at where it would land — two renderings that diverge by a row (the "partial ghost") and read as several ambiguous states. The fix collapses them to a **single free-floating outline**. **Entirely play-app-side** — no StackRabbit, no bank regeneration, no schema change, no new puzzle IDs; it touches `PlacementInput`, `Board`, and adds one shared core helper. Deploy stays manual. To be filed as issues.

@@ -84,7 +84,27 @@ The two extremes of **left/right** piece-movement speed: slowest manual tapping 
 
 ### Tuck / spin
 
-A resting placement reached by sliding a piece **under an overhang** (tuck) or **rotating it into a pocket** (spin) — one a straight hard-drop can't reach, so it rests *lower* than the drop column would allow. As of 2026-06-21 these are **first-class**: the generator enumerates them as combo candidates, StackRabbit values them, a tuck/spin can be the [optimal line](#optimal-line), and the [ghost](#ghost-placement) can place them. They are pure stacking judgment, not [execution](#hz-invariance) — the trainer grants the maneuver and grades only where the piece rests. *Binding invariant:* the generator's enumerated placement set must be a **superset** of what the play-app input can place, or [outcome matching](#combo-threshold-grading) would wrongly reject a legal tuck.
+A resting placement reached by sliding a piece **under an overhang** (tuck) or **rotating it into a pocket** (spin) — one a straight hard-drop can't reach, so it rests *lower* than the drop column would allow. The distinction is **[translation-reachable](#translation-reachable)**: a tuck is reachable by translation (soft-drop + left/right) alone; a spin requires a rotation at depth to fit into a pocket translation can't reach. As of 2026-06-21 these are **first-class**: the generator enumerates them as combo candidates, StackRabbit values them, a tuck/spin can be the [optimal line](#optimal-line), and the [ghost](#ghost-placement) can place them. They are pure stacking judgment, not [execution](#hz-invariance) — the trainer grants the maneuver and grades only where the piece rests. *Binding invariant:* the generator's enumerated placement set must be a **superset** of what the play-app input can place, or [outcome matching](#combo-threshold-grading) would wrongly reject a legal tuck.
+
+### Translation-reachable
+
+A placement that can be reached from the top of the board using only **soft-drop and lateral movement** (no rotation at depth). The [maneuver](#maneuver) classifier uses this to distinguish tucks (translation-reachable but not a hard-drop) from spins (not translation-reachable — requires rotation at depth). A BFS from `(row 0, col, rotation)` with moves {down, left, right} determines reachability; the BFS is in `packages/core/src/tags.ts` (`translationReachable`).
+
+### Maneuver
+
+The BFS-based classifier (`packages/core/src/tags.ts:maneuver()`) that labels a resting placement as **`hard-drop`**, **`tuck`**, or **`spin`**. Decision tree: if the piece can reach its resting row by a straight vertical drop → `hard-drop`; else if [translation-reachable](#translation-reachable) → `tuck`; else → `spin`. Used at generation time to [tag](#puzzle-type-tag) puzzles and to classify combos. NES Tetris has **no wall kicks and no lock delay**, so a "spin" means the piece must rotate at a height where the rotated shape already fits, then settle — there is no SRS-style kick.
+
+### T-spin
+
+A [spin](#tuck--spin) whose piece is **T**. In NES Tetris (no SRS/wall kicks), a T-spin is simply rotating the T piece at depth into a pocket it couldn't reach by translation. T-spins are the **most common spin subtype** because the T's symmetric cross shape fits more pocket geometries than other pieces. Tagged `t-spin` alongside `spin` on puzzles where the optimal combo includes one ([type-tags](#puzzle-type-tag)).
+
+### Puzzle type-tag
+
+A per-puzzle descriptor (since #81/#84/#90) auto-computed from the optimal combo at generation time: what the puzzle *teaches*. Tags span four families: **clear** (`burn`, `tetris`, `tetris-ready`, `dig`), **maneuver** (`tuck`, `spin`, `t-spin`), **stack** (`clean-stacking`, `well-maintenance`), and **avoid** (`avoid-i-dependency`, `avoid-s-dependency`, `avoid-z-dependency`, `avoid-j-dependency`, `avoid-l-dependency`). A puzzle carries zero or more tags; the play app renders them as coloured chips. Tags also power **drill mode** — filtering the bank to practice a specific tag family. The full tag vocabulary and display config lives in `apps/play/src/tags/tagVocab.ts`.
+
+### Avoid-dependency
+
+An [avoid](#puzzle-type-tag) tag applied when the optimal combo's resulting board does **not** create a single-piece dependency that the non-optimal combos do — i.e. the optimal play *avoids* needing a specific piece next. Dependencies checked: **I** (a 1-wide well ≥ 3 deep), **S**, **Z**, **J**, **L** (notches only one of those four pieces can hard-drop to fill cleanly). O and T are excluded from dependency detection (too symmetric / too versatile). The tag reads as "this puzzle rewards recognizing and avoiding a piece dependency." Logic in `packages/core/src/tags.ts` (`findDependencies`, `avoidDependencyTags`).
 
 ### Geometric metrics
 
@@ -104,7 +124,7 @@ The post-attempt animation on the central board (**not** to be confused with [Re
 
 ### Co-rating
 
-Both players and puzzles carry a Glicko-2 rating (rating + deviation + volatility). Solving a higher-rated puzzle raises yours; failing lowers it. "Solved" = the attempt's [combo score](#combo-score) ≥ 95. Puzzle ratings are **seeded from generated [difficulty](#difficulty)** (not flat) and drift toward true difficulty as attempts accumulate. Player ratings persist **live, client-side**, under an [anonymous session](#anonymous-session) (so RLS no longer silently drops the write); puzzle ratings are recomputed **offline in batches** from the attempts log, not written live.
+Both players and puzzles carry a Glicko-2 rating (rating + deviation + volatility). Solving a higher-rated puzzle raises yours; failing lowers it. "Solved" = the attempt's [combo score](#combo-score) ≥ 97 (an [A+](#letter-grade)). Puzzle ratings are **seeded from generated [difficulty](#difficulty)** (not flat) and drift toward true difficulty as attempts accumulate. Player ratings persist **live, client-side**, under an [anonymous session](#anonymous-session) (so RLS no longer silently drops the write); puzzle ratings are recomputed **offline in batches** from the attempts log, not written live.
 
 ### Community-correct percentage
 

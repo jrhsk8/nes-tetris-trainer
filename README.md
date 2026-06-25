@@ -6,8 +6,8 @@ A public, multi-user web app that serves pre-generated **2-ply NES Tetris placem
 
 ## How it works (two decoupled halves)
 
-- **Offline generation** (developer-run): drives a local [StackRabbit](https://github.com/GregoryCannon/StackRabbit) engine via simulated semi-random self-play, snapshots realistic mid-game boards, keeps only **unambiguous** and **Hz-invariant** positions, and writes a finished puzzle bank into Supabase. The engine is never deployed.
-- **Play app** (static React SPA + Supabase): reads the finished bank. Players position a ghost piece to a final resting placement; grading is exact-match on both plies; a Glicko-2 update moves the player's rating; feedback animates the optimal line and shows geometric metric deltas.
+- **Offline generation** (developer-run): drives a local [StackRabbit](https://github.com/GregoryCannon/StackRabbit) engine via simulated semi-random self-play, snapshots realistic mid-game boards, applies quality gates (Hz-invariance, board-health, BetaTetris consensus, deduplication), and writes a finished puzzle bank — including tuck/spin placements and auto-computed type-tags — into Supabase. The engine is never deployed.
+- **Play app** (static React SPA + Supabase): reads the finished bank. Players pilot a free-floating piece outline to a resting placement (including tucks and spins); grading is by combo-score threshold (score ≥ 97 = A+ = correct); a Glicko-2 update moves the player's rating; feedback shows letter grades and a ranked combo list.
 
 ## Stack
 
@@ -21,7 +21,9 @@ A public, multi-user web app that serves pre-generated **2-ply NES Tetris placem
 npm workspaces monorepo:
 
 - `packages/core` (`@trainer/core`) — pure puzzle logic (board model, metrics,
-  checker, rating glue) shared by both halves. No engine, network, or DOM.
+  combo-threshold checker, piece shapes, type-tag classifier) shared by both halves. No engine, network, or DOM.
+- `packages/data` (`@trainer/data`) — Supabase binding: domain + row types, data-access.
+- `packages/rating` (`@trainer/rating`) — Glicko-2 rating wrapper.
 - `apps/play` (`@trainer/play`) — the static React + Vite SPA players use.
 - `generator` (`@trainer/generator`) — the offline Node + TypeScript pipeline.
 

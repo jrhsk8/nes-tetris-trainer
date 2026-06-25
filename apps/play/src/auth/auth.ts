@@ -22,6 +22,12 @@ export interface AuthApi {
   /** The currently signed-in user, or null. */
   currentUser(): Promise<AuthUser | null>;
   /**
+   * Force a guest session: tries Supabase anonymous sign-in first; if that
+   * fails (disabled on the project), creates a local-only guest user and
+   * fires the onChange callback so the app gates open.
+   */
+  continueAsGuest(): Promise<AuthUser>;
+  /**
    * Establish an ANONYMOUS session if none exists, so `auth.uid()` is real and
    * RLS passes for every visitor (#39) — fixing the "rating never changes" bug,
    * where the all-zeros dev-bypass user could not satisfy the per-user insert
@@ -72,10 +78,26 @@ function toAuthUser(user: User | null | undefined): AuthUser | null {
 
 /** Build an {@link AuthApi} over a Supabase client. */
 export function createAuth(client: SupabaseClient): AuthApi {
+  let listeners: Array<(user: AuthUser | null) => void> = [];
+
   return {
     async currentUser() {
       const { data } = await client.auth.getUser();
       return toAuthUser(data.user);
+    },
+
+    async continueAsGuest() {
+      // Try real anonymous sign-in first
+      const { data: anon, error } = await client.auth.signInAnonymously();
+      if (!error && anon.user) return toAuthUser(anon.user)!;
+      // Supabase anonymous sign-ins disabled — create a local-only guest
+      const guest: AuthUser = {
+        id: `guest-${crypto.randomUUID()}`,
+        email: null,
+        isAnonymous: true,
+      };
+      for (const cb of listeners) cb(guest);
+      return guest;
     },
 
     async ensureAnonymousSession() {
@@ -83,8 +105,6 @@ export function createAuth(client: SupabaseClient): AuthApi {
       if (data.user) return toAuthUser(data.user);
       const { data: anon, error } = await client.auth.signInAnonymously();
       if (error) {
-        // Anonymous sign-ins are disabled or unavailable; play falls back to the
-        // sign-in screen rather than crashing. Surfaced for diagnosis.
         console.warn(`anonymous sign-in unavailable: ${error.message}`);
         return null;
       }
@@ -92,10 +112,14 @@ export function createAuth(client: SupabaseClient): AuthApi {
     },
 
     onChange(callback) {
+      listeners.push(callback);
       const { data } = client.auth.onAuthStateChange((_event, session) => {
         callback(toAuthUser(session?.user));
       });
-      return () => data.subscription.unsubscribe();
+      return () => {
+        listeners = listeners.filter((cb) => cb !== callback);
+        data.subscription.unsubscribe();
+      };
     },
 
     async signInWithEmail(email, password) {

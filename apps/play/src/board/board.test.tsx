@@ -320,7 +320,8 @@ describe('PlacementInput', () => {
     render(<PlacementInput board={board} piece="I" onConfirm={onConfirm} />);
 
     await user.click(screen.getByLabelText('placement input'));
-    await user.keyboard('x'); // rotate the I to vertical (rotation 1) at col 3
+    await user.keyboard('x'); // rotate I to vertical (NES offset shifts col +2 → col 5)
+    await user.keyboard('{ArrowLeft}{ArrowLeft}'); // walk back to col 3
     for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop below the ledge
     await user.keyboard('{ArrowRight}'); // slide under the ledge into the pocket
     await user.keyboard('{Enter}');
@@ -480,7 +481,8 @@ describe('PlacementInput', () => {
     render(<PlacementInput board={board} piece="I" onConfirm={onConfirm} />);
 
     await user.click(screen.getByLabelText('placement input'));
-    await user.keyboard('x'); // rotate the I to vertical (rotation 1) at col 3
+    await user.keyboard('x'); // rotate I to vertical (NES offset shifts col +2 → col 5)
+    await user.keyboard('{ArrowLeft}{ArrowLeft}'); // walk back to col 3
     for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // OVERSHOOT to the floor
     for (let i = 0; i < 4; i++) await user.keyboard('{ArrowUp}'); // raise back up to the tuck row
     await user.keyboard('{ArrowLeft}'); // slide under the overhang into the pocket

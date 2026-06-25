@@ -12,6 +12,7 @@ function fakeAuth(): AuthApi {
   return {
     currentUser: vi.fn(async () => null),
     ensureAnonymousSession: vi.fn(async () => null),
+    continueAsGuest: vi.fn(async () => ({ id: 'guest', email: null, isAnonymous: true })),
     onChange: vi.fn(() => () => {}),
     signInWithEmail: vi.fn(async () => {}),
     signUpWithEmail: vi.fn(async () => {}),

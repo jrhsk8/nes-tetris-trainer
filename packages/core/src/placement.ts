@@ -35,6 +35,44 @@ import {
 import { ORIENTATIONS, type Piece } from './pieces.js';
 
 /**
+ * NES rotation offset table. Each piece's rotations live inside a fixed
+ * bounding box in the NES ROM (3×3 for T/J/L, 4×4-ish for I, etc.), and
+ * the box's position stays fixed when the player rotates. Our orientation
+ * tables use **tight** bounding boxes (no empty border rows/cols), so the
+ * tight-bbox top-left shifts relative to the NES origin on some rotations.
+ *
+ * `ROTATION_OFFSETS[piece][rot]` is the `[dRow, dCol]` offset of the tight
+ * bbox's top-left from the NES fixed-box origin for that rotation state.
+ * The delta to apply when rotating from state A to state B is
+ * `offset[B] − offset[A]` (see {@link rotationDelta}).
+ */
+const ROTATION_OFFSETS: Record<Piece, readonly (readonly [number, number])[]> = {
+  O: [[0, 0]],
+  I: [[0, 0], [0, 2]],
+  T: [[0, 0], [0, 1], [1, 0], [0, 0]],
+  S: [[0, 0], [0, 1]],
+  Z: [[0, 0], [0, 1]],
+  J: [[0, 0], [0, 1], [1, 0], [0, 0]],
+  L: [[0, 0], [0, 1], [1, 0], [0, 0]],
+};
+
+/**
+ * The `[dRow, dCol]` to add to the tight-bbox position when rotating
+ * `piece` from `fromRot` to `toRot`, so the NES fixed-box origin stays
+ * fixed (the piece spins in place rather than shifting).
+ */
+export function rotationDelta(
+  piece: Piece,
+  fromRot: number,
+  toRot: number,
+): [number, number] {
+  const offsets = ROTATION_OFFSETS[piece];
+  const from = offsets[fromRot];
+  const to = offsets[toRot];
+  return [to[0] - from[0], to[1] - from[1]];
+}
+
+/**
  * A resting placement that can express any collision-reachable position — a
  * hard drop, a tuck, or a spin. Unlike the hard-drop-only {@link Placement} it
  * pins the full board offset of the piece's (normalized) bounding box: its
@@ -160,8 +198,17 @@ export function reachableStates(grid: Grid, piece: Piece): RestingPlacement[] {
     visit(rotation, row, col + 1);
     visit(rotation, row + 1, col);
     if (rotations > 1) {
-      visit(normRotation(piece, rotation + 1), row, col);
-      visit(normRotation(piece, rotation - 1), row, col);
+      const cw = normRotation(piece, rotation + 1);
+      const ccw = normRotation(piece, rotation - 1);
+      // NES rotation: piece rotates inside a fixed bounding box, so the
+      // tight-bbox position shifts by the rotation offset.
+      const [cwDr, cwDc] = rotationDelta(piece, rotation, cw);
+      const [ccwDr, ccwDc] = rotationDelta(piece, rotation, ccw);
+      visit(cw, row + cwDr, col + cwDc);
+      visit(ccw, row + ccwDr, col + ccwDc);
+      // Also visit the same-position rotation (backwards compat superset).
+      visit(cw, row, col);
+      visit(ccw, row, col);
     }
   }
   return queue;
@@ -235,21 +282,19 @@ function nearestReachableState(
 }
 
 /**
- * Rotate `piece` in place by `dir` (`'cw'` / `'ccw'`) at the **fixed column**,
- * snapping to the {@link reachableStates} candidate at the new rotation nearest
- * the current `row` — preferring at-or-below, riding **up** only when forced (a
- * piece resting on the floor/stack where the rotated shape does not fit in
- * place). The rotational twin of the tuck-seeking lateral rule (#88): it shares
- * {@link nearestReachableState} with {@link moveToColumn}.
+ * Rotate `piece` by `dir` (`'cw'` / `'ccw'`), applying the NES rotation
+ * offset ({@link rotationDelta}) so the piece spins inside its fixed NES
+ * bounding box. Snaps to the {@link reachableStates} candidate at the new
+ * rotation and offset-adjusted column nearest the current `row` — preferring
+ * at-or-below, riding **up** only when forced.
  *
  * NES Tetris has no SRS / wall-or-floor kicks — every real spin works by
  * rotating at a height where the rotated shape already fits, then settling.
  * Because candidates come from {@link reachableStates}, every returned state is
- * one the generator enumerated (the superset/soundness invariant), and the
- * column never shifts (an offset-pocket spin is a spin-then-shift).
+ * one the generator enumerated (the superset/soundness invariant).
  *
  * Returns `null` when `piece` has ≤1 orientation, or no reachable state exists
- * at the new rotation in this column.
+ * at the new rotation in the target column.
  *
  * `reachable` defaults to {@link reachableStates}`(grid, piece)`; callers that
  * already hold the set pass it in to skip recomputing the BFS per press.
@@ -266,7 +311,8 @@ export function spin(
   const rotations = ORIENTATIONS[piece].length;
   if (rotations <= 1) return null;
   const next = normRotation(piece, rotation + (dir === 'cw' ? 1 : -1));
-  return nearestReachableState(reachable, next, col, row);
+  const [dr, dc] = rotationDelta(piece, rotation, next);
+  return nearestReachableState(reachable, next, col + dc, row + dr);
 }
 
 /**

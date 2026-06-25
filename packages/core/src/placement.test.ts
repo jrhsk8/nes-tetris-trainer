@@ -13,6 +13,7 @@ import {
   lateralMove,
   moveToColumn,
   spin,
+  rotationDelta,
   boardKey,
   resolveLineByOutcome,
   ORIENTATIONS,
@@ -66,6 +67,12 @@ function inputReachableStates(grid: Grid, piece: Piece): Set<number> {
     if (rotations > 1) {
       const cw = (rotation + 1) % rotations;
       const ccw = (rotation - 1 + rotations) % rotations;
+      // NES offset rotation (piece rotates inside a fixed bounding box)
+      const [cwDr, cwDc] = rotationDelta(piece, rotation, cw);
+      const [ccwDr, ccwDc] = rotationDelta(piece, rotation, ccw);
+      if (canReach(cw, row + cwDr, col + cwDc)) seed({ rotation: cw, row: row + cwDr, col: col + cwDc });
+      if (canReach(ccw, row + ccwDr, col + ccwDc)) seed({ rotation: ccw, row: row + ccwDr, col: col + ccwDc });
+      // Same-position rotation (backwards compat superset)
       if (canReach(cw, row, col)) seed({ rotation: cw, row, col });
       if (canReach(ccw, row, col)) seed({ rotation: ccw, row, col });
     }
@@ -323,7 +330,9 @@ describe('spin (rotational twin of tuck-seeking lateral #88)', () => {
     expect(flat).toBeDefined();
     const spun = spin(grid, 'T', flat!.rotation, flat!.row, flat!.col, 'cw', reachable);
     expect(spun).not.toBeNull();
-    expect(spun!.col).toBe(4); // column never shifts
+    const nextRot = (flat!.rotation + 1) % ORIENTATIONS.T.length;
+    const [, dc] = rotationDelta('T', flat!.rotation, nextRot);
+    expect(spun!.col).toBe(4 + dc); // NES offset shifts column
     expect(spun!.rotation).not.toBe(flat!.rotation); // rotation actually changed
     // Reachable member (superset invariant).
     expect(
@@ -341,7 +350,7 @@ describe('spin (rotational twin of tuck-seeking lateral #88)', () => {
     // reachable state at the new rotation at-or-below row 2 should have row >= 2.
     const spun = spin(grid, 'T', 0, 2, 4, 'cw', reachable);
     expect(spun).not.toBeNull();
-    expect(spun!.col).toBe(4);
+    expect(spun!.col).toBe(5); // NES offset: T rot 0→1 shifts col +1
     expect(spun!.row).toBeGreaterThanOrEqual(2); // at-or-below preferred
   });
 
@@ -372,7 +381,6 @@ describe('spin (rotational twin of tuck-seeking lateral #88)', () => {
           for (const dir of ['cw', 'ccw'] as const) {
             const next = spin(grid, piece, s.rotation, s.row, s.col, dir, states);
             if (next === null) continue;
-            expect(next.col, `${piece} ${JSON.stringify(s)} ${dir}`).toBe(s.col); // never shifts column
             expect(
               set.has(key(next.rotation, next.row, next.col)),
               `${piece} ${JSON.stringify(s)} ${dir} -> ${JSON.stringify(next)} not reachable`,

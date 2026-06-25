@@ -37,6 +37,7 @@ export {
   moveToColumn,
   lateralMove,
   spin,
+  rotationDelta,
   boardKey,
   resolveLineByOutcome,
 } from './placement.js';
@@ -65,6 +66,7 @@ export {
   WELL_DEPTH,
   singlePieceDependencies,
   AVOID_DEPENDENCY_TAG,
+  SPIN_TAG,
   I_WELL_MIN_DEPTH,
   TRAP_BAND_MIN,
   TRAP_BAND_MAX,

@@ -119,6 +119,21 @@ export function SignIn({ auth, link = false }: SignInProps) {
         </button>
       </div>
 
+      {link ? null : (
+        <button
+          type="button"
+          className="guest-btn"
+          onClick={() => {
+            setError(null);
+            void auth.continueAsGuest().catch((e) => {
+              setError(e instanceof Error ? e.message : 'Could not start guest session');
+            });
+          }}
+        >
+          Continue as guest
+        </button>
+      )}
+
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
     </section>

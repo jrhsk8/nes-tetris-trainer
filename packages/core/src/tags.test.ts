@@ -9,6 +9,7 @@ import {
   tagPuzzle,
   singlePieceDependencies,
   AVOID_DEPENDENCY_TAG,
+  SPIN_TAG,
   TRAP_BAND_MIN,
   TRAP_BAND_MAX,
   ROWS,
@@ -135,7 +136,18 @@ describe('tagPuzzle (#81)', () => {
     expect(restingLineForEntry(start, 'T', 'O', entry)).not.toBeNull();
     const tags = tagPuzzle(start, 'T', 'O', entry);
     expect(tags).toContain('spin');
+    expect(tags).toContain('t-spin'); // per-piece spin tag
     expect(tags).not.toContain('tuck');
+  });
+
+  it('SPIN_TAG maps each spinnable piece to its <piece>-spin tag', () => {
+    expect(SPIN_TAG.T).toBe('t-spin');
+    expect(SPIN_TAG.S).toBe('s-spin');
+    expect(SPIN_TAG.Z).toBe('z-spin');
+    expect(SPIN_TAG.L).toBe('l-spin');
+    expect(SPIN_TAG.J).toBe('j-spin');
+    expect(SPIN_TAG.O).toBeNull(); // O cannot rotate
+    expect(SPIN_TAG.I).toBeNull(); // not a meaningful spin piece
   });
 
   it('well-maintenance: a single open well is kept open', () => {
