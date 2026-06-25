@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { emptyBoard, encodeBoard, type Line } from '@trainer/core';
+import {
+  applyRestingPlacement,
+  boardKey,
+  decodeBoard,
+  emptyBoard,
+  encodeBoard,
+  type ComboTable,
+  type Line,
+} from '@trainer/core';
 import {
   consensusKeys,
   filterByConsensus,
@@ -33,6 +41,34 @@ describe('consensus keys', () => {
     // A different first placement lands a different piece-1 outcome.
     expect(consensusKeys(puzzle('p2', LINE_B)).p1Key).not.toBe(a.p1Key);
   });
+
+  it('keys off the combo boardKey for a spin, not a hard-drop of the line', () => {
+    // A forced T-spin-double board: O fills cols 0–1, T spins into the slot under
+    // the roof at (17,5). The stored optimalLine is {rot,col} only, so hard-dropping
+    // the T mis-places it — the real outcome is the combo entry's boardKey.
+    const board0 = decodeBoard(
+      [...Array<string>(17).fill('0000000000'), '0010011111', '1110001111', '1111011111'].join(''),
+    );
+    const afterO = applyRestingPlacement(board0, 'O', { rotation: 0, row: 16, col: 0 });
+    const spinOutcome = boardKey(applyRestingPlacement(afterO, 'T', { rotation: 2, row: 18, col: 3 }));
+
+    const combos: ComboTable = {
+      entries: [{ rot1: 0, col1: 0, rot2: 2, col2: 3, score: 100, boardKey: spinOutcome }],
+      total: 1,
+    };
+    const base = {
+      id: 'spin',
+      board: encodeBoard(board0),
+      piece1: 'O',
+      piece2: 'T',
+      optimalLine: [{ rotation: 0, col: 0 }, { rotation: 2, col: 3 }] as Line,
+    };
+
+    // with the combo table: fullKey is the true spin outcome
+    expect(consensusKeys({ ...base, combos }).fullKey).toBe(spinOutcome);
+    // without it (legacy fallback): hard-dropping the T lands a DIFFERENT board
+    expect(consensusKeys(base).fullKey).not.toBe(spinOutcome);
+  });
 });
 
 describe('filterByConsensus', () => {
@@ -42,7 +78,7 @@ describe('filterByConsensus', () => {
     const judge: ConsensusJudge = async (rows) =>
       rows.map<ConsensusVerdict>((r) => {
         const keep = r.number !== 2;
-        return { number: r.number, id: r.id, keep, reason: keep ? null : 'disagree', rank: keep ? 1 : 2 };
+        return { number: r.number, id: r.id, keep, reason: keep ? null : 'disagree', rank: keep ? 1 : 2, p2_agree: keep ? 7 : null, p2_of: keep ? 7 : null };
       });
 
     const result = await filterByConsensus(puzzles, judge);
@@ -62,6 +98,8 @@ describe('filterByConsensus', () => {
         keep: false,
         reason: r.number === 1 ? 'bt-error' : 'disagree',
         rank: null,
+        p2_agree: null,
+        p2_of: null,
       }));
 
     const result = await filterByConsensus(puzzles, judge);
@@ -75,7 +113,7 @@ describe('filterByConsensus', () => {
     const puzzles = [puzzle('1', LINE_A), puzzle('2', LINE_B)];
     // Judge only returns a verdict for the first row.
     const judge: ConsensusJudge = async (rows) => [
-      { number: rows[0].number, id: rows[0].id, keep: true, reason: null, rank: 1 },
+      { number: rows[0].number, id: rows[0].id, keep: true, reason: null, rank: 1, p2_agree: 7, p2_of: 7 },
     ];
 
     const result = await filterByConsensus(puzzles, judge);
@@ -90,7 +128,7 @@ describe('filterByConsensus', () => {
     let seen: string | undefined;
     const judge: ConsensusJudge = async (rows) => {
       seen = rows[0].p1_key;
-      return rows.map((r) => ({ number: r.number, id: r.id, keep: true, reason: null, rank: 1 }));
+      return rows.map((r) => ({ number: r.number, id: r.id, keep: true, reason: null, rank: 1, p2_agree: 7, p2_of: 7 }));
     };
     await filterByConsensus(puzzles, judge);
     expect(seen).toBe(consensusKeys(puzzles[0]).p1Key);

@@ -64,9 +64,11 @@ def fresh(board0_str, p1, p2, lines):
     g.Reset(p1, p2, lines=lines, board=our_to_board(board0_str), adj_delay=18, aggression_level=0)
     return g
 
+DEVICE = 'cpu'
+
 def policy_logits(model, g):
     with torch.no_grad():
-        pi, _v = model(obs_to_torch(g.GetState()))
+        pi, _v = model(obs_to_torch(g.GetState(), DEVICE))
     return pi[0].cpu().numpy()  # shape [800]; invalid actions are -inf
 
 def decode(a):
@@ -103,6 +105,70 @@ def piece1_outcome_distribution(model, board0_str, p1, p2, lines):
         key = board_to_key(g2.GetBoard())
         dist[key] = dist.get(key, 0.0) + float(prob)
     return dist, inject_ok
+
+def piece1_top1_actions(model, board0_str, p1, p2, lines):
+    """Return (premove, action, inject_ok) for BT's top-1 piece-1 placement.
+
+    premove is None when the top-1 is not a pre-adjustment move; otherwise it is
+    the (r, x, y) pre-adjustment action applied before the final locking action.
+    Same two-phase cadence as piece1_outcome_distribution."""
+    g = fresh(board0_str, p1, p2, lines)
+    inject_ok = (board_to_key(g.GetBoard()) == board0_str)
+    logits = policy_logits(model, g)
+    finite = [a for a in range(logits.shape[0]) if np.isfinite(logits[a])]
+    best = max(finite, key=lambda a: logits[a])
+    premove = decode(best) if g.IsAdjMove(*decode(best)) else None
+    if premove is not None:
+        g.InputPlacement(*premove)
+        logits = policy_logits(model, g)
+        finite = [a for a in range(logits.shape[0]) if np.isfinite(logits[a])]
+        best = max(finite, key=lambda a: logits[a])
+    return premove, decode(best), inject_ok
+
+
+def piece2_outcome_distribution(model, board0_str, p1, p2, p3_id, lines,
+                                p1_premove, p1_action):
+    """Map each distinct after-both-pieces outcome key -> total policy mass.
+
+    Places piece 1 using p1_premove/p1_action (from piece1_top1_actions), sets
+    p3_id (0–6) as the next piece, then reads BT's piece-2 policy with the same
+    pre-adj/adj cadence as piece1_outcome_distribution.
+    Returns (dist, topped) — dist = {outcome_key: mass}, topped = True if the
+    game ended after piece 1 (no piece-2 policy available)."""
+    g = fresh(board0_str, p1, p2, lines)
+    if p1_premove is not None:
+        g.InputPlacement(*p1_premove)
+    g.InputPlacement(*p1_action)
+    if g.IsOver():
+        return {}, True
+    g.SetNextPiece(p3_id)
+    logits = policy_logits(model, g)
+    finite = [a for a in range(logits.shape[0]) if np.isfinite(logits[a])]
+    if not finite:
+        return {}, True
+    best = max(finite, key=lambda a: logits[a])
+    p2_premove = decode(best) if g.IsAdjMove(*decode(best)) else None
+    if p2_premove is not None:
+        g.InputPlacement(*p2_premove)
+        logits = policy_logits(model, g)
+        finite = [a for a in range(logits.shape[0]) if np.isfinite(logits[a])]
+    lv = np.array([logits[a] for a in finite], dtype=np.float64)
+    lv -= lv.max()
+    p = np.exp(lv); p /= p.sum()
+    dist = {}
+    for a, prob in zip(finite, p):
+        g2 = fresh(board0_str, p1, p2, lines)
+        if p1_premove is not None:
+            g2.InputPlacement(*p1_premove)
+        g2.InputPlacement(*p1_action)
+        g2.SetNextPiece(p3_id)
+        if p2_premove is not None:
+            g2.InputPlacement(*p2_premove)
+        g2.InputPlacement(*decode(a))
+        key = board_to_key(g2.GetBoard())
+        dist[key] = dist.get(key, 0.0) + float(prob)
+    return dist, False
+
 
 def rank_of(dist, key):
     """1-indexed rank of `key` by descending policy mass; None if unreachable."""

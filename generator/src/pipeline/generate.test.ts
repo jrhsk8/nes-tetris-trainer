@@ -241,6 +241,7 @@ function holeyCandidate(): Candidate {
     if (row + 1 < 20) board[row + 1][0] = 0; // ...with gaps below → holes
     board[row][2] = 1;
   }
+  board[19][9] = 1; // one extra floor cell → even cell count (a legal, if holey, board)
   return { ...sampleCandidate(), board };
 }
 
@@ -323,6 +324,18 @@ describe('assemblePuzzle combo pipeline (#40)', () => {
     const result = await assemblePuzzle(comboEngine(), tallCandidate());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('start-too-tall');
+  });
+
+  it('rejects a malformed start board with an odd cell count (a clipped piece)', async () => {
+    // 3 filled cells is impossible from whole tetrominoes (4 cells) and line
+    // clears (10) — the signature of a piece adopted clipped above the field.
+    const board: Grid = emptyBoard();
+    board[19][0] = 1;
+    board[19][1] = 1;
+    board[19][2] = 1;
+    const result = await assemblePuzzle(comboEngine(), { ...sampleCandidate(), board });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('malformed-board');
   });
 
   it('confirms the eval-only optimal when a deeper search agrees (#53)', async () => {
@@ -559,7 +572,7 @@ describe('generateBank (deterministic)', () => {
     const judge: ConsensusJudge = async (rows) =>
       rows.map<ConsensusVerdict>((r) => {
         const keep = r.piece1 !== 'I';
-        return { number: r.number, id: r.id, keep, reason: keep ? null : 'disagree', rank: keep ? 1 : 2 };
+        return { number: r.number, id: r.id, keep, reason: keep ? null : 'disagree', rank: keep ? 1 : 2, p2_agree: keep ? 7 : null, p2_of: keep ? 7 : null };
       });
 
     const result = await generateBank(
@@ -597,6 +610,8 @@ describe('generateBank (deterministic)', () => {
         keep: false,
         reason: 'bt-error',
         rank: null,
+        p2_agree: null,
+        p2_of: null,
       }));
 
     const result = await generateBank(

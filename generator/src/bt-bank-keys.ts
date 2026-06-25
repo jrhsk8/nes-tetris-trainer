@@ -15,6 +15,13 @@
  *   npx tsx generator/src/bt-bank-keys.ts
  */
 
+// `ws` ships no bundled type declarations in this repo (no @types/ws); it is a
+// runtime-only polyfill so Node's WebSocket-less env can open the Supabase realtime
+// socket. Suppress the missing-types error rather than add a dev dependency.
+// @ts-expect-error - ws has no type declarations here
+import ws from 'ws';
+Object.assign(globalThis, { WebSocket: globalThis.WebSocket ?? ws });
+
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyPlacement, boardKey, decodeBoard, type Line } from '@trainer/core';
@@ -33,6 +40,7 @@ interface BankKeyRow {
   full_key: string;
   accept_count: number | null;
   margin: number | null;
+  tags: string[];
 }
 
 async function main(): Promise<void> {
@@ -42,17 +50,22 @@ async function main(): Promise<void> {
   const outDir = process.env.BT_OUT ?? process.env.BT_HOME ?? '.';
 
   const client = createSupabaseClient(supabaseUrl, serviceKey);
-  const { data, error } = await client
-    .from('puzzles')
-    .select('id, number, board, piece1, piece2, optimal_line, accept_count, margin')
-    .order('number', { ascending: true });
-  if (error) throw new Error(error.message);
-  const rows = (data ?? []) as Array<
-    Pick<
-      PuzzleRow,
-      'id' | 'number' | 'board' | 'piece1' | 'piece2' | 'optimal_line' | 'accept_count' | 'margin'
-    >
-  >;
+  // Paginate past Supabase's 1000-row response cap (the bank is now > 1000).
+  type Row = Pick<
+    PuzzleRow,
+    'id' | 'number' | 'board' | 'piece1' | 'piece2' | 'optimal_line' | 'accept_count' | 'margin'
+  > & { tags: string[] | null };
+  const rows: Row[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await client
+      .from('puzzles')
+      .select('id, number, board, piece1, piece2, optimal_line, accept_count, margin, tags')
+      .order('number', { ascending: true })
+      .range(from, from + 999);
+    if (error) throw new Error(error.message);
+    rows.push(...((data ?? []) as Row[]));
+    if (!data || data.length < 1000) break;
+  }
 
   const out: BankKeyRow[] = [];
   let failed = 0;
@@ -72,6 +85,7 @@ async function main(): Promise<void> {
         full_key: boardKey(afterP2),
         accept_count: r.accept_count ?? null,
         margin: r.margin ?? null,
+        tags: r.tags ?? [],
       });
     } catch (e) {
       failed += 1;

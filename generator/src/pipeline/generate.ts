@@ -198,6 +198,17 @@ export async function assemblePuzzle(
 ): Promise<AssemblyResult> {
   const { board, currentPiece, nextPiece, level, lines } = candidate;
 
+  // 0. Legality guard. A board reachable by legal NES play has an EVEN cell count:
+  //    every tetromino is 4 cells and every line clear removes 10 — both even. An
+  //    ODD cell count is impossible; it means a piece was adopted resting partly
+  //    ABOVE the field (clipped at top-out), the signature of the tuck/spin parity
+  //    bug. Reject such a board0 before any engine work, as a backstop to the
+  //    buildBoard fix that stops producing them.
+  const filledCells = board.reduce((n, row) => n + row.reduce((a, c) => a + (c ? 1 : 0), 0), 0);
+  if (filledCells % 2 !== 0) {
+    return { ok: false, reason: 'malformed-board' };
+  }
+
   // 1. Cheap geometric pre-filter: drop obvious garbage before any engine call.
   //    Accept up to the looser variety-lane bounds when that lane is enabled
   //    (#66); the strict/variety split + cap is applied in generateBank.

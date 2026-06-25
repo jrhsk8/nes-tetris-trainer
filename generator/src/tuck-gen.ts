@@ -27,6 +27,7 @@ import {
   COLS,
   ORIENTATIONS,
   applyPlacement,
+  clearFullRows,
   cloneBoard,
   emptyBoard,
   emptyColorGrid,
@@ -60,6 +61,11 @@ const LINES = 0;
 
 function randomPiece(): Piece {
   return PIECES[Math.floor(Math.random() * PIECES.length)];
+}
+
+/** Count of filled cells on a board (used to detect a clipped/top-out step). */
+function cellCount(board: Grid): number {
+  return board.reduce((n, row) => n + row.reduce((a, c) => a + (c ? 1 : 0), 0), 0);
 }
 
 function enumerateLegalMoves(board: Grid, piece: Piece): Placement[] {
@@ -104,15 +110,26 @@ async function buildBoard(engine: StackRabbitClient): Promise<Grid> {
         });
         if (move) {
           const placement = toHardDropPlacement(board, current, move.board);
+          let nextBoard: Grid;
           if (placement) {
             try {
-              board = applyPlacement(board, current, placement);
+              nextBoard = applyPlacement(board, current, placement);
             } catch {
-              board = move.board;
+              nextBoard = clearFullRows(move.board);
             }
           } else {
-            board = move.board;
+            // Adopting the engine's board directly (the tuck-aware path) — but
+            // sanitize it: clear any full rows it left, and verify the step is
+            // legal. On a near-topped board the engine can return a placement
+            // resting partly ABOVE the field (clipped), adding fewer than 4
+            // cells — an illegal, odd-parity board. A legal step changes the
+            // cell count by exactly +4 minus 10 per cleared line; if it doesn't,
+            // the board topped out — stop and keep the last legal board so a
+            // malformed start is never produced (the tuck/spin parity bug).
+            nextBoard = clearFullRows(move.board);
           }
+          if ((cellCount(nextBoard) - cellCount(board) - 4) % 10 !== 0) break;
+          board = nextBoard;
           continue;
         }
       } catch {

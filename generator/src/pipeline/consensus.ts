@@ -30,7 +30,16 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { applyPlacement, boardKey, decodeBoard, type Line } from '@trainer/core';
+import {
+  applyPlacement,
+  applyRestingPlacement,
+  boardKey,
+  decodeBoard,
+  restingLineForEntry,
+  type ComboTable,
+  type Line,
+  type Piece,
+} from '@trainer/core';
 
 /** The minimum a puzzle must expose to be consensus-checked. */
 export interface ConsensusPuzzle {
@@ -43,11 +52,34 @@ export interface ConsensusPuzzle {
   piece2: string;
   /** The stored optimal two-placement line (rank-1 combo). */
   optimalLine: Line;
+  /**
+   * The stored combo table. Its rank-1 entry's `boardKey` is the AUTHORITATIVE
+   * optimal outcome — needed because `optimalLine` is `{rotation,col}` with no
+   * row, so applying it hard-drops, which is the WRONG board for a tuck/spin.
+   */
+  combos?: ComboTable | null;
 }
 
-/** Outcome keys after the stored optimal's piece-1 (and both) placements. */
+/**
+ * Outcome keys after the stored optimal's piece-1 (and both) placements.
+ *
+ * The stored `optimalLine` omits the resting row, so hard-dropping it mis-places
+ * a tuck/spin (it lands on the surface instead of in its pocket) — the board the
+ * play app actually grades against is the rank-1 combo's `boardKey`. So when a
+ * combo table is present we reconstruct the true resting line from it (which
+ * recovers the maneuver's row via the `boardKey`) and key off that; otherwise we
+ * fall back to hard-dropping the line (correct for legacy hard-drop optimals).
+ */
 export function consensusKeys(p: ConsensusPuzzle): { p1Key: string; fullKey: string } {
   const board0 = decodeBoard(p.board);
+  const entry = p.combos?.entries?.[0];
+  if (entry?.boardKey) {
+    const line = restingLineForEntry(board0, p.piece1 as Piece, p.piece2 as Piece, entry);
+    if (line) {
+      const afterP1 = applyRestingPlacement(board0, p.piece1 as Piece, line.p1);
+      return { p1Key: boardKey(afterP1), fullKey: entry.boardKey };
+    }
+  }
   const afterP1 = applyPlacement(board0, p.piece1 as never, p.optimalLine[0]);
   const afterP2 = applyPlacement(afterP1, p.piece2 as never, p.optimalLine[1]);
   return { p1Key: boardKey(afterP1), fullKey: boardKey(afterP2) };
@@ -68,6 +100,7 @@ export interface ConsensusKeyRow {
 /** Why a puzzle was dropped (or `null` when kept). `bt-error` is machinery failure. */
 export type ConsensusReason =
   | 'disagree'
+  | 'disagree-p2'
   | 'unreachable'
   | 'odd-parity'
   | 'inject-mismatch'
@@ -79,8 +112,12 @@ export interface ConsensusVerdict {
   id: string | null;
   keep: boolean;
   reason: ConsensusReason | null;
-  /** 1-indexed rank of our optimal in the net's policy, or `null` if unreachable. */
+  /** 1-indexed rank of our optimal in the net's piece-1 policy, or `null` if unreachable. */
   rank: number | null;
+  /** How many of 7 possible p3 values had BT's top-1 piece-2 match our full outcome. */
+  p2_agree: number | null;
+  /** Total p3 values checked (always 7 when piece-2 was evaluated). */
+  p2_of: number | null;
 }
 
 /**
@@ -141,7 +178,7 @@ export async function filterByConsensus<T extends ConsensusPuzzle>(
     if (!v) {
       dropped.push({ puzzle: puzzles[i], reason: 'bt-error' });
       btErrors++;
-      out.push({ number: rows[i].number, id: rows[i].id, keep: false, reason: 'bt-error', rank: null });
+      out.push({ number: rows[i].number, id: rows[i].id, keep: false, reason: 'bt-error', rank: null, p2_agree: null, p2_of: null });
       continue;
     }
     out.push(v);
