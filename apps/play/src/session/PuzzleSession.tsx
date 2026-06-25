@@ -22,17 +22,14 @@ import {
   applyPlacementColored,
   decodeBoard,
   decodeColors,
-  gradeCombo,
-  comboOutcomeKey,
   PIECE_GROUP,
   ROWS,
   COLS,
   type ColorGrid,
-  type Line,
   type Placement,
 } from '@trainer/core';
-import type { DataAccess, Glicko, Puzzle } from '@trainer/data';
-import { applyAttempt, seedRating, updateRatings, attemptOutcome } from '@trainer/rating';
+import type { DataAccess, Puzzle } from '@trainer/data';
+import { recordAttempt, type AttemptResult, type RecordAttemptDb } from './record-attempt.js';
 import { PlacementInput } from '../board/PlacementInput.js';
 import { NextPieceBox } from '../board/NextPieceBox.js';
 import { DEFAULT_BINDINGS, type KeyBindings } from '../board/keybindings.js';
@@ -40,24 +37,20 @@ import { Feedback, StarRating } from '../feedback/index.js';
 import { Curation, CurationAnalytics } from '../curation/index.js';
 import { PlayScreen } from './PlayScreen.js';
 import { PuzzleTitle } from './PuzzleTitle.js';
-import { TagChips } from '../tags/TagChips.js';
 
-/** The persistence the session needs (rating read/write + attempt insert + curation). */
-export type SessionDb = Pick<
-  DataAccess,
-  | 'getUserRating'
-  | 'upsertUserRating'
-  | 'insertAttempt'
-  | 'getPuzzleSolveStats'
-  | 'upsertStarRating'
-  | 'getMyStarRating'
-  | 'getStarStats'
-  | 'isAdmin'
-  | 'flagPuzzle'
-  | 'cullPuzzle'
-  | 'setPuzzleActive'
-  | 'getCurationTagStats'
->;
+/** The persistence the session needs (attempt recording + stars + curation). */
+export type SessionDb = RecordAttemptDb &
+  Pick<
+    DataAccess,
+    | 'upsertStarRating'
+    | 'getMyStarRating'
+    | 'getStarStats'
+    | 'isAdmin'
+    | 'flagPuzzle'
+    | 'cullPuzzle'
+    | 'setPuzzleActive'
+    | 'getCurationTagStats'
+  >;
 
 export interface PuzzleSessionProps {
   puzzle: Puzzle;
@@ -80,19 +73,8 @@ export interface PuzzleSessionProps {
   drill?: boolean;
 }
 
-interface RatingChange {
-  before: Glicko;
-  after: Glicko;
-  delta: number;
-}
-
-interface SessionResult {
-  solved: boolean;
-  /** The rating change to show; `null` in drill mode (#85) — unrated practice. */
-  rating: RatingChange | null;
+interface SessionResult extends AttemptResult {
   userLine: readonly Placement[];
-  /** Live community solve stats (#79); null if the fetch failed. */
-  solveStats: { total: number; solved: number } | null;
 }
 
 type Phase = 'place1' | 'place2' | 'grading' | 'done';
@@ -133,64 +115,14 @@ export function PuzzleSession({
     [colors0, board0, puzzle.piece1, placement1],
   );
 
-  const finish = useCallback(
-    async (userLine: Placement[], solved: boolean, score: number | null) => {
+  const finishAttempt = useCallback(
+    async (userLine: Placement[]) => {
       setPhase('grading');
-      // Drill mode (#85): unrated practice — grade + feedback as usual, but never
-      // touch the rating and never write an `attempts` row (so per-type stats
-      // stay rated-mainline-only). The attempt is ephemeral.
-      if (drill) {
-        let drillStats: { total: number; solved: number } | null = null;
-        try {
-          drillStats = await db.getPuzzleSolveStats(puzzle.id);
-        } catch (err) {
-          console.error('solve-stats fetch failed:', err);
-        }
-        setResult({ solved, rating: null, userLine, solveStats: drillStats });
-        setPhase('done');
-        return;
-      }
-      // Graded reward (#51): the rating moves by answer quality, not pass/fail.
-      // An unranked combo (score null) falls back to the binary solved signal.
-      const outcome = attemptOutcome(score, solved);
-      let rating: RatingChange;
-      try {
-        const applied = await applyAttempt(db, userId, puzzle.glicko, outcome);
-        await db.insertAttempt({
-          userId,
-          puzzleId: puzzle.id,
-          userLine,
-          solved,
-          score,
-          ratingAfter: applied.after.rating,
-        });
-        rating = { before: applied.before, after: applied.after, delta: applied.delta };
-      } catch (err) {
-        // A real persistence failure (e.g. anonymous sign-ins disabled so RLS
-        // drops the write, #39) used to be silently swallowed here, hiding the
-        // "rating never changes" bug. Surface it for diagnosis, then still show
-        // the computed rating change so the loop stays playable.
-        console.error('attempt/rating persistence failed:', err);
-        const update = updateRatings(seedRating(), puzzle.glicko, outcome);
-        rating = {
-          before: seedRating(),
-          after: update.user,
-          delta: update.user.rating - seedRating().rating,
-        };
-      }
-      // Live community-correct-% (#79): read AFTER recording the attempt so the
-      // player's own just-finished attempt is counted. Best-effort — a stats
-      // hiccup just hides the line, never blocks the results.
-      let solveStats: { total: number; solved: number } | null = null;
-      try {
-        solveStats = await db.getPuzzleSolveStats(puzzle.id);
-      } catch (err) {
-        console.error('solve-stats fetch failed:', err);
-      }
-      setResult({ solved, rating, userLine, solveStats });
+      const result = await recordAttempt(db, userId, puzzle, board0, userLine, drill);
+      setResult({ ...result, userLine });
       setPhase('done');
     },
-    [db, userId, puzzle.glicko, puzzle.id, drill],
+    [db, userId, puzzle, board0, drill],
   );
 
   // The left rail carries the rating plus the dev curation controls (#72). The
@@ -214,17 +146,9 @@ export function PuzzleSession({
 
   const onConfirm2 = useCallback(
     (p2: Placement) => {
-      const line: Line = [placement1!, p2];
-      // Grade by the attempt's resulting-board key (#42): the combo is matched
-      // by where the pieces rest, not by the (rotation, col) tuple.
-      const graded = gradeCombo(
-        puzzle.combos,
-        line,
-        comboOutcomeKey(board0, puzzle.piece1, puzzle.piece2, line),
-      );
-      void finish([placement1!, p2], graded.correct, graded.score);
+      void finishAttempt([placement1!, p2]);
     },
-    [placement1, puzzle.combos, board0, puzzle.piece1, puzzle.piece2, finish],
+    [placement1, finishAttempt],
   );
 
   if (phase === 'place1') {
@@ -232,7 +156,6 @@ export function PuzzleSession({
       <PlayScreen leftFlank={flank}>
         <div className="play-center" data-testid="board-center">
           <PuzzleTitle number={puzzle.number} />
-          <TagChips tags={puzzle.tags} />
           <p className="play-instruction">
             Place the <strong>{puzzle.piece1}</strong>.
           </p>
@@ -256,7 +179,6 @@ export function PuzzleSession({
       <PlayScreen leftFlank={flank}>
         <div className="play-center" data-testid="board-center">
           <PuzzleTitle number={puzzle.number} />
-          <TagChips tags={puzzle.tags} />
           <p className="play-instruction">
             Place the <strong>{puzzle.piece2}</strong>. <em>(no next piece)</em>
           </p>

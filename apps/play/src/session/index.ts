@@ -5,5 +5,7 @@
 
 export { PuzzleSession } from './PuzzleSession.js';
 export type { PuzzleSessionProps, SessionDb } from './PuzzleSession.js';
+export { recordAttempt } from './record-attempt.js';
+export type { RecordAttemptDb, AttemptResult } from './record-attempt.js';
 export { PuzzlePlay } from './PuzzlePlay.js';
 export type { PuzzlePlayProps, PlayDb } from './PuzzlePlay.js';

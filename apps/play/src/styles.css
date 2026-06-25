@@ -394,14 +394,17 @@ h2 {
   #root {
     padding: 8px;
   }
+  /* Let the play view grow and the page scroll when a phone is too short to fit
+     the board + feedback rail in one screen (#83-followup): the old fixed
+     `height: 100dvh; overflow: hidden` trapped the result panel and the
+     Next-puzzle button below the fold, leaving players stuck after a solve. */
   .account {
-    height: 100dvh;
-    overflow: hidden;
+    min-height: 100dvh;
   }
   /* Collapse the chrome: the nav + account actions hide behind the menu toggle
      until opened, keeping the header a single slim line. */
   .top-bar {
-    margin-bottom: 8px;
+    margin-bottom: 4px;
   }
   .nav-toggle {
     display: inline-block;
@@ -425,25 +428,23 @@ h2 {
   .play-screen {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: 4.6rem auto 1fr;
+    grid-template-rows: 3.4rem auto auto;
     column-gap: 8px;
     row-gap: 6px;
     align-content: start;
     justify-items: center;
-    min-height: 0;
-    height: calc(100dvh - 4.5rem);
-    overflow: hidden;
+    min-height: calc(100dvh - 4.5rem);
+    overflow: visible;
     /* Sized to fit strip + board + bottom zone on one portrait screen; capped
        by width and by the height left for the board between the two zones. */
     --board-width: min(58vw, calc((100dvh - 24rem) / 2));
   }
 
-  /* Top strip: rating chip on the left, next box on the right. */
+  /* Top strip: only the next box (right). The rating rail is hidden on phones —
+     the v2 top bar already shows the rating, so the left chip was a duplicate
+     that only widened the gap between the menu bar and the board. */
   .flank-left {
-    grid-row: 1;
-    grid-column: 1;
-    justify-self: stretch;
-    overflow: hidden;
+    display: none;
   }
   .flank-right[aria-label='next piece'] {
     grid-row: 1;
@@ -484,8 +485,9 @@ h2 {
     grid-column: 1 / -1;
     justify-self: stretch;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
     margin-top: 4px;
+    padding-bottom: 16px;
   }
   .result-panel .combo-list {
     margin-top: 8px;

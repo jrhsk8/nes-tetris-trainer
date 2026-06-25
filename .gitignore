@@ -27,6 +27,12 @@ build/
 
 .claude/
 
+# Local engine builds (large binaries, not deployable)
+engines/
+
+# Design handoff assets
+NES Tetris Trainer Redesign/
+
 # Editor / OS
 .vscode/
 .idea/

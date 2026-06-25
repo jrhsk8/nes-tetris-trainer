@@ -18,14 +18,9 @@
 import { ROWS, COLS, decodeBoard, type Grid } from './board.js';
 import { ORIENTATIONS, type Piece } from './pieces.js';
 import { fitsAt, pieceCells, enumerateResting, type RestingPlacement } from './placement.js';
-import { holes } from './metrics.js';
-import {
-  restingLineForEntry,
-  lockAndClear,
-  lineClearsTetris,
-  type ComboEntry,
-  type ComboTable,
-} from './combo.js';
+import { columnHeights, holes } from './metrics.js';
+import type { ComboEntry, ComboTable } from './combo.js';
+import { restingLineForEntry, lockAndClear, lineClearsTetris } from './combo-replay.js';
 
 /**
  * The closed set of puzzle type-tags (#81). Each reflects a property of the
@@ -37,6 +32,7 @@ export type PuzzleTag =
   | 'tetris-ready'
   | 'tuck'
   | 'spin'
+  | 't-spin'
   | 'clean-stacking'
   | 'dig'
   | 'well-maintenance'
@@ -68,20 +64,6 @@ export const AVOID_DEPENDENCY_TAG: Record<Piece, PuzzleTag | null> = {
  * 3). `tetris-ready` uses a fixed depth of 4 (a clearing vertical I).
  */
 export const WELL_DEPTH = 3;
-
-/** Filled height of each column (0 = empty column). */
-function columnHeights(grid: Grid): number[] {
-  const heights = new Array<number>(COLS).fill(0);
-  for (let col = 0; col < COLS; col++) {
-    for (let row = 0; row < ROWS; row++) {
-      if (grid[row][col]) {
-        heights[col] = ROWS - row;
-        break;
-      }
-    }
-  }
-  return heights;
-}
 
 /**
  * The column indices that are open **wells**: at least {@link WELL_DEPTH} lower
@@ -169,7 +151,7 @@ function translationReachable(
 }
 
 /** Whether a resting placement is a tuck, a spin, or a plain hard drop. */
-function maneuver(
+export function maneuver(
   grid: Grid,
   piece: Piece,
   placement: RestingPlacement,
@@ -383,10 +365,14 @@ export function tagPuzzle(
   // tetris-ready: not ready at start, ready after.
   if (!tetrisReady(start) && tetrisReady(after)) tags.add('tetris-ready');
 
-  // tuck / spin: a non-hard-drop placement, split by translation-reachability.
-  for (const m of [maneuver(start, piece1, p1), maneuver(board1, piece2, p2)]) {
+  // tuck / spin / t-spin: a non-hard-drop placement, split by translation-reachability.
+  for (const [piece, grid, pl] of [[piece1, start, p1], [piece2, board1, p2]] as const) {
+    const m = maneuver(grid, piece, pl);
     if (m === 'tuck') tags.add('tuck');
-    else if (m === 'spin') tags.add('spin');
+    else if (m === 'spin') {
+      tags.add('spin');
+      if (piece === 'T') tags.add('t-spin');
+    }
   }
 
   // clean-stacking: no clears and no new holes.

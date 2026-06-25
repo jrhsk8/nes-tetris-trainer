@@ -49,15 +49,19 @@ export {
   gradeCombo,
   comboOutcomeKey,
   CORRECT_SCORE_THRESHOLD,
-  restingLineForEntry,
-  lockAndClear,
-  lineClearsTetris,
-  entryClearsTetris,
 } from './combo.js';
 export type { ComboEntry, ComboTable, ComboResult } from './combo.js';
 
 export {
+  restingLineForEntry,
+  lockAndClear,
+  lineClearsTetris,
+  entryClearsTetris,
+} from './combo-replay.js';
+
+export {
   tagPuzzle,
+  maneuver,
   WELL_DEPTH,
   singlePieceDependencies,
   AVOID_DEPENDENCY_TAG,
