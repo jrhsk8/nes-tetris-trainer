@@ -256,11 +256,14 @@ export function moveToColumn(
 /**
  * Pick from `reachable` the state at `(targetRotation, targetCol)` **nearest the
  * current `row`, preferring at-or-below** (tuck/settle in), riding up only when
- * nothing at-or-below is reachable. The shared selection law behind both the
- * tuck-seeking lateral ({@link moveToColumn}, column-varying) and the
- * column-fixed {@link spin} (rotation-varying) — the rotational twin of the
- * lateral rule (#88). Returns `null` when no reachable state exists at that
+ * nothing at-or-below is reachable. The selection law behind the tuck-seeking
+ * lateral ({@link moveToColumn}): sliding sideways preserves height — it glides
+ * into the nearest pocket, never screwing the piece down a column it merely
+ * passed over. Returns `null` when no reachable state exists at that
  * rotation/column.
+ *
+ * Lateral and {@link spin} are deliberately **no longer twins** (#91): lateral
+ * is height-preserving (this, nearest), spin descends ({@link deepestReachableState}).
  */
 function nearestReachableState(
   reachable: readonly RestingPlacement[],
@@ -282,11 +285,51 @@ function nearestReachableState(
 }
 
 /**
+ * Pick from `reachable` the state at `(targetRotation, targetCol)` **deepest
+ * at-or-below the current `row`** (screw the piece as far down into the pocket as
+ * this rotation allows), riding **up** to the nearest reachable state above only
+ * when nothing at-or-below is reachable (the floor case, unchanged from #88).
+ *
+ * This is the spin selection law (#91): a height-preserving rotate can never
+ * screw a piece *down* into a pocket, so t-spins (and all pocket-spins) were
+ * effectively broken — the only way in was the undiscoverable
+ * rotate→soft-drop→rotate. Snapping to the deepest reachable makes a plain
+ * rotate drop the piece as far into the pocket as the rotation allows; `Up`
+ * (raise) lifts it back out. Returns `null` when no reachable state exists at
+ * that rotation/column.
+ */
+function deepestReachableState(
+  reachable: readonly RestingPlacement[],
+  targetRotation: number,
+  targetCol: number,
+  row: number,
+): RestingPlacement | null {
+  let atOrBelow: RestingPlacement | null = null; // DEEPEST reachable with row >= current (screw in)
+  let above: RestingPlacement | null = null; //     nearest reachable with row <  current (ride up)
+  for (const s of reachable) {
+    if (s.rotation !== targetRotation || s.col !== targetCol) continue;
+    if (s.row >= row) {
+      if (atOrBelow === null || s.row > atOrBelow.row) atOrBelow = s;
+    } else if (above === null || s.row > above.row) {
+      above = s;
+    }
+  }
+  return atOrBelow ?? above;
+}
+
+/**
  * Rotate `piece` by `dir` (`'cw'` / `'ccw'`), applying the NES rotation
  * offset ({@link rotationDelta}) so the piece spins inside its fixed NES
  * bounding box. Snaps to the {@link reachableStates} candidate at the new
- * rotation and offset-adjusted column nearest the current `row` — preferring
- * at-or-below, riding **up** only when forced.
+ * rotation and offset-adjusted column **deepest at-or-below the current `row`**
+ * ({@link deepestReachableState}), riding **up** only when nothing at-or-below
+ * is reachable (the floor case).
+ *
+ * Spin **descends**: a plain rotate screws the piece as far down into the
+ * pocket as the new rotation allows (so t-spins into a notch are pure
+ * `rotate, rotate`), and `Up` (raise) lifts it back out (#91). This is
+ * deliberately **not** the lateral law: sliding sideways preserves height
+ * ({@link nearestReachableState}); rotating screws in.
  *
  * NES Tetris has no SRS / wall-or-floor kicks — every real spin works by
  * rotating at a height where the rotated shape already fits, then settling.
@@ -312,7 +355,7 @@ export function spin(
   if (rotations <= 1) return null;
   const next = normRotation(piece, rotation + (dir === 'cw' ? 1 : -1));
   const [dr, dc] = rotationDelta(piece, rotation, next);
-  return nearestReachableState(reachable, next, col + dc, row + dr);
+  return deepestReachableState(reachable, next, col + dc, row + dr);
 }
 
 /**

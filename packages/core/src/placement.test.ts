@@ -316,7 +316,7 @@ describe('lateralMove (free lateral movement #68)', () => {
   });
 });
 
-describe('spin (rotational twin of tuck-seeking lateral #88)', () => {
+describe('spin (descends into the pocket #91; floor-case ride-up from #88)', () => {
   it('floor spin: rides UP to the nearest reachable rotation instead of no-op', () => {
     // A T resting flat on the floor. The horizontal orientation does not fit one
     // row lower (floor); rotating to a vertical orientation does not fit at the
@@ -340,18 +340,21 @@ describe('spin (rotational twin of tuck-seeking lateral #88)', () => {
     ).toBe(true);
   });
 
-  it('into-pocket spin: snaps DOWN when the new orientation is reachable below', () => {
-    // A vertical T floating high in an open column with a notch below that admits
-    // the horizontal/other orientation lower down. Preferring at-or-below, spin
-    // should settle DOWN, not ride up.
+  it('into-pocket spin: snaps to the DEEPEST at-or-below reachable, not the nearest (#91)', () => {
+    // A T floating high (row 2) in an open column. Spinning must screw the piece
+    // as far DOWN as the new rotation allows — the deepest at-or-below reachable —
+    // not merely rotate in place at the current height. On an empty board that is
+    // the floor resting row of the new orientation.
     const grid = emptyBoard();
     const reachable = reachableStates(grid, 'T');
-    // Floating T high up (row 2) in col 4; spinning on an empty board the nearest
-    // reachable state at the new rotation at-or-below row 2 should have row >= 2.
     const spun = spin(grid, 'T', 0, 2, 4, 'cw', reachable);
     expect(spun).not.toBeNull();
     expect(spun!.col).toBe(5); // NES offset: T rot 0→1 shifts col +1
-    expect(spun!.row).toBeGreaterThanOrEqual(2); // at-or-below preferred
+    // Deepest reachable at the new rotation/column at-or-below row 2.
+    const deepest = Math.max(
+      ...reachable.filter((s) => s.rotation === spun!.rotation && s.col === 5 && s.row >= 2).map((s) => s.row),
+    );
+    expect(spun!.row).toBe(deepest);
   });
 
   it('returns null for a piece with one orientation (O)', () => {
@@ -435,6 +438,125 @@ describe('spin (rotational twin of tuck-seeking lateral #88)', () => {
         }
       }
     }
+  });
+
+  it('spin navigation-completeness: descending spin reaches a SUPERSET of height-preserving spin (#91)', () => {
+    // The #91 claim: a height-preserving rotate can never screw a piece DOWN into
+    // a pocket, so pocket-spins were unreachable; descending spin fixes that.
+    // Modelling rotation faithfully (a BFS over the ACTUAL spin law + tuck-seeking
+    // lateral + soft-drop + raise), the resting placements reachable under the new
+    // deepest law must be a SUPERSET of those reachable under the old nearest law —
+    // descending spin never strands a placement the old law could reach, and newly
+    // reaches pockets. (The faithful BFS does NOT reach every enumerateResting:
+    // the generator over-enumerates a few col-0 overhang pockets the rotation
+    // column-offset can never spin into — the binding invariant is one-directional,
+    // enumerateResting ⊇ input-reachable.) Checked over all sample boards/pieces.
+    const reachableUnder = (
+      grid: Grid,
+      piece: Piece,
+      select: 'nearest' | 'deepest',
+    ): Set<number> => {
+      const states = reachableStates(grid, piece);
+      const reach = new Set(states.map((s) => key(s.rotation, s.row, s.col)));
+      const canReach = (rot: number, r: number, c: number) => reach.has(key(rot, r, c));
+      const rotations = ORIENTATIONS[piece].length;
+      // The two laws differ only in which at-or-below candidate they pick.
+      const rotate = (rot: number, r: number, c: number, dir: 'cw' | 'ccw') => {
+        const next = (rot + (dir === 'cw' ? 1 : -1) + rotations) % rotations;
+        const [dr, dc] = rotationDelta(piece, rot, next);
+        const tc = c + dc;
+        const tr = r + dr;
+        let atOrBelow: number | null = null;
+        let above: number | null = null;
+        for (const s of states) {
+          if (s.rotation !== next || s.col !== tc) continue;
+          if (s.row >= tr) {
+            if (atOrBelow === null || (select === 'deepest' ? s.row > atOrBelow : s.row < atOrBelow)) {
+              atOrBelow = s.row;
+            }
+          } else if (above === null || s.row > above) above = s.row;
+        }
+        const landed = atOrBelow ?? above;
+        return landed === null ? null : { rotation: next, row: landed, col: tc };
+      };
+      const visited = new Set<number>();
+      const queue: RestingPlacement[] = [];
+      const seed = (s: RestingPlacement) => {
+        const k = key(s.rotation, s.row, s.col);
+        if (visited.has(k)) return;
+        visited.add(k);
+        queue.push(s);
+      };
+      for (let rotation = 0; rotation < rotations; rotation++)
+        for (let col = 0; col < COLS; col++) if (canReach(rotation, 0, col)) seed({ rotation, row: 0, col });
+      for (let i = 0; i < queue.length; i++) {
+        const { rotation, row, col } = queue[i];
+        for (const dir of [-1, 1] as const) {
+          const n = lateralMove(grid, piece, rotation, row, col, dir, states);
+          if (n) seed(n);
+        }
+        if (canReach(rotation, row + 1, col)) seed({ rotation, row: row + 1, col });
+        if (canReach(rotation, row - 1, col)) seed({ rotation, row: row - 1, col });
+        if (rotations > 1)
+          for (const dir of ['cw', 'ccw'] as const) {
+            const n = rotate(rotation, row, col, dir);
+            if (n) seed(n);
+          }
+      }
+      // Narrow to resting placements (what the player can confirm).
+      return new Set(
+        [...visited].filter((k) => {
+          const rotation = Math.floor(k / (ROWS * COLS));
+          const rest = k % (ROWS * COLS);
+          const r = Math.floor(rest / COLS);
+          const c = rest % COLS;
+          return !fitsAt(grid, piece, rotation, r + 1, c);
+        }),
+      );
+    };
+
+    let newlyReached = 0;
+    for (const grid of sampleBoards()) {
+      for (const piece of PIECES) {
+        if (ORIENTATIONS[piece].length <= 1) continue;
+        const nearest = reachableUnder(grid, piece, 'nearest');
+        const deepest = reachableUnder(grid, piece, 'deepest');
+        for (const k of nearest) {
+          expect(deepest.has(k), `${piece}: deepest spin stranded a placement nearest reached`).toBe(true);
+        }
+        for (const k of deepest) if (!nearest.has(k)) newlyReached++;
+      }
+    }
+    // Descending spin is a strict improvement: it opens pockets nearest never reached.
+    expect(newlyReached).toBeGreaterThan(0);
+  });
+
+  it('puzzle 2443 regression: natural drop then rotate, rotate lands the stored t-spin (#91)', () => {
+    // Real board from the live bank (#2443, O+T). Optimal: hard-drop O at col 2,
+    // then a T-SPIN into a 1-wide/2-deep notch (T at rot 2, row 18, col 5). The
+    // natural flow walks the T to col 5, soft-drops to rest on the LEDGE (rot 0,
+    // row 15), then rotates. With the old height-preserving rotate the T spun on
+    // the ledge (the notch was reachable only via the undiscoverable
+    // rotate→soft-drop→rotate); the descending-spin law makes it pure rotate,rotate.
+    const board0 = decodeBoard(
+      '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001001000000100100000110011000011001000111100110111',
+    );
+    const board1 = applyRestingPlacement(board0, 'O', { rotation: 0, row: 18, col: 2 });
+    const reachable = reachableStates(board1, 'T');
+
+    // Natural drop: T rested on the ledge straight above the notch.
+    const ledge = { rotation: 0, row: 15, col: 5 };
+    expect(reachable.some((s) => s.rotation === 0 && s.row === 15 && s.col === 5)).toBe(true);
+
+    // rotate, rotate (two CW spins) — no soft-drop in between.
+    const after1 = spin(board1, 'T', ledge.rotation, ledge.row, ledge.col, 'cw', reachable);
+    expect(after1).not.toBeNull();
+    const after2 = spin(board1, 'T', after1!.rotation, after1!.row, after1!.col, 'cw', reachable);
+    expect(after2).toEqual({ rotation: 2, row: 18, col: 5 });
+
+    // The landed placement reproduces the stored optimal outcome.
+    const stored = applyRestingPlacement(board1, 'T', { rotation: 2, row: 18, col: 5 });
+    expect(boardKey(applyRestingPlacement(board1, 'T', after2!))).toBe(boardKey(stored));
   });
 });
 
