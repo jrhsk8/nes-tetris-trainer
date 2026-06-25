@@ -73,24 +73,16 @@ describe('Board', () => {
     expect(resting.style.boxShadow).toContain('rgba(216, 40, 0'); // glow is the piece colour ($16 red)
   });
 
-  it('draws a faint landing projection where the floating piece would rest (v2)', () => {
-    render(
-      <Board
-        grid={emptyBoard()}
-        outlineCells={[[1, 4]]}
-        outlinePiece="Z"
-        landingCells={[[19, 4]]}
-        landingPiece="Z"
-      />,
-    );
-    // The floating piece stays at its current spot; the landing cell is a
-    // distinct faint ghost down where it would settle.
+  it('draws only the single piloted outline — no separate landing projection (#93)', () => {
+    render(<Board grid={emptyBoard()} outlineCells={[[1, 4]]} outlinePiece="Z" />);
+    // The one floating outline is drawn where the piece is.
     expect(screen.getByTestId('cell-1-4')).toHaveAttribute('data-state', 'outline');
-    const landing = screen.getByTestId('cell-19-4');
-    expect(landing).toHaveAttribute('data-state', 'landing');
-    // Faint colour-coded ghost, not a solid sprite: no block image, a soft inset.
-    expect(landing.style.backgroundImage).toBe('');
-    expect(landing.style.boxShadow).toContain('inset');
+    // No faint ghost anywhere down the column: dropping is how the player sees
+    // where the piece lands (#93 removed the landing projection).
+    const states = screen
+      .getAllByRole('gridcell')
+      .map((el) => el.getAttribute('data-state'));
+    expect(states).not.toContain('landing');
   });
 
   it('renders filled cells as crisp NES block sprites, not flat squares (#18)', () => {
@@ -514,31 +506,86 @@ describe('PlacementInput', () => {
     expect(outlineKeys().size).toBe(4); // still exactly one outline
   });
 
-  it('soft-drop button auto-repeats while held, carrying the piece down (#89)', () => {
+  it('soft-drop button TAP drops exactly one row — no auto-repeat (#92)', () => {
     vi.useFakeTimers();
     try {
       render(<PlacementInput board={emptyBoard()} piece="O" onConfirm={vi.fn()} />);
       const input = screen.getByLabelText('placement input');
       const drop = screen.getByRole('button', { name: 'Soft drop' });
       const startRow = Number(input.getAttribute('data-row'));
-      // Press and HOLD: an immediate drop, then auto-repeats while held.
+      // Tap: press and release BEFORE the hold-to-snap delay (250 ms).
       act(() => {
         fireEvent(drop, new MouseEvent('pointerdown', { bubbles: true }));
       });
       act(() => {
-        vi.advanceTimersByTime(300); // several repeat ticks
+        vi.advanceTimersByTime(100); // still within the tap window
       });
       act(() => {
         fireEvent(drop, new MouseEvent('pointerup', { bubbles: true }));
       });
-      // A single press carried the piece down many rows (not just one).
-      expect(Number(input.getAttribute('data-row'))).toBeGreaterThan(startRow + 2);
+      // Exactly one row — the old 60 ms per-row auto-repeat is gone.
+      expect(Number(input.getAttribute('data-row'))).toBe(startRow + 1);
+      // And no late snap fires after release.
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      expect(Number(input.getAttribute('data-row'))).toBe(startRow + 1);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('has no hard-drop / snap control — only soft-drop (#89)', () => {
+  it('soft-drop button HOLD past the delay snaps to the settle row (#92)', () => {
+    vi.useFakeTimers();
+    try {
+      render(<PlacementInput board={emptyBoard()} piece="O" onConfirm={vi.fn()} />);
+      const input = screen.getByLabelText('placement input');
+      const drop = screen.getByRole('button', { name: 'Soft drop' });
+      // Hold past the delay: the piece snaps straight to the bottom (O settles
+      // with its base on row 19, bbox top-left at row 18).
+      act(() => {
+        fireEvent(drop, new MouseEvent('pointerdown', { bubbles: true }));
+      });
+      act(() => {
+        vi.advanceTimersByTime(300); // past the 250 ms hold delay
+      });
+      act(() => {
+        fireEvent(drop, new MouseEvent('pointerup', { bubbles: true }));
+      });
+      expect(input).toHaveAttribute('data-row', '18');
+      expect(input).toHaveAttribute('data-resting', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('soft-drop key TAP = one row; OS key-repeat does NOT auto-repeat (#92)', () => {
+    vi.useFakeTimers();
+    try {
+      render(<PlacementInput board={emptyBoard()} piece="O" onConfirm={vi.fn()} />);
+      const input = screen.getByLabelText('placement input');
+      const startRow = Number(input.getAttribute('data-row'));
+      act(() => {
+        fireEvent.keyDown(input, { key: 'ArrowDown' });
+      });
+      // OS auto-repeat keydowns (event.repeat) must be ignored — the timer, not
+      // repeat, drives the snap.
+      act(() => {
+        fireEvent.keyDown(input, { key: 'ArrowDown', repeat: true });
+        fireEvent.keyDown(input, { key: 'ArrowDown', repeat: true });
+      });
+      // Release before the delay: a clean one-row tap.
+      act(() => {
+        vi.advanceTimersByTime(100);
+        fireEvent.keyUp(input, { key: 'ArrowDown' });
+      });
+      expect(Number(input.getAttribute('data-row'))).toBe(startRow + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('has no hard-drop / snap control — only soft-drop (#89, #92)', () => {
     render(<PlacementInput board={emptyBoard()} piece="T" onConfirm={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /hard drop|snap|drop to bottom/i })).toBeNull();
     expect(screen.getByRole('button', { name: 'Soft drop' })).toBeInTheDocument();

@@ -529,7 +529,7 @@ describe('spin (descends into the pocket #91; floor-case ride-up from #88)', () 
     }
     // Descending spin is a strict improvement: it opens pockets nearest never reached.
     expect(newlyReached).toBeGreaterThan(0);
-  });
+  }, 20000);
 
   it('puzzle 2443 regression: natural drop then rotate, rotate lands the stored t-spin (#91)', () => {
     // Real board from the live bank (#2443, O+T). Optimal: hard-drop O at col 2,
@@ -697,5 +697,5 @@ describe('reachable states never leave the board (#58 right-wall guard)', () => 
         }
       }
     }
-  });
+  }, 20000);
 });

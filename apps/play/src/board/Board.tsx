@@ -1,16 +1,16 @@
 /**
- * Board renderer (#10, #18, #89, v2 redesign) — a presentational 20×10 NES
+ * Board renderer (#10, #18, #89, #93, v2 redesign) — a presentational 20×10 NES
  * playfield. Renders the filled stack, an optional single **floating piece**
- * (the cursor the player pilots), an optional **landing projection** (a faint
- * ghost showing where that piece will come to rest — the v2 highlight cue), and
- * optional highlight cells (used by the feedback view, #12). No input or game
- * logic lives here; it is a pure function of its props.
+ * (the cursor the player pilots), and optional highlight cells (used by the
+ * feedback view, #12). No input or game logic lives here; it is a pure function
+ * of its props.
  *
  * v2 changes:
  *  - Slimmer, refined board well (2px bevel) instead of the chunky 4px frame.
  *  - The piloted piece is the solid bright NES sprite with a thin white inset;
- *    while it is still floating, a faint **landing projection** (`landingCells`)
- *    marks where it will rest. When it actually rests it gains a soft glow.
+ *    when it actually rests it gains a soft glow. There is exactly ONE outline —
+ *    no separate landing projection (#93): dropping is how the player sees where
+ *    the piece lands.
  *
  * Cells are drawn as pixel-accurate NES level-18 block sprites (see `nes.ts`).
  */
@@ -33,15 +33,6 @@ export interface BoardProps {
   outlinePiece?: Piece;
   /** Whether the floating piece is resting (#89) — gains a soft glow. */
   outlineResting?: boolean;
-  /**
-   * v2 landing projection: cells where the floating piece would come to rest if
-   * dropped now. Drawn as a faint colour-coded ghost so the player can see the
-   * landing as they move. Omit (or pass the same cells as `outlineCells`) when
-   * the piece is already resting. Caller computes these (see HANDOFF.md).
-   */
-  landingCells?: readonly Cell[];
-  /** Colour the landing projection as this piece (defaults to `outlinePiece`). */
-  landingPiece?: Piece;
   /** Cells to draw as a highlight (e.g. the optimal placement in feedback). */
   highlightCells?: readonly Cell[];
   /** Colour the highlight cells as this piece (defaults to the white group). */
@@ -69,24 +60,15 @@ export function Board({
   outlineCells = [],
   outlinePiece,
   outlineResting = false,
-  landingCells = [],
-  landingPiece,
   highlightCells = [],
   highlightPiece,
   overlay,
 }: BoardProps) {
   const outline = new Set(onBoard(outlineCells).map(([r, c]) => keyOf(r, c)));
-  const landing = new Set(onBoard(landingCells).map(([r, c]) => keyOf(r, c)));
   const highlight = new Set(onBoard(highlightCells).map(([r, c]) => keyOf(r, c)));
 
   const outlineGroup = outlinePiece ? PIECE_GROUP[outlinePiece] : WHITE_GROUP;
   const outlineColor = LEVEL18_PALETTE[outlineGroup];
-  const landingGroup = landingPiece
-    ? PIECE_GROUP[landingPiece]
-    : outlinePiece
-      ? PIECE_GROUP[outlinePiece]
-      : WHITE_GROUP;
-  const landingColor = LEVEL18_PALETTE[landingGroup];
   const highlightGroup = highlightPiece ? PIECE_GROUP[highlightPiece] : WHITE_GROUP;
 
   return (
@@ -122,11 +104,9 @@ export function Board({
                 ? outlineResting
                   ? 'outline-resting'
                   : 'outline'
-                : landing.has(keyOf(r, c))
-                  ? 'landing'
-                  : highlight.has(keyOf(r, c))
-                    ? 'highlight'
-                    : 'empty';
+                : highlight.has(keyOf(r, c))
+                  ? 'highlight'
+                  : 'empty';
 
             const style: React.CSSProperties = {
               aspectRatio: '1 / 1',
@@ -144,11 +124,6 @@ export function Board({
                 state === 'outline-resting'
                   ? `inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 0 14px 1px rgba(${channels(outlineColor)}, 0.7)`
                   : 'inset 0 0 0 1px rgba(255, 255, 255, 0.55)';
-            } else if (state === 'landing') {
-              // v2: landing projection — a faint colour-coded ghost of where the
-              // floating piece will rest.
-              style.backgroundColor = `rgba(${channels(landingColor)}, 0.09)`;
-              style.boxShadow = `inset 0 0 0 2px rgba(${channels(landingColor)}, 0.5)`;
             } else if (state === 'highlight') {
               style.backgroundImage = blockBackground(highlightGroup);
               style.boxShadow = 'inset 0 0 0 1px #d98b6a';

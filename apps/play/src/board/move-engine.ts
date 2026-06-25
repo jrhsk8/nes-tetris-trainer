@@ -19,17 +19,10 @@ export interface MoveState {
   col: number;
   resting: boolean;
   outlineCells: readonly [number, number][];
-  landingCells: readonly [number, number][] | undefined;
 }
 
 function stateKey(rotation: number, row: number, col: number): number {
   return (rotation * ROWS + row) * COLS + col;
-}
-
-function settleRow(board: Grid, piece: Piece, rotation: number, row: number, col: number): number {
-  let r = row;
-  while (fitsAt(board, piece, rotation, r + 1, col)) r++;
-  return r;
 }
 
 const SPAWN_COLUMN = 3;
@@ -48,6 +41,7 @@ export interface MoveEngine {
   moveLeft(): void;
   moveRight(): void;
   softDrop(): void;
+  snapDown(): void;
   raise(): void;
   rotateCw(): void;
   rotateCcw(): void;
@@ -82,12 +76,6 @@ export function createMoveEngine(
     return pieceCells(piece, rotation, row, col);
   }
 
-  function computeLanding(): readonly [number, number][] | undefined {
-    if (computeResting()) return undefined;
-    const landRow = settleRow(board, piece, rotation, row, col);
-    return pieceCells(piece, rotation, landRow, col);
-  }
-
   function lateral(dir: -1 | 1): void {
     const next = lateralMove(board, piece, rotation, row, col, dir, reachableList);
     if (!next) return;
@@ -104,7 +92,6 @@ export function createMoveEngine(
         col,
         resting: computeResting(),
         outlineCells: computeOutline(),
-        landingCells: computeLanding(),
       };
     },
 
@@ -116,6 +103,19 @@ export function createMoveEngine(
         row++;
         onChange();
       }
+    },
+
+    // Snap straight down the current column to the settle row (#92): identical to
+    // repeatedly soft-dropping, so it is tuck-aware — it stops on top of an
+    // overhang exactly where one-row-at-a-time soft-drops would. Drives the
+    // hold-to-snap gesture (a hold past the delay) on both the key and the ▼ button.
+    snapDown() {
+      let moved = false;
+      while (canReach(rotation, row + 1, col)) {
+        row++;
+        moved = true;
+      }
+      if (moved) onChange();
     },
 
     raise() {

@@ -90,20 +90,28 @@ export function PlacementInput({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
-  // Hold-to-repeat soft-drop (#89).
-  const dropTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stopSoftDrop = useCallback(() => {
-    if (dropTimer.current !== null) {
-      clearInterval(dropTimer.current);
-      dropTimer.current = null;
+  // Hold-to-snap soft-drop (#92): a tap drops exactly one row (fine control); a
+  // hold past HOLD_TO_SNAP_MS snaps straight down to the settle row (tuck-aware).
+  // No per-row auto-repeat — one clean rule. Shared by the key and the ▼ button.
+  const HOLD_TO_SNAP_MS = 250;
+  const snapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endSoftDrop = useCallback(() => {
+    if (snapTimer.current !== null) {
+      clearTimeout(snapTimer.current);
+      snapTimer.current = null;
     }
   }, []);
-  const startSoftDrop = useCallback(() => {
+  const beginSoftDrop = useCallback(() => {
+    // The press itself is the one-row tap; if the press is held past the delay,
+    // the timer snaps the rest of the way down.
     engine.softDrop();
-    if (dropTimer.current !== null) return;
-    dropTimer.current = setInterval(() => engine.softDrop(), 60);
+    if (snapTimer.current !== null) return;
+    snapTimer.current = setTimeout(() => {
+      snapTimer.current = null;
+      engine.snapDown();
+    }, HOLD_TO_SNAP_MS);
   }, [engine]);
-  useEffect(() => stopSoftDrop, [stopSoftDrop]);
+  useEffect(() => endSoftDrop, [endSoftDrop]);
 
   const confirm = useCallback(() => {
     const result = engine.confirm();
@@ -120,12 +128,23 @@ export function PlacementInput({
         case 'move-right': engine.moveRight(); break;
         case 'rotate-cw': engine.rotateCw(); break;
         case 'rotate-ccw': engine.rotateCcw(); break;
-        case 'soft-drop': engine.softDrop(); break;
+        // Hold-to-snap (#92): the FIRST keydown is the one-row tap and arms the
+        // snap timer; OS key-repeat keydowns are ignored (the timer, not repeat,
+        // drives the snap), so holding snaps once past the delay instead of
+        // auto-repeating row by row.
+        case 'soft-drop': if (!event.repeat) beginSoftDrop(); break;
         case 'move-up': engine.raise(); break;
         case 'confirm': confirm(); break;
       }
     },
-    [bindings, engine, confirm],
+    [bindings, engine, confirm, beginSoftDrop],
+  );
+
+  const onKeyUp = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (resolveAction(bindings, event.key) === 'soft-drop') endSoftDrop();
+    },
+    [bindings, endSoftDrop],
   );
 
   const canRaise = s.row > 0;
@@ -136,6 +155,7 @@ export function PlacementInput({
       ref={rootRef}
       className="placement-input"
       onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
       tabIndex={0}
       aria-label="placement input"
       data-rotation={s.rotation}
@@ -160,8 +180,6 @@ export function PlacementInput({
           outlineCells={s.outlineCells}
           outlinePiece={piece}
           outlineResting={s.resting}
-          landingCells={s.landingCells}
-          landingPiece={piece}
         />
       </div>
       <div className="placement-controls" role="group" aria-label="placement controls">
@@ -197,10 +215,10 @@ export function PlacementInput({
         </button>
         <button
           type="button"
-          onPointerDown={startSoftDrop}
-          onPointerUp={stopSoftDrop}
-          onPointerLeave={stopSoftDrop}
-          onPointerCancel={stopSoftDrop}
+          onPointerDown={beginSoftDrop}
+          onPointerUp={endSoftDrop}
+          onPointerLeave={endSoftDrop}
+          onPointerCancel={endSoftDrop}
           aria-label="Soft drop"
           disabled={!canDrop}
         >
