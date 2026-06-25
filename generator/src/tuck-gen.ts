@@ -33,6 +33,7 @@ import {
   emptyColorGrid,
   decodeBoard,
   maneuver,
+  isInputReachable,
   lockAndClear,
   type ColorGrid,
   type Grid,
@@ -352,6 +353,16 @@ async function main(): Promise<void> {
         }
         if (args.spinOnly && !hasSpin) {
           rejections['tuck-only-skipped'] = (rejections['tuck-only-skipped'] ?? 0) + 1;
+          continue;
+        }
+
+        // Interactive-reachability gate (#94, via #91): every tuck/spin ply of the
+        // optimal line must be reachable by the real play input under the
+        // descending-spin law — so no shipped special maneuver is unexecutable.
+        const p1Reach = m1 === 'hard-drop' || isInputReachable(board, p1, line.p1);
+        const p2Reach = m2 === 'hard-drop' || isInputReachable(a.board, p2, line.p2);
+        if (!p1Reach || !p2Reach) {
+          rejections['not-input-reachable'] = (rejections['not-input-reachable'] ?? 0) + 1;
           continue;
         }
 
