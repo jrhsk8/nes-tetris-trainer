@@ -33,6 +33,10 @@ export type PuzzleTag =
   | 'tuck'
   | 'spin'
   | 't-spin'
+  | 's-spin'
+  | 'z-spin'
+  | 'l-spin'
+  | 'j-spin'
   | 'clean-stacking'
   | 'dig'
   | 'well-maintenance'
@@ -56,6 +60,22 @@ export const AVOID_DEPENDENCY_TAG: Record<Piece, PuzzleTag | null> = {
   L: 'avoid-l-dependency',
   O: null,
   T: null,
+};
+
+/**
+ * The per-piece **spin** tag: a spin (rotation-at-depth placement) is tagged by
+ * which piece performed it. O cannot rotate and I is not a meaningful spin piece,
+ * so they map to `null`; the five spinnable pieces each get a `<piece>-spin` tag
+ * (alongside the umbrella `spin` tag).
+ */
+export const SPIN_TAG: Record<Piece, PuzzleTag | null> = {
+  T: 't-spin',
+  S: 's-spin',
+  Z: 'z-spin',
+  L: 'l-spin',
+  J: 'j-spin',
+  I: null,
+  O: null,
 };
 
 /**
@@ -371,7 +391,8 @@ export function tagPuzzle(
     if (m === 'tuck') tags.add('tuck');
     else if (m === 'spin') {
       tags.add('spin');
-      if (piece === 'T') tags.add('t-spin');
+      const spinTag = SPIN_TAG[piece];
+      if (spinTag) tags.add(spinTag);
     }
   }
 
