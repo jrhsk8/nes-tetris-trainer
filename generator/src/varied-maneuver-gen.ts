@@ -74,7 +74,7 @@ const fr = (b: Grid) => b.filter((r) => r.every((c) => c)).length;
 /** A diverse nearly-clean board: varied height, roughness, pockets (any side), optional well. */
 function variedBoard(): Grid {
   const b = emptyBoard();
-  const base = 11 + R(6); // surface row 11..16
+  const base = 11 + R(6); // surface row 11..16; variety from pocket POSITION/side/count.
   const rough = R(3);
   const h: number[] = [];
   for (let c = 0; c < 10; c++) h[c] = Math.max(4, Math.min(19, base + R(rough + 1) - R(rough + 1)));
