@@ -38,6 +38,9 @@ import { boardHamming } from './pipeline/dedup.js';
 const args = process.argv.slice(2);
 const maxHamming = Number(args[args.indexOf('--max-hamming') + 1]) || 6;
 const includeInactive = args.includes('--all');
+/** With `--remove`, DELETE the redundant puzzles in every EXACT-board cluster (keep the
+ * best one per cluster). Requires the service-role key. Without it, the audit is read-only. */
+const doRemove = args.includes('--remove');
 
 // Load repo-root .env into process.env (no printing).
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -54,14 +57,24 @@ const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_K
 const client = createSupabaseClient(url, key);
 
 interface Row {
+  id: string;
   number: number | null;
   board: string; // 200-char encoding
   piece1: Piece;
   piece2: Piece;
   active: boolean;
   created_at: string;
+  tags: string[];
   grid: Grid;
 }
+
+/** Maneuver/feature tags that make a puzzle worth keeping over a plain look-alike. */
+const SPECIAL_TAGS = new Set([
+  'spin', 't-spin', 's-spin', 'z-spin', 'j-spin', 'l-spin', 'tuck', 'spintuck',
+  'tetris', 'tetris-ready', 'burn', 'dig', 'well-maintenance',
+]);
+/** Rank a row for "keep the best per cluster": more special tags, then lowest number. */
+const keepScore = (r: Row): number => (r.tags ?? []).filter((t) => SPECIAL_TAGS.has(t)).length;
 
 /** A connected cluster of puzzles whose boards are mutually near (transitive). */
 interface Cluster {
@@ -75,14 +88,14 @@ async function loadRows(): Promise<Row[]> {
   for (let from = 0; ; from += 1000) {
     let q = client
       .from('puzzles')
-      .select('number, board, piece1, piece2, active, created_at')
+      .select('id, number, board, piece1, piece2, active, created_at, tags')
       .order('number', { ascending: true })
       .range(from, from + 999);
     if (!includeInactive) q = q.eq('active', true);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     for (const r of data ?? [])
-      rows.push({ ...(r as any), active: (r as any).active !== false, grid: decodeBoard((r as any).board) });
+      rows.push({ ...(r as any), active: (r as any).active !== false, tags: (r as any).tags ?? [], grid: decodeBoard((r as any).board) });
     if (!data || data.length < 1000) break;
   }
   return rows;
@@ -179,7 +192,37 @@ async function main(): Promise<void> {
   console.log(`exact-board duplicates: ${exact.length} clusters, ${exactRedundant} redundant puzzles`);
   console.log(`near-dupe (same pieces, ≤${maxHamming}): ${nearSamePieces.length} clusters, ${sameRedundant} redundant`);
   console.log(`near-dupe (any pieces, ≤${maxHamming}): ${nearMixed.length} clusters`);
-  console.log(`(read-only — nothing was modified)`);
+
+  if (!doRemove) {
+    console.log(`(read-only — nothing was modified; pass --remove to delete exact-board redundants)`);
+    return;
+  }
+
+  // --- REMOVAL: collapse every EXACT-board cluster to its single best puzzle ---
+  // "Duplicate" = identical starting board regardless of pieces (the gap the
+  // production same-pieces dedup leaves). Keep the richest-maneuver puzzle per
+  // cluster (tie → lowest number); delete the rest. Cascades attempts/flags/stars.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) throw new Error('--remove needs SUPABASE_SERVICE_ROLE_KEY');
+  const toDelete: Row[] = [];
+  for (const c of exact) {
+    const sorted = [...c.rows].sort((a, b) => keepScore(b) - keepScore(a) || (a.number ?? 0) - (b.number ?? 0));
+    const keep = sorted[0];
+    const drop = sorted.slice(1);
+    console.log(`\n  board kept #${keep.number} (${keepScore(keep)} tags) — deleting ${drop.map((r) => '#' + r.number).join(', ')}`);
+    toDelete.push(...drop);
+  }
+  if (toDelete.length === 0) {
+    console.log('\nno exact-board duplicates to remove.');
+    return;
+  }
+  console.log(`\nDELETING ${toDelete.length} exact-board redundant puzzles (cascades their attempts/flags/stars)…`);
+  const ids = toDelete.map((r) => r.id);
+  for (let i = 0; i < ids.length; i += 100) {
+    const { error, count } = await client.from('puzzles').delete({ count: 'exact' }).in('id', ids.slice(i, i + 100));
+    if (error) throw new Error(error.message);
+    console.log(`  deleted ${count} rows`);
+  }
+  console.log(`done — removed ${toDelete.length} duplicate puzzles.`);
 }
 
 main().catch((e) => {

@@ -37,9 +37,11 @@ import {
   decodeBoard,
   restingLineForEntry,
   type ComboTable,
+  type Grid,
   type Line,
   type Piece,
 } from '@trainer/core';
+import { boardHamming, type BankKey } from './dedup.js';
 
 /** The minimum a puzzle must expose to be consensus-checked. */
 export interface ConsensusPuzzle {
@@ -104,7 +106,43 @@ export type ConsensusReason =
   | 'unreachable'
   | 'odd-parity'
   | 'inject-mismatch'
-  | 'bt-error';
+  | 'bt-error'
+  | 'duplicate';
+
+/**
+ * Options for the consensus-stage duplicate gate (folded in from the standalone
+ * {@link isNearDuplicate}). A puzzle is a duplicate — and dropped before the BT
+ * judge runs — when, against the existing bank OR an earlier-kept puzzle in the
+ * SAME batch, either:
+ *  - its starting board is **byte-identical** to another's (any pieces) — the gap
+ *    the production same-pieces dedup leaves (one board reused across piece pairs), or
+ *  - it shares the piece pair AND the board is within `maxHamming` cells (the
+ *    production near-duplicate criterion).
+ * So no generator can leak a board the bank already has, regardless of which
+ * pre-engine dedup (if any) it ran.
+ */
+export interface ConsensusDedup {
+  /** Active bank puzzles to dedup against (board + pieces). */
+  existing: readonly BankKey[];
+  /** Same-piece-pair near-duplicate distance (production default 4). */
+  maxHamming: number;
+}
+
+/** True if `(grid, p1, p2)` duplicates any entry in `seen` per {@link ConsensusDedup}. */
+function isConsensusDuplicate(
+  grid: Grid,
+  p1: string,
+  p2: string,
+  seen: ReadonlyArray<{ grid: Grid; piece1: string; piece2: string }>,
+  maxHamming: number,
+): boolean {
+  for (const s of seen) {
+    const d = boardHamming(s.grid, grid);
+    if (d === 0) return true; // identical board, any pieces
+    if (d <= maxHamming && s.piece1 === p1 && s.piece2 === p2) return true; // same-pieces near-dup
+  }
+  return false;
+}
 
 /** The BT verdict for one puzzle. */
 export interface ConsensusVerdict {
@@ -149,10 +187,29 @@ export interface ConsensusResult<T extends ConsensusPuzzle> {
 export async function filterByConsensus<T extends ConsensusPuzzle>(
   puzzles: T[],
   judge: ConsensusJudge,
+  dedup?: ConsensusDedup,
 ): Promise<ConsensusResult<T>> {
   if (puzzles.length === 0) {
     return { kept: [], dropped: [], keepRate: 1, btErrors: 0, verdicts: [] };
   }
+
+  // Duplicate gate (folded-in dedup): drop near/exact-board duplicates BEFORE the
+  // BT judge, against the bank AND earlier-kept puzzles in this batch, so the
+  // consensus stage is the single chokepoint no generator can leak a dup through.
+  const dupDrops = new Set<number>(); // indices dropped as duplicates
+  if (dedup) {
+    const seen: Array<{ grid: Grid; piece1: string; piece2: string }> = dedup.existing.map((k) => ({
+      grid: k.board,
+      piece1: k.piece1,
+      piece2: k.piece2,
+    }));
+    puzzles.forEach((p, i) => {
+      const grid = decodeBoard(p.board);
+      if (isConsensusDuplicate(grid, p.piece1, p.piece2, seen, dedup.maxHamming)) dupDrops.add(i);
+      else seen.push({ grid, piece1: p.piece1, piece2: p.piece2 });
+    });
+  }
+
   const rows: ConsensusKeyRow[] = puzzles.map((p, i) => {
     const { p1Key, fullKey } = consensusKeys(p);
     return {
@@ -166,14 +223,23 @@ export async function filterByConsensus<T extends ConsensusPuzzle>(
     };
   });
 
-  const verdicts = await judge(rows);
+  // Judge only the non-duplicates (don't spend BT on dropped dups). Verdicts come
+  // back in the same order as the rows handed in; re-key by id to map them home.
+  const judgeRows = rows.filter((_, i) => !dupDrops.has(i));
+  const judgeVerdicts = await judge(judgeRows);
+  const verdictById = new Map(judgeRows.map((r, j) => [r.id, judgeVerdicts[j]] as const));
 
   const kept: T[] = [];
   const dropped: Array<{ puzzle: T; reason: ConsensusReason }> = [];
   let btErrors = 0;
   const out: ConsensusVerdict[] = [];
   for (let i = 0; i < puzzles.length; i++) {
-    const v = verdicts[i];
+    if (dupDrops.has(i)) {
+      dropped.push({ puzzle: puzzles[i], reason: 'duplicate' });
+      out.push({ number: rows[i].number, id: rows[i].id, keep: false, reason: 'duplicate', rank: null, p2_agree: null, p2_of: null });
+      continue;
+    }
+    const v = verdictById.get(rows[i].id);
     // Fail-closed: no verdict (judge returned short / crashed) → bt-error drop.
     if (!v) {
       dropped.push({ puzzle: puzzles[i], reason: 'bt-error' });

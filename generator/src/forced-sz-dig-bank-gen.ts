@@ -186,7 +186,7 @@ async function main(): Promise<void> {
   }
   console.log(`assembled ${survivors.length} S/Z dig-spin puzzles from ${constructed} constructions`);
   console.log('rejections:', rejections);
-  const consensus = await filterByConsensus(survivors, judge);
+  const consensus = await filterByConsensus(survivors, judge, { existing: existingKeys, maxHamming: config.dedupMaxHamming });
   console.log(`\nBetaTetris consensus: kept ${consensus.kept.length}/${survivors.length} (rate ${(consensus.keepRate * 100).toFixed(0)}%, bt-errors ${consensus.btErrors})`);
   const dr: Record<string, number> = {};
   for (const d of consensus.dropped) dr[d.reason] = (dr[d.reason] ?? 0) + 1;

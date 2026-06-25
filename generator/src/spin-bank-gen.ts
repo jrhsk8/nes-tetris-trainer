@@ -149,7 +149,7 @@ async function main() {
   console.log(`rejections:`, rejections);
 
   // BetaTetris 7/7 consensus
-  const consensus = await filterByConsensus(survivors, judge);
+  const consensus = await filterByConsensus(survivors, judge, { existing: existingKeys, maxHamming: config.dedupMaxHamming });
   console.log(`\nBetaTetris consensus: kept ${consensus.kept.length}/${survivors.length} (rate ${(consensus.keepRate * 100).toFixed(0)}%, bt-errors ${consensus.btErrors})`);
   const dropReasons: Record<string, number> = {};
   for (const d of consensus.dropped) dropReasons[d.reason] = (dropReasons[d.reason] ?? 0) + 1;

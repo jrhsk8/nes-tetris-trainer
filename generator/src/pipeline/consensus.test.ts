@@ -134,3 +134,56 @@ describe('filterByConsensus', () => {
     expect(seen).toBe(consensusKeys(puzzles[0]).p1Key);
   });
 });
+
+describe('filterByConsensus dedup gate', () => {
+  // A board distinct from the empty BOARD by more than maxHamming (6 cells, far
+  // from any placement column), so it is NOT a near-duplicate of it.
+  const BOARD_Y = encodeBoard(
+    (() => {
+      const b = emptyBoard();
+      for (const [r, c] of [[19, 7], [19, 8], [19, 9], [18, 7], [18, 8], [18, 9]] as const) b[r][c] = 1;
+      return b;
+    })(),
+  );
+  const puzzleOn = (id: string, board: string, p1: 'T' | 'O', p2: 'L' | 'Z'): ConsensusPuzzle => ({
+    id,
+    number: Number(id) || null,
+    board,
+    piece1: p1,
+    piece2: p2,
+    optimalLine: LINE_A,
+  });
+  const keepAll: ConsensusJudge = async (rows) =>
+    rows.map((r) => ({ number: r.number, id: r.id, keep: true, reason: null, rank: 1, p2_agree: 7, p2_of: 7 }));
+
+  it('drops an identical-board duplicate regardless of pieces (the gap the same-pieces dedup leaves)', async () => {
+    const puzzles = [puzzleOn('1', BOARD, 'T', 'L'), puzzleOn('2', BOARD, 'O', 'Z')];
+    const result = await filterByConsensus(puzzles, keepAll, { existing: [], maxHamming: 4 });
+    expect(result.kept.map((p) => p.id)).toEqual(['1']); // #2 is the same board → duplicate
+    expect(result.dropped).toEqual([{ puzzle: puzzles[1], reason: 'duplicate' }]);
+  });
+
+  it('drops a puzzle whose board the bank already has, before the judge runs', async () => {
+    let judged = 0;
+    const judge: ConsensusJudge = async (rows) => {
+      judged = rows.length;
+      return keepAll(rows);
+    };
+    const existing = [{ piece1: 'T' as const, piece2: 'L' as const, board: decodeBoard(BOARD) }];
+    const result = await filterByConsensus([puzzleOn('1', BOARD, 'T', 'L')], judge, { existing, maxHamming: 4 });
+    expect(result.kept).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('duplicate');
+    expect(judged).toBe(0); // the duplicate never reached the (costly) BT judge
+  });
+
+  it('keeps a genuinely distinct board', async () => {
+    const result = await filterByConsensus([puzzleOn('1', BOARD_Y, 'T', 'L')], keepAll, { existing: [{ piece1: 'T', piece2: 'L', board: decodeBoard(BOARD) }], maxHamming: 4 });
+    expect(result.kept.map((p) => p.id)).toEqual(['1']);
+  });
+
+  it('without the dedup option, behaves exactly as before (no dropping)', async () => {
+    const puzzles = [puzzleOn('1', BOARD, 'T', 'L'), puzzleOn('2', BOARD, 'O', 'Z')];
+    const result = await filterByConsensus(puzzles, keepAll); // no dedup arg
+    expect(result.kept).toHaveLength(2);
+  });
+});

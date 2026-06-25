@@ -443,7 +443,7 @@ async function main(): Promise<void> {
   if (args.consensus && survivors.length > 0) {
     console.log(`\nrunning BetaTetris consensus on ${survivors.length} survivors…`);
     const judge = windowsSafeJudge(repoRoot);
-    const result = await filterByConsensus(survivors, judge);
+    const result = await filterByConsensus(survivors, judge, { existing: existingKeys, maxHamming: config.dedupMaxHamming });
     finalSurvivors = result.kept as NewPuzzle[];
     console.log(
       `consensus: kept ${result.kept.length}/${survivors.length} ` +
