@@ -264,8 +264,12 @@ describe('PlacementInput', () => {
     render(<PlacementInput board={board} piece="L" onConfirm={onConfirm} />);
 
     await user.click(screen.getByLabelText('placement input'));
-    // ArrowLeft shifts + settles to rest; Enter then locks the resting outline.
+    // ArrowLeft shifts to the adjacent column (preserving height); settle to rest.
     await user.keyboard('{ArrowLeft}');
+    const input = screen.getByLabelText('placement input');
+    for (let i = 0; i < 22 && input.getAttribute('data-resting') !== 'true'; i++) {
+      await user.keyboard('{ArrowDown}');
+    }
     const shown = outlineKeys();
     await user.keyboard('{Enter}');
 
@@ -363,9 +367,8 @@ describe('PlacementInput', () => {
   it('slides freely both ways: rides up onto a wall, then back down into the well (#81)', async () => {
     const user = userEvent.setup();
     // col-9 wall (rows 8-19), col-8 well. From the well floor, RIGHT rides up onto
-    // the wall (rows 4..7); LEFT then slides straight back off it and falls into
-    // the col-8 well (rows 16..19). A settled piece moves freely in both directions
-    // with single presses — never stuck against the bump.
+    // the wall (rows 4..7); LEFT slides back to col 8 at the same height (row 4),
+    // then soft-drop settles into the well (rows 16..19).
     const board = emptyBoard();
     for (let r = 8; r < 20; r++) board[r][9] = 1;
     const onConfirm = vi.fn<(p: Placement) => void>();
@@ -377,8 +380,13 @@ describe('PlacementInput', () => {
     for (let i = 0; i < 20; i++) await user.keyboard('{ArrowDown}'); // soft-drop to the floor
     await user.keyboard('{ArrowRight}'); // ride up onto the wall
     expect(outlineKeys()).toEqual(new Set(['4-9', '5-9', '6-9', '7-9']));
-    await user.keyboard('{ArrowLeft}'); // slide back off — falls into the well
-    expect(outlineKeys()).toEqual(new Set(['16-8', '17-8', '18-8', '19-8']));
+    await user.keyboard('{ArrowLeft}'); // slide back to col 8 (preserving height)
+    expect(outlineKeys()).toEqual(new Set(['4-8', '5-8', '6-8', '7-8']));
+    // Settle into the well, then confirm
+    const input = screen.getByLabelText('placement input');
+    for (let i = 0; i < 22 && input.getAttribute('data-resting') !== 'true'; i++) {
+      await user.keyboard('{ArrowDown}');
+    }
     await user.keyboard('{Enter}');
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -407,8 +415,8 @@ describe('PlacementInput', () => {
     mockGrid(container); // 10 columns × 32px starting at x=0
 
     const surface = screen.getByLabelText('board drag surface');
-    // Drag to near the right wall (x≈300 → finger col 9). The O (2 wide) centers
-    // there and clamps to col 8 (cols 8,9), resting on the floor (rows 18,19).
+    // Drag to near the right wall (x≈300 → finger col 9). The O (2 wide) clamps
+    // to col 8 (cols 8,9), preserving height at the spawn row.
     fireEvent(surface, ptr('pointerdown', 300));
     fireEvent(surface, ptr('pointermove', 300));
 
@@ -416,14 +424,15 @@ describe('PlacementInput', () => {
     fireEvent(surface, ptr('pointerup', 300));
     expect(onConfirm).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Confirm placement' }));
+    // Settle to rest, then confirm.
+    await settleAndConfirm(user);
     expect(onConfirm).toHaveBeenCalledTimes(1);
     const landed = restingCells(board, 'O', onConfirm.mock.calls[0][0])!;
     expect(keysOf(landed)).toEqual(new Set(['18-8', '18-9', '19-8', '19-9']));
     expect(keysOf(landed)).toEqual(outlineKeys());
   });
 
-  it('drag positions against a wall by the same shift-then-settle rule as L/R (#69, #81)', () => {
+  it('drag positions against a wall at the nearest reachable column (#69, #81)', () => {
     const board = emptyBoard();
     for (let r = 8; r < 20; r++) board[r][9] = 1; // wall in col 9
     const onConfirm = vi.fn<(p: Placement) => void>();
@@ -433,14 +442,15 @@ describe('PlacementInput', () => {
     mockGrid(container);
 
     const surface = screen.getByLabelText('board drag surface');
-    // Drag the horizontal I toward the wall column — it walks over and the piece
-    // settles ON top of the wall (right end on col 9 at row 7), never off-board,
-    // never below the wall.
+    // Drag the horizontal I toward the wall column — it walks as far right as
+    // possible (col 6, cells at 6-9) preserving the spawn-row height, never
+    // off-board.
     fireEvent(surface, ptr('pointerdown', 315));
 
     const landing = outlineKeys();
-    expect([...landing].every((k) => Number(k.split('-')[0]) <= 7)).toBe(true);
-    expect(landing.has('7-9')).toBe(true);
+    expect(landing.size).toBe(4);
+    expect(landing.has('0-9')).toBe(true);
+    expect(landing.has('0-6')).toBe(true);
   });
 
   it('a board drag only moves while the pointer is down, not after release (#69)', () => {

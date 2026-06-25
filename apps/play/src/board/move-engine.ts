@@ -6,6 +6,8 @@ import {
   isResting,
   pieceCells,
   reachableStates,
+  lateralMove,
+  moveToColumn,
   spin as coreSpin,
   type Grid,
   type Piece,
@@ -86,22 +88,8 @@ export function createMoveEngine(
     return pieceCells(piece, rotation, landRow, col);
   }
 
-  function slideStep(
-    rot: number,
-    r: number,
-    c: number,
-    dir: -1 | 1,
-  ): { row: number; col: number } | null {
-    const nc = c + dir;
-    if (nc < 0 || nc >= COLS) return null;
-    let nr = r;
-    while (nr >= 0 && !canReach(rot, nr, nc)) nr--;
-    if (nr < 0) return null;
-    return { col: nc, row: settleRow(board, piece, rot, nr, nc) };
-  }
-
   function lateral(dir: -1 | 1): void {
-    const next = slideStep(rotation, row, col, dir);
+    const next = lateralMove(board, piece, rotation, row, col, dir, reachableList);
     if (!next) return;
     col = next.col;
     row = next.row;
@@ -160,16 +148,24 @@ export function createMoveEngine(
     },
 
     dragToCol(targetCol: number) {
+      const direct = moveToColumn(board, piece, rotation, row, targetCol, reachableList);
+      if (direct) {
+        if (direct.col === col && direct.row === row) return;
+        col = direct.col;
+        row = direct.row;
+        onChange();
+        return;
+      }
       const step = targetCol > col ? 1 : -1;
       let c = col;
       let r = row;
       while (c !== targetCol) {
-        const next = slideStep(rotation, r, c, step as -1 | 1);
+        const next = lateralMove(board, piece, rotation, r, c, step as -1 | 1, reachableList);
         if (!next) break;
         c = next.col;
         r = next.row;
       }
-      if (c !== col) {
+      if (c !== col || r !== row) {
         col = c;
         row = r;
         onChange();
