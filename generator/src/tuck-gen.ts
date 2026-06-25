@@ -19,6 +19,11 @@
  * Env: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
  */
 
+// @ts-expect-error - ws has no type declarations here
+import ws from 'ws';
+// Node < 22 has no global WebSocket; supabase-js's realtime client needs one.
+Object.assign(globalThis, { WebSocket: globalThis.WebSocket ?? ws });
+
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { dirname, join } from 'node:path';
