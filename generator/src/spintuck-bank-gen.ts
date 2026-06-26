@@ -1,22 +1,23 @@
 /**
  * Spintuck generator (#follow-up) — puzzles whose optimal move is a SPINTUCK: a
- * single placement that is both a spin and a tuck (the piece rotates AND slides
- * under an overhang at depth). See {@link isSpintuck}.
+ * placement reachable at NES level-19 speed ONLY by rotating the piece in at the
+ * last second (you can't drop it pre-rotated and can't slide it under the lip in
+ * time). See {@link isSpintuck} + `packages/core/src/nes-reachability.ts` and the
+ * spintuck-definition memory.
  *
- * Most spintucks are hole-reducing DIGS (the tuck slides into a buried cell), and
- * that hole reduction is exactly why StackRabbit ranks them #1. Variety (so the
- * set doesn't telegraph one pattern) comes from the PIECE (T/S/Z/J/L), the board
- * shape, and WHICH piece is the spintuck — randomly piece 1 or piece 2:
- *   - piece-2 spintuck: piece 1 (O) hard-drops to refill a carved gap, then piece 2
- *     spintucks. BetaTetris validates the spintuck via the p2-7/7 check.
- *   - piece-1 spintuck: the spintuck is the first move (O follows); BetaTetris must
- *     rank that piece-1 move #1 (harder — BT narrowly enumerates piece-1 moves).
+ * Real spintucks are RARE, and BetaTetris will NOT 7/7-agree a spintuck as the
+ * SECOND piece (its policy doesn't enumerate the last-second spin as a 2nd move).
+ * So strict-BT spintucks are **piece-1-framed only**: the spintuck is the first
+ * move (BT must rank it #1), a filler O is piece 2 (BT agrees 7/7). Run with
+ * `--framing p1`. Variety comes from the PIECE (T/S/Z/J/L/I) and the board.
+ * Most spintucks are hole-reducing DIGS, which is why StackRabbit ranks them #1.
  *
- * Strict bar (unchanged): StackRabbit rank-1 (optimal carries the 'spintuck' tag,
- * which already implies interactive-reachability) + BetaTetris consensus (p1 top-1
- * AND p2 7/7). In-batch + bank dedup is folded into the consensus stage.
+ * Strict bar: StackRabbit rank-1 (optimal carries the 'spintuck' tag, implying
+ * interactive-reachability) + BetaTetris consensus (p1 top-1 AND p2 7/7). In-batch
+ * + bank dedup is folded into the consensus stage. Keep rate is low (~8%: BT
+ * mostly can't enumerate the piece-1 spintuck) — expect a long run for few keeps.
  *
- *   npx tsx generator/src/spintuck-bank-gen.ts [--count N] [--dry-run]
+ *   npx tsx generator/src/spintuck-bank-gen.ts [--count N] [--framing p1] [--dry-run]
  */
 // @ts-expect-error - ws has no types here
 import ws from 'ws';
@@ -224,7 +225,7 @@ async function main(): Promise<void> {
   const meta = new Map<NewPuzzle, { framing: string; piece: Piece; dig: boolean }>();
   const rejections: Record<string, number> = {};
   let constructed = 0;
-  const cap = target * 4000; // spintucks are rare (~0.03% of boards), so the pure search dominates
+  const cap = target * 4000; // spintucks are rare, so the board search dominates the assemble phase
   while (survivors.length < target && constructed < cap) {
     if (!(await ensureEngine())) {
       console.log('too many consecutive StackRabbit crashes — aborting early');
