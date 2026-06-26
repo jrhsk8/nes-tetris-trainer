@@ -524,3 +524,35 @@ as $$
 $$;
 
 grant execute on function public.curation_tag_stats() to anon, authenticated;
+
+-- #99 live puzzle co-rating drift: let ANY session (anonymous included) nudge a
+-- puzzle's RATING columns — and ONLY those — past the admin-only `puzzles` UPDATE
+-- policy (puzzles_admin_update). Without this, a normal (non-admin) player's
+-- rating write matched zero rows under RLS and silently no-op'd (no error, just an
+-- empty UPDATE), so puzzles only ever drifted via the service-role offline tally,
+-- not live per attempt. SECURITY DEFINER + a pinned search_path so it updates
+-- EXACTLY rating/deviation/volatility and nothing else — board, combos, tags, and
+-- the `active` cull flag stay admin/service-role only. Values are clamped to wide
+-- sane bounds so an unbounded write past RLS can't poison the shared bank with
+-- absurd ratings from a hostile client (legitimate Glicko-2 values are untouched).
+create or replace function public.update_puzzle_rating(
+  p_id uuid,
+  p_rating double precision,
+  p_deviation double precision,
+  p_volatility double precision
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.puzzles
+     set rating = least(greatest(p_rating, 1), 5000),
+         deviation = least(greatest(p_deviation, 1), 500),
+         volatility = least(greatest(p_volatility, 0.0001), 1)
+   where id = p_id;
+$$;
+
+grant execute on function
+  public.update_puzzle_rating(uuid, double precision, double precision, double precision)
+  to anon, authenticated;

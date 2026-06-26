@@ -234,14 +234,15 @@ export interface OwnRowAccess {
 }
 
 /**
- * The live puzzle co-rating drift (#99). PRECONDITION (per schema.sql): an UPDATE
- * on the shared `puzzles` rating columns — and the ONLY `puzzles` UPDATE policy is
- * `puzzles_admin_update` (an email-allowlisted admin) plus the service role, which
- * bypasses RLS. The play app calls this per attempt as a BEST-EFFORT live drift,
- * so under that policy a normal (non-admin) browser session updates **zero rows**
- * rather than erroring — the drift then only really lands via the service-role
- * offline tally (#41). Surfaced here, not hidden: verify the live DB grants a
- * per-player rating UPDATE before relying on live per-player puzzle drift.
+ * The live puzzle co-rating drift (#99). Routed through the SECURITY DEFINER
+ * `update_puzzle_rating` function (schema.sql), which updates ONLY the rating
+ * columns past the admin-only `puzzles` UPDATE policy — so a normal (non-admin,
+ * even anonymous) player's per-attempt drift actually lands, alongside the
+ * service-role offline tally (#41). A direct `.update()` would have matched zero
+ * rows under RLS and silently no-op'd for non-admin players; routing through the
+ * definer function is the fix for that. Requires the function to exist in the DB
+ * (apply `schema.sql`); until then the call errors and the play app's best-effort
+ * catch swallows it (no worse than the prior silent no-op).
  */
 export interface LivePuzzleRatingWrite {
   updatePuzzleRating(id: string, glicko: Glicko): Promise<void>;
@@ -497,14 +498,18 @@ export function createDataAccess(client: SupabaseClient): DataAccess {
   }
 
   async function updatePuzzleRating(id: string, glicko: Glicko): Promise<void> {
-    const { error } = await client
-      .from('puzzles')
-      .update({
-        rating: glicko.rating,
-        deviation: glicko.deviation,
-        volatility: glicko.volatility,
-      })
-      .eq('id', id);
+    // Via the SECURITY DEFINER `update_puzzle_rating` (schema.sql), NOT a direct
+    // `.update()`: the only `puzzles` UPDATE policy is admin-only, so a direct
+    // write from a normal (non-admin) player matches zero rows under RLS and
+    // silently no-ops — #99's live drift then never landed for real players. The
+    // definer function updates only the rating columns, past that policy. The
+    // service-role generator/tally reaches it the same way.
+    const { error } = await client.rpc('update_puzzle_rating', {
+      p_id: id,
+      p_rating: glicko.rating,
+      p_deviation: glicko.deviation,
+      p_volatility: glicko.volatility,
+    });
     if (error) throw new Error(`updatePuzzleRating failed: ${error.message}`);
   }
 
