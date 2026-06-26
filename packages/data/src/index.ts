@@ -12,7 +12,15 @@ export {
   SUBMISSIONS_BUCKET,
   RECENT_PUZZLE_WINDOW,
 } from './data-access.js';
-export type { DataAccess } from './data-access.js';
+export type {
+  DataAccess,
+  PublicBankReads,
+  OwnRowAccess,
+  LivePuzzleRatingWrite,
+  SubmitterAccess,
+  AdminAccess,
+  ServiceRoleAccess,
+} from './data-access.js';
 export {
   sniffImageMime,
   extensionFor,
