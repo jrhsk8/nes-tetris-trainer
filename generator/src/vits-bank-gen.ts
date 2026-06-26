@@ -39,7 +39,6 @@ import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from
 import { boardHamming, isNearDuplicate } from './pipeline/dedup.js';
 import type { ConsensusKeyRow, ConsensusVerdict } from './pipeline/consensus.js';
 import { loadRepoEnv, createBetaTetrisJudge, createManagedStackRabbit, loadActiveBankKeys } from './gen-harness.js';
-import type { Candidate } from './selfplay/board-source.js';
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
