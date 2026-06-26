@@ -220,6 +220,7 @@ export function PuzzleSession({
         baseColors={colors0}
         combos={puzzle.combos}
         userLine={result!.userLine}
+        verdict={result!.verdict}
         ratingChange={result!.rating ?? undefined}
         drill={drill}
         puzzleRating={puzzle.glicko.rating}

@@ -1,6 +1,7 @@
 import {
   gradeCombo,
   comboOutcomeKey,
+  type ComboResult,
   type ComboTable,
   type Grid,
   type Line,
@@ -20,6 +21,13 @@ export type RecordAttemptDb = Pick<
 >;
 
 export interface AttemptResult {
+  /**
+   * The full graded verdict (#34): correct + score + rank/total/ranked. Computed
+   * ONCE here — the single grading authority for an attempt — so the feedback view
+   * renders it as data rather than re-running {@link gradeCombo} on the same line.
+   * `solved`/`score` are kept as a convenience mirror of `verdict.correct`/`.score`.
+   */
+  verdict: ComboResult;
   solved: boolean;
   score: number | null;
   rating: { before: Glicko; after: Glicko; delta: number } | null;
@@ -46,7 +54,7 @@ export async function recordAttempt(
     try {
       solveStats = await db.getPuzzleSolveStats(puzzle.id);
     } catch { /* best-effort */ }
-    return { solved: graded.correct, score: graded.score, rating: null, solveStats };
+    return { verdict: graded, solved: graded.correct, score: graded.score, rating: null, solveStats };
   }
 
   const outcome = attemptOutcome(graded.score, graded.correct);
@@ -86,5 +94,5 @@ export async function recordAttempt(
     solveStats = await db.getPuzzleSolveStats(puzzle.id);
   } catch { /* best-effort */ }
 
-  return { solved: graded.correct, score: graded.score, rating, solveStats };
+  return { verdict: graded, solved: graded.correct, score: graded.score, rating, solveStats };
 }

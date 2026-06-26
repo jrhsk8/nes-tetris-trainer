@@ -27,6 +27,7 @@ import {
   comboOutcomeKey,
   resolveLineByOutcome,
   type ColorGrid,
+  type ComboResult,
   type ComboTable,
   type Grid,
   type Line,
@@ -69,6 +70,13 @@ export interface FeedbackProps {
   combos: ComboTable;
   /** The placements the player actually made (one or two). */
   userLine: readonly Placement[];
+  /**
+   * The already-graded verdict for `userLine` (#34), produced once by
+   * {@link recordAttempt}. When given, the banner + rank come straight from it and
+   * this view does NOT re-grade. Omitted (e.g. a standalone render), it falls back
+   * to grading `userLine` against `combos` itself.
+   */
+  verdict?: ComboResult;
   /** Milliseconds per animation step (also the falling-piece transition time). */
   stepMs?: number;
   /** The rating change to display, if any. */
@@ -206,6 +214,7 @@ export function Feedback({
   baseColors,
   combos,
   userLine,
+  verdict: verdictProp,
   stepMs = 320,
   ratingChange,
   puzzleRating,
@@ -223,13 +232,16 @@ export function Feedback({
   const compact = useMediaQuery('(max-width: 900px)');
 
   const playerLine = useMemo(() => playerLineOf(userLine), [userLine]);
-  // Grade the whole combo — no first-move short-circuit (#34).
+  // The verdict is graded ONCE upstream (recordAttempt) and passed in; only
+  // re-grade here as a fallback when this view is rendered without one. No
+  // first-move short-circuit either way (#34).
   const verdict = useMemo(
     () =>
-      playerLine
+      verdictProp ??
+      (playerLine
         ? gradeCombo(combos, playerLine, comboOutcomeKey(board0, piece1, piece2, playerLine))
-        : { correct: false, score: null, rank: null, total: combos.total, ranked: false },
-    [combos, playerLine, board0, piece1, piece2],
+        : { correct: false, score: null, rank: null, total: combos.total, ranked: false }),
+    [verdictProp, combos, playerLine, board0, piece1, piece2],
   );
 
   // The combo currently shown on the board; the player's move by default, or the

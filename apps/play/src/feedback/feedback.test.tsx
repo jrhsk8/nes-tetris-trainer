@@ -87,6 +87,26 @@ describe('Feedback grade banner (#60/#61)', () => {
     expect(screen.getByTestId('grade-banner')).toHaveTextContent('A+ 97.6');
   });
 
+  it('renders the verdict graded upstream rather than re-grading the line (grade-once)', () => {
+    // The line would re-grade to "too low to rank" (red), but recordAttempt
+    // already graded it; Feedback must show that passed verdict, not re-derive one.
+    render(
+      <Feedback
+        board0={emptyBoard()}
+        piece1="T"
+        piece2="L"
+        combos={table([rank1], 40)}
+        userLine={L([0, 0], [0, 5])}
+        verdict={{ correct: true, score: 100, rank: 1, total: 40, ranked: true }}
+        playSound={noSound}
+      />,
+    );
+    const banner = screen.getByTestId('grade-banner');
+    expect(banner).toHaveTextContent('A+ 100.0'); // the upstream verdict, not a re-grade
+    expect(banner).toHaveAttribute('data-correct', 'true');
+    expect(banner).toHaveClass('is-win');
+  });
+
   it('puts Next puzzle under the board (primary) and Replay in the rail (#65)', () => {
     const onNext = () => {};
     render(
