@@ -7,6 +7,8 @@ import {
   boardKey,
   restingLineForEntry,
   tagPuzzle,
+  maneuver,
+  isSpintuck,
   singlePieceDependencies,
   AVOID_DEPENDENCY_TAG,
   SPIN_TAG,
@@ -138,6 +140,41 @@ describe('tagPuzzle (#81)', () => {
     expect(tags).toContain('spin');
     expect(tags).toContain('t-spin'); // per-piece spin tag
     expect(tags).not.toContain('tuck');
+  });
+
+  it('spintuck: a spin that ALSO needs a lateral tuck at depth → spintuck + spin + tuck + <piece>-spin', () => {
+    // A T that must rotate AND slide under an overhang to reach its rest (a single
+    // spin+tuck move) — found by an exhaustive reachability search.
+    const start = decodeBoard(
+      '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000010000010000000001010000010111000000111000011110100011011101101111001110',
+    );
+    const p1: RestingPlacement = { rotation: 0, row: 13, col: 1 };
+    expect(maneuver(start, 'T', p1)).toBe('spin'); // needs a rotation
+    expect(isSpintuck(start, 'T', p1)).toBe(true); // and a lateral tuck at depth
+
+    const b1 = applyRestingPlacement(start, 'T', p1);
+    const p2 = hardDrop(b1, 'O', 0, 8);
+    const entry = entryFor(start, 'T', p1, 'O', p2);
+    expect(restingLineForEntry(start, 'T', 'O', entry)).not.toBeNull();
+    const tags = tagPuzzle(start, 'T', 'O', entry);
+    expect(tags).toContain('spintuck');
+    expect(tags).toContain('spin');
+    expect(tags).toContain('tuck'); // a spintuck is also a tuck
+    expect(tags).toContain('t-spin');
+  });
+
+  it('a PURE spin (rotate straight down a pocket) is NOT a spintuck', () => {
+    const start = decodeBoard(
+      '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000100001000010000100001000010000100101000000010100001011000000101100010100110100011011110101110011010',
+    );
+    const p1: RestingPlacement = { rotation: 3, row: 15, col: 6 };
+    expect(maneuver(start, 'T', p1)).toBe('spin');
+    expect(isSpintuck(start, 'T', p1)).toBe(false); // reachable by rotate-then-descend, no tuck
+  });
+
+  it('hard-drops and pure tucks are never spintucks', () => {
+    const start = emptyBoard();
+    expect(isSpintuck(start, 'O', hardDrop(start, 'O', 0, 0))).toBe(false);
   });
 
   it('SPIN_TAG maps each spinnable piece to its <piece>-spin tag', () => {

@@ -65,6 +65,7 @@ export {
 export {
   tagPuzzle,
   maneuver,
+  isSpintuck,
   WELL_DEPTH,
   singlePieceDependencies,
   AVOID_DEPENDENCY_TAG,

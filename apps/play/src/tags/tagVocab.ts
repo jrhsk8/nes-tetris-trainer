@@ -24,6 +24,7 @@ export const TAG_VOCAB: Record<PuzzleTag, TagDisplay> = {
   dig: { label: 'Dig', kind: 'clear' },
   tuck: { label: 'Tuck', kind: 'maneuver' },
   spin: { label: 'Spin', kind: 'maneuver' },
+  spintuck: { label: 'Spintuck', kind: 'maneuver' },
   't-spin': { label: 'T-spin', kind: 'maneuver' },
   's-spin': { label: 'S-spin', kind: 'maneuver' },
   'z-spin': { label: 'Z-spin', kind: 'maneuver' },
