@@ -21,10 +21,6 @@ import {
   fitsAt,
   pieceCells,
   enumerateResting,
-  reachableStates,
-  lateralMove,
-  spin,
-  inputReachableRestingPlacements,
   type RestingPlacement,
 } from './placement.js';
 import { columnHeights, holes } from './metrics.js';
@@ -192,70 +188,35 @@ export function maneuver(
     : 'spin';
 }
 
-const spinKey = (rotation: number, row: number, col: number): number => (rotation * ROWS + row) * COLS + col;
-
 /**
- * The placements reachable by a **pure spin** — rotation (the descending {@link spin}
- * law), soft-drop and raise anywhere, but lateral movement ONLY at the entry row.
- * This is "rotate the piece into the slot and let it settle straight down its
- * column"; it deliberately CANNOT slide a piece sideways once it has descended.
- *
- * The set is used to split `spin` placements into pure spins (reachable here) and
- * **spintucks** (a spin that ALSO needs a lateral tuck at depth — not reachable
- * here; see {@link isSpintuck}).
+ * A position-independent key for an orientation's cell **shape** — used to tell
+ * whether two rotations are genuinely different shapes. Pieces with repeated
+ * orientations (O has one shape; S/Z/I have two) collapse to the same key, so a
+ * piece resting in a rotation that matches its spawn shape counts as "no rotation
+ * needed".
  */
-function pureSpinReachable(grid: Grid, piece: Piece): Set<number> {
-  const states = reachableStates(grid, piece);
-  const reach = new Set(states.map((s) => spinKey(s.rotation, s.row, s.col)));
-  const canReach = (rot: number, r: number, c: number): boolean =>
-    r >= 0 && r < ROWS && c >= 0 && c < COLS && reach.has(spinKey(rot, r, c));
-  const rotations = ORIENTATIONS[piece].length;
-  const seen = new Set<number>();
-  const queue: RestingPlacement[] = [];
-  const seed = (s: RestingPlacement): void => {
-    const k = spinKey(s.rotation, s.row, s.col);
-    if (seen.has(k)) return;
-    seen.add(k);
-    queue.push(s);
-  };
-  for (let rotation = 0; rotation < rotations; rotation++)
-    for (let col = 0; col < COLS; col++) if (canReach(rotation, 0, col)) seed({ rotation, row: 0, col });
-  for (let i = 0; i < queue.length; i++) {
-    const { rotation, row, col } = queue[i];
-    if (row === 0) {
-      // lateral allowed ONLY at the entry row (positioning), never at depth
-      for (const dir of [-1, 1] as const) {
-        const n = lateralMove(grid, piece, rotation, row, col, dir, states);
-        if (n) seed(n);
-      }
-    }
-    if (canReach(rotation, row + 1, col)) seed({ rotation, row: row + 1, col }); // soft-drop
-    if (canReach(rotation, row - 1, col)) seed({ rotation, row: row - 1, col }); // raise
-    if (rotations > 1)
-      for (const dir of ['cw', 'ccw'] as const) {
-        const n = spin(grid, piece, rotation, row, col, dir, states);
-        if (n) seed(n);
-      }
-  }
-  return seen;
-}
+const orientShapeKey = (piece: Piece, rotation: number): string =>
+  pieceCells(piece, rotation, 0, 0)
+    .map(([r, c]) => `${r},${c}`)
+    .sort()
+    .join('|');
 
 /**
- * A **spintuck**: a single move that is BOTH a spin and a tuck — the piece must
- * rotate AND slide under an overhang at depth to reach `placement`. Formally, it
- * is a `spin` (needs a rotation; not translation-reachable) that is reachable by
- * the full play input ({@link inputReachableRestingPlacements}) yet NOT by a pure
- * spin ({@link pureSpinReachable}, rotate-then-descend with no lateral at depth) —
- * so a lateral tuck after the rotation is required. A pure spin (e.g. a t-spin
- * that screws straight down a column) returns `false`.
+ * A **spintuck**: a single move that is BOTH a spin and a tuck — the piece is
+ * rotated out of its spawn orientation AND slid under an overhang to reach
+ * `placement`. Formally it is a `tuck` (a non-hard-drop placement reachable by
+ * sliding under a lip) whose resting orientation differs in **shape** from the
+ * spawn orientation (rotation 0), so a rotation was required to fit.
+ *
+ * A plain tuck that keeps the spawn shape (an O, or a flat piece slid in
+ * unrotated) returns `false`. A spin that screws straight down a column with no
+ * lateral tuck is a `spin`, not a spintuck. This matches the owner's definition:
+ * "one move that is both a spin and a tuck" — the rotation may happen at the top
+ * before the slide; what matters is that the placement both rotated and tucked.
  */
 export function isSpintuck(grid: Grid, piece: Piece, placement: RestingPlacement): boolean {
-  if (maneuver(grid, piece, placement) !== 'spin') return false;
-  const reachable = inputReachableRestingPlacements(grid, piece).some(
-    (p) => p.rotation === placement.rotation && p.row === placement.row && p.col === placement.col,
-  );
-  if (!reachable) return false;
-  return !pureSpinReachable(grid, piece).has(spinKey(placement.rotation, placement.row, placement.col));
+  if (maneuver(grid, piece, placement) !== 'tuck') return false;
+  return orientShapeKey(piece, placement.rotation) !== orientShapeKey(piece, 0);
 }
 
 // --- Single-piece dependencies + avoid-<piece> contrast tags (#90) ----------
@@ -464,16 +425,20 @@ export function tagPuzzle(
   // tuck / spin / t-spin: a non-hard-drop placement, split by translation-reachability.
   for (const [piece, grid, pl] of [[piece1, start, p1], [piece2, board1, p2]] as const) {
     const m = maneuver(grid, piece, pl);
-    if (m === 'tuck') tags.add('tuck');
-    else if (m === 'spin') {
+    if (m === 'tuck') {
+      tags.add('tuck');
+      // A spintuck is a tuck that also rotated: also tag spin + <piece>-spin so a
+      // spintuck reads as spintuck + tuck + spin + j-spin etc. (owner's request).
+      if (isSpintuck(grid, piece, pl)) {
+        tags.add('spintuck');
+        tags.add('spin');
+        const spinTag = SPIN_TAG[piece];
+        if (spinTag) tags.add(spinTag);
+      }
+    } else if (m === 'spin') {
       tags.add('spin');
       const spinTag = SPIN_TAG[piece];
       if (spinTag) tags.add(spinTag);
-      // A spintuck is a spin that also tucks: tag it spintuck AND tuck (#spintuck).
-      if (isSpintuck(grid, piece, pl)) {
-        tags.add('spintuck');
-        tags.add('tuck');
-      }
     }
   }
 

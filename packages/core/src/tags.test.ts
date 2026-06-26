@@ -106,7 +106,7 @@ describe('tagPuzzle (#81)', () => {
     expect(tags).toContain('tetris-ready');
   });
 
-  it('tuck: an I slid under an overhang into a deep pocket', () => {
+  it('a VERTICAL I slid under an overhang into a pocket is a spintuck (rotated + tucked)', () => {
     const start = board([
       [10, 4],
       [10, 5],
@@ -121,7 +121,10 @@ describe('tagPuzzle (#81)', () => {
     expect(restingLineForEntry(start, 'I', 'O', entry)).not.toBeNull();
     const tags = tagPuzzle(start, 'I', 'O', entry);
     expect(tags).toContain('tuck');
-    expect(tags).not.toContain('spin');
+    // The I is rotated out of spawn (horizontal) into a vertical tuck → spintuck,
+    // which also reads as spin. (I has no per-piece <piece>-spin tag.)
+    expect(tags).toContain('spintuck');
+    expect(tags).toContain('spin');
   });
 
   it('spin: a T rotated at depth into a pocket (not translation-reachable)', () => {
@@ -142,25 +145,32 @@ describe('tagPuzzle (#81)', () => {
     expect(tags).not.toContain('tuck');
   });
 
-  it('spintuck: a spin that ALSO needs a lateral tuck at depth → spintuck + spin + tuck + <piece>-spin', () => {
-    // A T that must rotate AND slide under an overhang to reach its rest (a single
-    // spin+tuck move) — found by an exhaustive reachability search.
-    const start = decodeBoard(
-      '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000010000010000000001010000010111000000111000011110100011011101101111001110',
-    );
-    const p1: RestingPlacement = { rotation: 0, row: 13, col: 1 };
-    expect(maneuver(start, 'T', p1)).toBe('spin'); // needs a rotation
-    expect(isSpintuck(start, 'T', p1)).toBe(true); // and a lateral tuck at depth
+  it('spintuck: a tuck that also rotated (J pointing down, slid under a lip) → spintuck + spin + tuck + j-spin', () => {
+    // Owner's board: a J rotates to "pointing down" (rot2) and slides LEFT under
+    // the row-12 lip into the 2-deep notch — one move that is both a spin and a
+    // tuck. The rotation happens up top, then a lateral tuck; what makes it a
+    // spintuck is that the placement both rotated out of spawn shape AND tucked.
+    let start = emptyBoard();
+    start = fillRows(start, 11, 11, [0, 1]);
+    start = fillRows(start, 12, 12, [0, 1, 2, 3]);
+    start = fillRows(start, 13, 13, [0, 1]);
+    start = fillRows(start, 14, 14, [0, 1, 2, 3]);
+    start = fillRows(start, 15, 16, [0, 1, 2, 3, 4, 5, 6]);
+    start = fillRows(start, 17, 17, [0, 1, 2, 3, 4, 5, 6, 7]);
+    start = fillRows(start, 18, 19, [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const p1: RestingPlacement = { rotation: 2, row: 13, col: 2 };
+    expect(maneuver(start, 'J', p1)).toBe('tuck'); // rotate-at-top, then slide under the lip
+    expect(isSpintuck(start, 'J', p1)).toBe(true); // and it rotated out of spawn shape
 
-    const b1 = applyRestingPlacement(start, 'T', p1);
-    const p2 = hardDrop(b1, 'O', 0, 8);
-    const entry = entryFor(start, 'T', p1, 'O', p2);
-    expect(restingLineForEntry(start, 'T', 'O', entry)).not.toBeNull();
-    const tags = tagPuzzle(start, 'T', 'O', entry);
+    const b1 = applyRestingPlacement(start, 'J', p1);
+    const p2 = hardDrop(b1, 'O', 0, 0);
+    const entry = entryFor(start, 'J', p1, 'O', p2);
+    expect(restingLineForEntry(start, 'J', 'O', entry)).not.toBeNull();
+    const tags = tagPuzzle(start, 'J', 'O', entry);
     expect(tags).toContain('spintuck');
-    expect(tags).toContain('spin');
-    expect(tags).toContain('tuck'); // a spintuck is also a tuck
-    expect(tags).toContain('t-spin');
+    expect(tags).toContain('spin'); // a spintuck reads as spin too
+    expect(tags).toContain('tuck'); // and tuck
+    expect(tags).toContain('j-spin'); // and the per-piece spin tag
   });
 
   it('a PURE spin (rotate straight down a pocket) is NOT a spintuck', () => {
@@ -169,10 +179,19 @@ describe('tagPuzzle (#81)', () => {
     );
     const p1: RestingPlacement = { rotation: 3, row: 15, col: 6 };
     expect(maneuver(start, 'T', p1)).toBe('spin');
-    expect(isSpintuck(start, 'T', p1)).toBe(false); // reachable by rotate-then-descend, no tuck
+    expect(isSpintuck(start, 'T', p1)).toBe(false); // a spin (no lateral tuck) is never a spintuck
   });
 
-  it('hard-drops and pure tucks are never spintucks', () => {
+  it('a tuck in SPAWN orientation (horizontal I under a lip) is NOT a spintuck', () => {
+    let start = emptyBoard();
+    start = fillRows(start, 15, 15, [0, 1, 2, 3]); // roof
+    start = fillRows(start, 19, 19, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]); // floor
+    const pl: RestingPlacement = { rotation: 0, row: 18, col: 0 }; // slid left under the roof
+    expect(maneuver(start, 'I', pl)).toBe('tuck');
+    expect(isSpintuck(start, 'I', pl)).toBe(false); // same shape as spawn → no rotation needed
+  });
+
+  it('hard-drops are never spintucks', () => {
     const start = emptyBoard();
     expect(isSpintuck(start, 'O', hardDrop(start, 'O', 0, 0))).toBe(false);
   });
