@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { boardMetrics, emptyBoard, encodeBoard } from '@trainer/core';
+import { boardMetrics, emptyBoard, encodeBoard, type PuzzleTag } from '@trainer/core';
 import { selectMatchmadePuzzle, distinctRecent } from './matchmaking.js';
 import type { Puzzle } from './types.js';
 
-/** A puzzle stub carrying just an id and rating — all selection looks at. */
-function puzzleAt(id: string, rating: number): Puzzle {
+/** A puzzle stub carrying just an id, rating, and (for #99) type-tags. */
+function puzzleAt(id: string, rating: number, tags: PuzzleTag[] = []): Puzzle {
   const board = encodeBoard(emptyBoard());
   return {
     id,
@@ -20,7 +20,7 @@ function puzzleAt(id: string, rating: number): Puzzle {
     glicko: { rating, deviation: 350, volatility: 0.06 },
     colors: '',
     combos: { entries: [], total: 0 },
-    tags: [],
+    tags,
     acceptCount: null,
     margin: null,
     firstValues: [],
@@ -118,6 +118,79 @@ describe('selectMatchmadePuzzle (#44)', () => {
     });
     expect(picked).not.toBeNull();
     expect(['near-a', 'near-b']).toContain(picked!.id);
+  });
+});
+
+describe('anti-streak de-clustering by type (#99)', () => {
+  // Three in-band puzzles around 1500: two tucks and one spin.
+  const typedBank = [
+    puzzleAt('tuck-a', 1480, ['tuck']),
+    puzzleAt('tuck-b', 1520, ['tuck', 'clean-stacking']),
+    puzzleAt('spin-c', 1500, ['spin']),
+  ];
+
+  it('down-weights a just-served type so a different type is favored', async () => {
+    const { fetch } = bankFetcher(typedBank);
+    // Last two serves were tucks: the two tucks are penalized (0.35² each), the
+    // spin keeps weight 1, so the mid-RNG draw lands in the spin's larger mass.
+    const declustered = await selectMatchmadePuzzle(fetch, {
+      rating: 1500,
+      band: 100,
+      recentTags: ['tuck', 'tuck'],
+      random: () => 0.5,
+    });
+    expect(declustered!.id).toBe('spin-c');
+
+    // The SAME RNG with no recent-type history is a plain uniform pick — proving
+    // it is the weighting, not the RNG, that changed the outcome.
+    const uniform = await selectMatchmadePuzzle(fetch, {
+      rating: 1500,
+      band: 100,
+      random: () => 0.5,
+    });
+    expect(uniform!.id).toBe('tuck-b'); // floor(0.5 * 3) = index 1
+  });
+
+  it('still serves a type when the whole band is that type (never starves)', async () => {
+    const allTucks = [puzzleAt('t1', 1490, ['tuck']), puzzleAt('t2', 1510, ['tuck'])];
+    const { fetch } = bankFetcher(allTucks);
+    for (const r of [0, 0.5, 0.99]) {
+      const picked = await selectMatchmadePuzzle(fetch, {
+        rating: 1500,
+        band: 100,
+        recentTags: ['tuck', 'tuck', 'tuck'],
+        random: () => r,
+      });
+      expect(['t1', 't2']).toContain(picked!.id);
+    }
+  });
+
+  it('is a plain uniform pick when no recent types are supplied', async () => {
+    const { fetch } = bankFetcher(typedBank);
+    const picked = await selectMatchmadePuzzle(fetch, {
+      rating: 1500,
+      band: 100,
+      random: () => 0.5,
+    });
+    expect(picked!.id).toBe('tuck-b'); // floor(0.5 * 3) = index 1, unweighted
+  });
+
+  it('reads a multi-tag puzzle by its headline type (a spin+tuck reads as spin)', async () => {
+    // dominantTag prioritizes the maneuver; a ['tuck','spin'] puzzle reads as a
+    // spin here, distinct from a plain tuck, so a tuck streak does not suppress it.
+    const mixed = [
+      puzzleAt('plain-tuck', 1490, ['tuck']),
+      puzzleAt('spin-piece', 1510, ['spin', 'tuck']),
+    ];
+    const { fetch } = bankFetcher(mixed);
+    const picked = await selectMatchmadePuzzle(fetch, {
+      rating: 1500,
+      band: 100,
+      recentTags: ['tuck', 'tuck'],
+      random: () => 0.5,
+    });
+    // plain-tuck penalized (0.35²≈0.1225), spin-piece weight 1 → mid draw → spin.
+    expect(picked!.id).toBe('spin-piece');
   });
 });
 

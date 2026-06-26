@@ -59,6 +59,7 @@ function countingDb(): { db: PlayDb; calls: () => number } {
       ratings.set(rating.userId, rating);
       return rating;
     },
+    async updatePuzzleRating() {},
     async getPuzzleSolveStats() {
       return { total: 0, solved: 0 };
     },

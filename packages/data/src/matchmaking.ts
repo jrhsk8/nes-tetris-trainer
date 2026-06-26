@@ -9,13 +9,33 @@
  * Domain: .claude/docs/glossary.md "Matchmaking" / "Anti-repeat cooldown".
  */
 
+import { dominantTag } from '@trainer/core';
 import type { Puzzle } from './types.js';
+
+/**
+ * Anti-streak de-clustering (#99): each recent serve sharing a candidate's
+ * headline type ({@link dominantTag}) multiplies that candidate's pick weight by
+ * this factor, so back-to-back same-type runs fade while the pick stays random
+ * and never excludes a type (a band of one type still serves it).
+ */
+export const ANTISTREAK_PENALTY = 0.35;
+/** How many of the most-recent serves the anti-streak weighs (newest-first). */
+export const ANTISTREAK_WINDOW = 5;
 
 export interface MatchmakeOptions {
   /** The player's current rating; the band is centred here. */
   rating: number;
   /** Puzzle ids to exclude — the recently-seen cooldown window. */
   recentIds?: readonly string[];
+  /**
+   * Headline types ({@link dominantTag}) of the most-recently-served puzzles,
+   * newest-first, for anti-streak de-clustering (#99). A candidate is down-
+   * weighted (not excluded) once per recent serve of its type. Absent/empty =
+   * plain uniform pick (unchanged behaviour).
+   */
+  recentTags?: readonly string[];
+  /** Per-recent-overlap weight multiplier for the anti-streak (default {@link ANTISTREAK_PENALTY}). */
+  streakPenalty?: number;
   /** Initial band half-width (default 100). */
   band?: number;
   /** Stop widening once the half-width reaches this (default 1200). */
@@ -27,12 +47,45 @@ export interface MatchmakeOptions {
 }
 
 /**
+ * Pick one puzzle from `pool`, down-weighting candidates whose headline type
+ * ({@link dominantTag}) appears among `recentTags`: weight = `penalty ^ (number
+ * of recent serves of that type)`. With no recent tags (or `penalty >= 1`) this
+ * is a uniform pick. Weights are always positive, so de-clustering never starves
+ * a band that holds only one type — it just spreads types out when others exist.
+ */
+function pickDeclustered(
+  pool: Puzzle[],
+  recentTags: readonly string[] | undefined,
+  penalty: number,
+  rng: () => number,
+): Puzzle | null {
+  if (pool.length === 0) return null;
+  if (!recentTags || recentTags.length === 0 || penalty >= 1) {
+    return pool[Math.floor(rng() * pool.length)] ?? null;
+  }
+  const recentCounts = new Map<string, number>();
+  for (const t of recentTags) recentCounts.set(t, (recentCounts.get(t) ?? 0) + 1);
+
+  const weights = pool.map((p) => penalty ** (recentCounts.get(dominantTag(p.tags)) ?? 0));
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (total <= 0) return pool[Math.floor(rng() * pool.length)] ?? null;
+
+  let r = rng() * total;
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r < 0) return pool[i];
+  }
+  return pool[pool.length - 1] ?? null;
+}
+
+/**
  * Choose one puzzle whose rating sits near the player's, excluding cooldown ids.
  *
  * `fetchInBand(min, max)` returns every puzzle whose rating lies in `[min, max]`.
  * The band starts at `opts.band` and doubles until it holds at least
  * `minCandidates` puzzles outside the cooldown, or the `maxBand` cap is hit. One
- * candidate is then picked uniformly at random. When the band reaches the cap
+ * candidate is then picked at random, de-clustered by type when `opts.recentTags`
+ * is supplied (#99) — see {@link pickDeclustered}. When the band reaches the cap
  * with only cooldown puzzles in range, the cooldown is relaxed as a last resort
  * (a stale puzzle beats an empty board), so this returns `null` only when no
  * puzzle exists in range at all.
@@ -58,8 +111,7 @@ export async function selectMatchmadePuzzle(
 
   // Relax the cooldown only when nothing else is left in range.
   const pool = candidates.length > 0 ? candidates : inBand;
-  if (pool.length === 0) return null;
-  return pool[Math.floor(rng() * pool.length)] ?? null;
+  return pickDeclustered(pool, opts.recentTags, opts.streakPenalty ?? ANTISTREAK_PENALTY, rng);
 }
 
 /**

@@ -457,3 +457,48 @@ export function tagPuzzle(
 
   return [...tags];
 }
+
+// --- Headline type for anti-streak de-clustering (#99) -----------------------
+
+/**
+ * De-clustering priority over the closed tag set: a puzzle carries several tags,
+ * but a player perceives it as ONE "type", and that is the type matchmaking
+ * de-clusters on (so you do not get the same kind three times running). Order =
+ * most salient first: the maneuver (the trainer's whole point) over the clear
+ * goal over the stacking shape over an avoid-dependency contrast. Specific spins
+ * precede the umbrella `spin` so a T-spin reads as `t-spin`, and `spintuck`
+ * precedes `tuck`/`spin` so it reads as itself.
+ */
+const DOMINANT_TAG_PRIORITY: readonly PuzzleTag[] = [
+  'spintuck',
+  't-spin',
+  's-spin',
+  'z-spin',
+  'l-spin',
+  'j-spin',
+  'spin',
+  'tuck',
+  'dig',
+  'tetris',
+  'burn',
+  'tetris-ready',
+  'well-maintenance',
+  'clean-stacking',
+  'avoid-i-dependency',
+  'avoid-s-dependency',
+  'avoid-z-dependency',
+  'avoid-j-dependency',
+  'avoid-l-dependency',
+];
+
+/**
+ * The single **headline type** a puzzle reads as, for matchmaking's anti-streak
+ * de-clustering (#99): the highest-priority tag it carries (see {@link
+ * DOMINANT_TAG_PRIORITY}), or `'plain'` when it has no tags. Pure and total — the
+ * de-cluster weighting in `@trainer/data` compares these so consecutive serves
+ * vary by type without ever excluding a type (a band of one type still serves).
+ */
+export function dominantTag(tags: readonly PuzzleTag[]): PuzzleTag | 'plain' {
+  for (const t of DOMINANT_TAG_PRIORITY) if (tags.includes(t)) return t;
+  return 'plain';
+}

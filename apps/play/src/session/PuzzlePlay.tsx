@@ -7,13 +7,14 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   RECENT_PUZZLE_WINDOW,
+  ANTISTREAK_WINDOW,
   SEED_RATING,
   dueMisses,
   shouldInjectMiss,
   type DataAccess,
   type Puzzle,
 } from '@trainer/data';
-import type { PuzzleTag } from '@trainer/core';
+import { dominantTag, type PuzzleTag } from '@trainer/core';
 import { PuzzleSession } from './PuzzleSession.js';
 import { PlayScreen } from './PlayScreen.js';
 import { type KeyBindings } from '../board/keybindings.js';
@@ -29,6 +30,7 @@ export type PlayDb = Pick<
   | 'getMissPuzzleIds'
   | 'getUserRating'
   | 'upsertUserRating'
+  | 'updatePuzzleRating'
   | 'insertAttempt'
   | 'getPuzzleSolveStats'
   | 'upsertStarRating'
@@ -118,6 +120,12 @@ export function PuzzlePlay({
   // distinct ids), then kept current in memory by prepending each served id.
   const recentRef = useRef<string[]>([]);
   const windowLoadedRef = useRef(false);
+
+  // Anti-streak de-clustering (#99): the headline types ({@link dominantTag}) of
+  // the most-recent serves, newest-first (capped at ANTISTREAK_WINDOW). Fed to
+  // matchmaking so consecutive picks vary by type instead of clustering on one.
+  // In-memory only (session-scoped) — a short streak window needs no persistence.
+  const recentTagsRef = useRef<string[]>([]);
 
   // A shared puzzle to open first (#49), consumed once: after the shared puzzle
   // (or an invalid number that fell back), "Next" returns to matchmaking.
@@ -211,7 +219,11 @@ export function PuzzlePlay({
           }
           if (!next) {
             const rating = (await db.getUserRating(userId))?.rating ?? SEED_RATING;
-            next = await db.getMatchmadePuzzle({ rating, recentIds: recentRef.current });
+            next = await db.getMatchmadePuzzle({
+              rating,
+              recentIds: recentRef.current,
+              recentTags: recentTagsRef.current,
+            });
           }
         }
       }
@@ -223,6 +235,12 @@ export function PuzzlePlay({
         recentRef.current = [served, ...recentRef.current.filter((id) => id !== served)].slice(
           0,
           RECENT_WINDOW,
+        );
+        // Anti-streak (#99): record this serve's headline type so the next
+        // matchmade pick steers away from a run of the same type.
+        recentTagsRef.current = [dominantTag(next.tags), ...recentTagsRef.current].slice(
+          0,
+          ANTISTREAK_WINDOW,
         );
       }
       setPuzzle(next);

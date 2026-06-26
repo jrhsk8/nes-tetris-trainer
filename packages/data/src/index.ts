@@ -20,7 +20,12 @@ export {
   MAX_UPLOAD_BYTES,
 } from './image-sniff.js';
 export type { AllowedImageMime } from './image-sniff.js';
-export { selectMatchmadePuzzle, distinctRecent } from './matchmaking.js';
+export {
+  selectMatchmadePuzzle,
+  distinctRecent,
+  ANTISTREAK_PENALTY,
+  ANTISTREAK_WINDOW,
+} from './matchmaking.js';
 export type { MatchmakeOptions } from './matchmaking.js';
 export { missPuzzleIds, dueMisses, shouldInjectMiss, MISS_INJECT_RATE } from './misses.js';
 export type { MissAttempt } from './misses.js';

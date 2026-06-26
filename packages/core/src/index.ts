@@ -66,6 +66,7 @@ export {
 
 export {
   tagPuzzle,
+  dominantTag,
   maneuver,
   isSpintuck,
   WELL_DEPTH,

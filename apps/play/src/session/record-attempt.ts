@@ -12,7 +12,11 @@ import { applyAttempt, attemptOutcome, seedRating, updateRatings } from '@traine
 
 export type RecordAttemptDb = Pick<
   DataAccess,
-  'getUserRating' | 'upsertUserRating' | 'insertAttempt' | 'getPuzzleSolveStats'
+  | 'getUserRating'
+  | 'upsertUserRating'
+  | 'updatePuzzleRating'
+  | 'insertAttempt'
+  | 'getPuzzleSolveStats'
 >;
 
 export interface AttemptResult {
@@ -58,6 +62,15 @@ export async function recordAttempt(
       ratingAfter: applied.after.rating,
     });
     rating = { before: applied.before, after: applied.after, delta: applied.delta };
+    // Persist the puzzle's live (boosted) rating drift (#99) so puzzles filter
+    // up/down in real time, like the player. Best-effort: the player update and
+    // the attempt row are already committed, so a puzzle-write hiccup must not
+    // undo them — the offline tally reconciles any lost/raced write later.
+    try {
+      await db.updatePuzzleRating(puzzle.id, applied.puzzle);
+    } catch (e) {
+      console.error('puzzle rating persistence failed:', e);
+    }
   } catch (err) {
     console.error('attempt/rating persistence failed:', err);
     const update = updateRatings(seedRating(), puzzle.glicko, outcome);

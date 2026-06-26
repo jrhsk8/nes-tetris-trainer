@@ -49,6 +49,7 @@ function makePuzzle(): Puzzle {
 function fakeDb() {
   const ratings = new Map<string, UserRating>();
   const attempts: NewAttempt[] = [];
+  const puzzleRatings: { id: string; rating: number }[] = [];
   const db: SessionDb = {
     async getUserRating(userId) {
       return ratings.get(userId) ?? null;
@@ -56,6 +57,9 @@ function fakeDb() {
     async upsertUserRating(rating) {
       ratings.set(rating.userId, rating);
       return rating;
+    },
+    async updatePuzzleRating(id, glicko) {
+      puzzleRatings.push({ id, rating: glicko.rating });
     },
     async insertAttempt(attempt): Promise<Attempt> {
       attempts.push(attempt);
@@ -85,7 +89,7 @@ function fakeDb() {
     async setPuzzleActive() {},
     async getCurationTagStats() { return []; },
   };
-  return { db, ratings, attempts };
+  return { db, ratings, attempts, puzzleRatings };
 }
 
 /** Drive the on-screen outline to `target`, settle it to rest, and confirm (#89). */
@@ -113,7 +117,7 @@ describe('PuzzleSession (headline play loop)', () => {
   it('plays a puzzle to a solved outcome with a positive rating change, recording the attempt', async () => {
     const user = userEvent.setup();
     const puzzle = makePuzzle();
-    const { db, attempts, ratings } = fakeDb();
+    const { db, attempts, ratings, puzzleRatings } = fakeDb();
     render(<PuzzleSession puzzle={puzzle} userId="u1" db={db} />);
 
     // Next piece is shown alongside the first piece.
@@ -131,6 +135,10 @@ describe('PuzzleSession (headline play loop)', () => {
     expect(attempts[0].userLine).toHaveLength(2);
     // The new (higher) rating was persisted.
     expect(ratings.get('u1')!.rating).toBeGreaterThan(1500);
+    // The puzzle's rating was persisted LIVE (#99): a solve drives it DOWN.
+    expect(puzzleRatings).toHaveLength(1);
+    expect(puzzleRatings[0].id).toBe(puzzle.id);
+    expect(puzzleRatings[0].rating).toBeLessThan(1500);
   });
 
   it('still plays both pieces after a wrong first move, grading the combo as Incorrect', async () => {
@@ -170,7 +178,7 @@ describe('PuzzleSession (headline play loop)', () => {
   it('drill mode grades + shows feedback but writes NO rating and NO attempt (#85)', async () => {
     const user = userEvent.setup();
     const puzzle = makePuzzle();
-    const { db, attempts, ratings } = fakeDb();
+    const { db, attempts, ratings, puzzleRatings } = fakeDb();
     render(<PuzzleSession puzzle={puzzle} userId="u4" db={db} drill />);
 
     await place(user, puzzle.optimalLine[0]); // correct first placement
@@ -181,8 +189,10 @@ describe('PuzzleSession (headline play loop)', () => {
     // …flagged as unrated practice, with no rating delta shown.
     expect(screen.getByTestId('drill-note')).toBeInTheDocument();
     expect(screen.queryByTestId('rating-change')).not.toBeInTheDocument();
-    // The ephemeral attempt moved neither rating nor the attempts table.
+    // The ephemeral attempt moved neither rating nor the attempts table — and,
+    // being unrated, left the puzzle's rating untouched too (#99).
     expect(attempts).toHaveLength(0);
     expect(ratings.get('u4')).toBeUndefined();
+    expect(puzzleRatings).toHaveLength(0);
   });
 });

@@ -68,6 +68,7 @@ function prefsDb(initial: UserPrefs | null, upserts: UserPrefs[]): AccountDb {
     async upsertUserRating(r) {
       return { userId: r.userId, rating: 1500, deviation: 200, volatility: 0.06 };
     },
+    async updatePuzzleRating() {},
     async insertAttempt() {
       throw new Error('not used');
     },

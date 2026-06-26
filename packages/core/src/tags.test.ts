@@ -7,6 +7,7 @@ import {
   boardKey,
   restingLineForEntry,
   tagPuzzle,
+  dominantTag,
   maneuver,
   isSpintuck,
   singlePieceDependencies,
@@ -55,6 +56,33 @@ function entryFor(
   const b2 = applyRestingPlacement(b1, piece2, p2);
   return { rot1: p1.rotation, col1: p1.col, rot2: p2.rotation, col2: p2.col, score: 100, boardKey: boardKey(b2) };
 }
+
+describe('dominantTag (headline type for anti-streak de-clustering, #99)', () => {
+  it('returns "plain" for an untagged puzzle', () => {
+    expect(dominantTag([])).toBe('plain');
+  });
+
+  it('prefers a maneuver over the clear goal and the stacking shape', () => {
+    expect(dominantTag(['burn', 'tuck'])).toBe('tuck');
+    expect(dominantTag(['clean-stacking', 'spin'])).toBe('spin');
+    expect(dominantTag(['tetris-ready', 'dig'])).toBe('dig');
+  });
+
+  it('reads a spintuck (tuck+spin+spintuck) as "spintuck", and a t-spin as "t-spin"', () => {
+    expect(dominantTag(['tuck', 'spin', 'spintuck', 't-spin'])).toBe('spintuck');
+    expect(dominantTag(['spin', 't-spin'])).toBe('t-spin');
+  });
+
+  it('falls back through clear → stack → avoid when no maneuver is present', () => {
+    expect(dominantTag(['tetris', 'tetris-ready'])).toBe('tetris');
+    expect(dominantTag(['clean-stacking'])).toBe('clean-stacking');
+    expect(dominantTag(['avoid-i-dependency'])).toBe('avoid-i-dependency');
+  });
+
+  it('is deterministic regardless of input tag order', () => {
+    expect(dominantTag(['t-spin', 'tuck', 'spin'])).toBe(dominantTag(['spin', 'tuck', 't-spin']));
+  });
+});
 
 describe('tagPuzzle (#81)', () => {
   it('clean-stacking: two flat O drops on an empty board, no clears, no holes', () => {

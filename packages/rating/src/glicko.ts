@@ -19,6 +19,50 @@ import {
 /** Glicko-2 system constant (tau) constraining volatility change. */
 export const GLICKO_TAU = 0.5;
 
+// --- Placement boost (#99) ---
+// Strong-early-then-settle: a fresh player/puzzle (RD 350) should move hard so it
+// reaches a fitting rating fast, then taper as it settles — the USCF dynamic-K
+// idea layered on Glicko-2. We ride the boost on the subject's RD (which already
+// shrinks with games and needs no extra column): a linear multiplier from
+// PLACEMENT_BOOST_MAX at the seed RD down to 1× once RD ≤ SETTLED_DEVIATION (the
+// Lichess "provisional" boundary). Only the rating delta is amplified — RD and
+// volatility keep their Glicko-computed values, so the boost decays on its own as
+// the rating settles. A per-attempt cap keeps one fluke from teleporting a rating.
+// Constants tuned by simulation against glicko2-lite (see .claude/docs/decisions.md).
+
+/** Boost multiplier on the rating move at the seed RD (350); decays to 1× as RD shrinks. */
+export const PLACEMENT_BOOST_MAX = 3.0;
+/** RD at/below which the placement boost is fully off (1×) — the settled / "provisional-ends" line. */
+export const SETTLED_DEVIATION = 110;
+/** Hard cap on a single boosted rating move, so no one attempt teleports a rating. */
+export const MAX_BOOSTED_DELTA = 160;
+
+/**
+ * The placement-boost multiplier for a subject whose pre-attempt rating deviation
+ * is `deviation`: {@link PLACEMENT_BOOST_MAX} at the seed RD, ramping linearly down
+ * to `1` at {@link SETTLED_DEVIATION} and staying `1` below it. So early attempts
+ * (high RD) move strongly and the boost fades as the rating settles (#99).
+ */
+export function placementBoost(deviation: number): number {
+  const span = SEED_DEVIATION - SETTLED_DEVIATION;
+  if (span <= 0) return 1;
+  const t = Math.min(Math.max((deviation - SETTLED_DEVIATION) / span, 0), 1);
+  return 1 + (PLACEMENT_BOOST_MAX - 1) * t;
+}
+
+/**
+ * Apply the placement boost to one side of an attempt: amplify the Glicko move
+ * `after.rating - before.rating` by {@link placementBoost} of the pre-attempt RD,
+ * capped at ±{@link MAX_BOOSTED_DELTA}, while keeping the Glicko-computed RD and
+ * volatility. At a settled RD the boost is 1× and this is a no-op (#99).
+ */
+export function boostMove(before: Glicko, after: Glicko): Glicko {
+  const raw = after.rating - before.rating;
+  const boosted = raw * placementBoost(before.deviation);
+  const capped = Math.max(-MAX_BOOSTED_DELTA, Math.min(MAX_BOOSTED_DELTA, boosted));
+  return { ...after, rating: before.rating + capped };
+}
+
 // --- Graded reward curve (#51) ---
 // The rating signal is the combo's 0–100 quality, not a binary pass/fail. The
 // curve is gentle above the accept bar (a near-best answer earns a little) and
@@ -114,7 +158,7 @@ export interface AttemptRatingResult {
   after: Glicko;
   /** Signed rating change, positive on a win. */
   delta: number;
-  /** The puzzle's new rating (computed; persistence wired for later). */
+  /** The puzzle's new (boosted) rating — persisted live by the app (#99). */
   puzzle: Glicko;
 }
 
@@ -129,8 +173,10 @@ export function seedRating(): Glicko {
  * update against the puzzle's rating for the given `outcome` (the player-
  * perspective Glicko score in `[0,1]` — usually {@link scoreToOutcome} of the
  * attempt's combo score), writes the player's new rating, and returns the
- * change. The puzzle's drifted rating is computed and returned but not yet
- * persisted (deferred until there is enough traffic — PRD "Rating").
+ * change. Both sides get the placement boost (#99) so a fresh player/puzzle
+ * converges fast then settles. The puzzle's boosted drift is returned for the app
+ * to persist live (see `apps/play` record-attempt) — that is what now filters
+ * puzzles up/down in real time, rather than the offline tally alone.
  */
 export async function applyAttempt(
   db: Pick<DataAccess, 'getUserRating' | 'upsertUserRating'>,
@@ -144,12 +190,14 @@ export async function applyAttempt(
     : seedRating();
 
   const update = updateRatings(before, puzzleRating, outcome);
-  await db.upsertUserRating({ userId, ...update.user });
+  const userAfter = boostMove(before, update.user);
+  const puzzleAfter = boostMove(puzzleRating, update.puzzle);
+  await db.upsertUserRating({ userId, ...userAfter });
 
   return {
     before,
-    after: update.user,
-    delta: update.user.rating - before.rating,
-    puzzle: update.puzzle,
+    after: userAfter,
+    delta: userAfter.rating - before.rating,
+    puzzle: puzzleAfter,
   };
 }
