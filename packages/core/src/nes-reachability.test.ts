@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { emptyBoard, decodeBoard, type Grid } from './board.js';
 import { slideReachableAtSpeed, spinReachableAtSpeed } from './nes-reachability.js';
-import { maneuver, isSpintuck } from './tags.js';
+import { maneuver, isSpintuck } from './maneuver.js';
 import type { RestingPlacement } from './placement.js';
 
 /** Fill every column in `cols` over the inclusive row range [r0,r1]. */

@@ -47,6 +47,8 @@ export type { RestingPlacement } from './placement.js';
 
 export { slideReachableAtSpeed, spinReachableAtSpeed } from './nes-reachability.js';
 
+export { maneuver, isSpintuck } from './maneuver.js';
+
 export { columnHeights, aggregateHeight, bumpiness, holes, boardMetrics } from './metrics.js';
 export type { BoardMetrics } from './metrics.js';
 
@@ -67,8 +69,6 @@ export {
 export {
   tagPuzzle,
   dominantTag,
-  maneuver,
-  isSpintuck,
   WELL_DEPTH,
   singlePieceDependencies,
   AVOID_DEPENDENCY_TAG,

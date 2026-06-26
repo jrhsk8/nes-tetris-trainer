@@ -1,7 +1,7 @@
 /**
  * NES 19+ reachability — a movement model that captures the *timing* of real NES
  * play at level 19, used to tell a **spintuck** apart from a plain tuck (see
- * {@link isSpintuck} in tags.ts).
+ * {@link isSpintuck} in maneuver.ts).
  *
  * The owner's definition: a spintuck is a placement you can only reach at 19+
  * speed by rotating the piece into its cells **at the last second** — you cannot
