@@ -1,9 +1,10 @@
 /**
  * Next-piece box (#22, #23, #63) — the NES-style "NEXT" panel in the right rail
  * while solving placement 1. It draws the next piece as the real NES block
- * graphic (spawn orientation, colour group, reusing the level-18 sprites in
- * `nes.ts`) inside a fixed-size recessed black well that matches the board
- * well's border/shadow.
+ * graphic, in the piece's TRUE NES next-box orientation (J/L/T point down, S/Z
+ * and the I bar lie flat, O is the square), its colour group, reusing the
+ * level-18 sprites in `nes.ts`, inside a fixed-size recessed black well that
+ * matches the board well's border/shadow.
  *
  * The well has a CONSTANT footprint — a fixed `FOOT_ROWS × FOOT_COLS` cell grid
  * at the board's cell scale — and the piece is centred within it, so the box
@@ -22,14 +23,22 @@ export interface NextPieceBoxProps {
   piece: Piece | null;
 }
 
-// The fixed well footprint: 4 wide × 2 tall holds every spawn orientation (the
+// The fixed well footprint: 4 wide × 2 tall holds every next-box orientation (the
 // flat I is 4×1, the rest 3×2 or 2×2) centred, so the box never resizes (#63).
 const FOOT_COLS = 4;
 const FOOT_ROWS = 2;
 
-/** The spawn-orientation cells of `piece` and the bounding box that holds them. */
+/**
+ * The orientation index each piece shows in the NES "NEXT" box, true to the ROM:
+ * J/L/T point down (the 3-bar on top), S/Z and the I bar lie flat, O is the
+ * square. Our rotation-0 table differs (J/L/T rot-0 point UP), so the down
+ * orientation is index 2; the flat S/Z/I and the O are already index 0.
+ */
+const NEXT_BOX_ROTATION: Record<Piece, number> = { O: 0, I: 0, S: 0, Z: 0, T: 2, J: 2, L: 2 };
+
+/** The next-box-orientation cells of `piece` and the bounding box that holds them. */
 function spawnShape(piece: Piece): { rows: number; cols: number; filled: Set<string> } {
-  const cells = ORIENTATIONS[piece][0];
+  const cells = ORIENTATIONS[piece][NEXT_BOX_ROTATION[piece]];
   let rows = 0;
   let cols = 0;
   const filled = new Set<string>();
@@ -67,6 +76,7 @@ export function NextPieceBox({ piece }: NextPieceBoxProps) {
             return (
               <div
                 key={`${r}-${c}`}
+                data-cell={`${r}-${c}`}
                 data-testid={isFilled ? 'next-filled' : 'next-empty'}
                 className={`next-cell ${isFilled ? 'next-cell-filled' : 'next-cell-empty'}`}
                 style={{

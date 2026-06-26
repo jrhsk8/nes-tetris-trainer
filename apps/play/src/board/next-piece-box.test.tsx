@@ -41,4 +41,40 @@ describe('NextPieceBox', () => {
     expect(screen.queryByTestId('next-piece')).toBeNull();
     expect(screen.queryAllByTestId('next-filled')).toHaveLength(0);
   });
+
+  // The footprint is 2 rows × 4 cols; a filled cell carries data-cell="row-col".
+  const filledCells = () =>
+    screen.getAllByTestId('next-filled').map((el) => el.getAttribute('data-cell')).sort();
+
+  it('shows pieces in their true NES next-box orientations', () => {
+    // T like the letter T (3-bar on top, stem down-centre).
+    cleanup();
+    render(<NextPieceBox piece="T" />);
+    expect(filledCells()).toEqual(['0-0', '0-1', '0-2', '1-1']);
+
+    // J points down (3-bar on top, foot down-right).
+    cleanup();
+    render(<NextPieceBox piece="J" />);
+    expect(filledCells()).toEqual(['0-0', '0-1', '0-2', '1-2']);
+
+    // L points down (3-bar on top, foot down-left).
+    cleanup();
+    render(<NextPieceBox piece="L" />);
+    expect(filledCells()).toEqual(['0-0', '0-1', '0-2', '1-0']);
+
+    // I bar lies flat.
+    cleanup();
+    render(<NextPieceBox piece="I" />);
+    expect(filledCells()).toEqual(['0-0', '0-1', '0-2', '0-3']);
+
+    // S lies flat.
+    cleanup();
+    render(<NextPieceBox piece="S" />);
+    expect(filledCells()).toEqual(['0-1', '0-2', '1-0', '1-1']);
+
+    // Z lies flat.
+    cleanup();
+    render(<NextPieceBox piece="Z" />);
+    expect(filledCells()).toEqual(['0-0', '0-1', '1-1', '1-2']);
+  });
 });
