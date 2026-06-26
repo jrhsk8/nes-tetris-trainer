@@ -44,6 +44,7 @@ import {
   type RestingPlacement,
 } from '@trainer/core';
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
+import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
 import { filterByConsensus, type ConsensusJudge } from './pipeline/consensus.js';
 import { isNearDuplicate, boardHamming, type BankKey } from './pipeline/dedup.js';
@@ -190,6 +191,7 @@ async function main(): Promise<void> {
     const man = findDigManeuver(board);
     if (!man) continue;
     constructed++;
+    if (!isNaturalBoard(board)) { rejections['unnatural-board'] = (rejections['unnatural-board'] ?? 0) + 1; continue; }
     // In-batch variety: reject boards too close to one already accepted (any pieces).
     if (acceptedBoards.some((ab) => boardHamming(ab, board) <= BATCH_MIN_HAMMING)) { rejections['batch-near-dup'] = (rejections['batch-near-dup'] ?? 0) + 1; continue; }
     // Bank dedup (same pieces, the production criterion).

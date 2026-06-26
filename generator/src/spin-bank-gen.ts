@@ -32,6 +32,7 @@ import {
 } from '@trainer/core';
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
 import { StackRabbitClient } from './engine/index.js';
+import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
 import { filterByConsensus, type ConsensusJudge } from './pipeline/consensus.js';
 import { isNearDuplicate, type BankKey } from './pipeline/dedup.js';
@@ -121,6 +122,7 @@ async function main() {
     if (!v) continue;
     if ((perCol.get(v.slotCol) ?? 0) >= PER_COL_CAP) continue;
     constructed++;
+    if (!isNaturalBoard(con.board)) { rejections['unnatural-board'] = (rejections['unnatural-board'] ?? 0) + 1; continue; }
     const candidate: Candidate = {
       board: cloneBoard(con.board),
       colors: syntheticColors(con.board),

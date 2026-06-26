@@ -33,6 +33,7 @@ import {
   type Piece,
 } from '@trainer/core';
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
+import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
 import { filterByConsensus, type ConsensusJudge } from './pipeline/consensus.js';
 import { isNearDuplicate, type BankKey } from './pipeline/dedup.js';
@@ -167,6 +168,7 @@ async function main(): Promise<void> {
     const con = constructSZDigSpin();
     if (!con) continue;
     constructed++;
+    if (!isNaturalBoard(con.board)) { rejections['unnatural-board'] = (rejections['unnatural-board'] ?? 0) + 1; continue; }
     const candidate: Candidate = { board: cloneBoard(con.board), colors: syntheticColors(con.board), currentPiece: con.piece1, nextPiece: 'O', level: 18, lines: 0 };
     let result;
     try {

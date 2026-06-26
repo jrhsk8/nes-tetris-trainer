@@ -52,6 +52,7 @@ import type { NewPuzzle } from '@trainer/data';
 import { StackRabbitClient } from './engine/index.js';
 import { toHardDropPlacement } from './selfplay/self-play.js';
 import type { Candidate } from './selfplay/board-source.js';
+import { isNaturalBoard } from './board-natural.js';
 import {
   assemblePuzzle,
   type GenerationConfig,
@@ -341,6 +342,7 @@ async function main(): Promise<void> {
 
     const board = await buildBoard(engine);
     boardsTried++;
+    if (!isNaturalBoard(board)) { rejections['unnatural-board'] = (rejections['unnatural-board'] ?? 0) + 1; continue; }
 
     // Try all 49 piece pairs on this board
     for (const p1 of PIECES) {

@@ -49,6 +49,7 @@ import {
   type Piece,
 } from '@trainer/core';
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
+import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
 import { boardHamming, type BankKey, isNearDuplicate } from './pipeline/dedup.js';
 import type { ConsensusKeyRow, ConsensusVerdict } from './pipeline/consensus.js';
@@ -192,6 +193,7 @@ async function main(): Promise<void> {
     if (boardMetrics(after).holes > boardMetrics(v.board).holes) continue;
     if (tetrisReady(v.board) || !tetrisReady(after)) continue;
     constructed++;
+    if (!isNaturalBoard(v.board)) { rejections['unnatural-board'] = (rejections['unnatural-board'] ?? 0) + 1; continue; }
     if (acceptedBoards.some((ab) => boardHamming(ab, v.board) <= BATCH_MIN_HAMMING)) { rejections['batch-near-dup'] = (rejections['batch-near-dup'] ?? 0) + 1; continue; }
     if (isNearDuplicate({ piece1: 'I', piece2: 'O', board: v.board }, existingKeys, config.dedupMaxHamming)) { rejections['bank-dup'] = (rejections['bank-dup'] ?? 0) + 1; continue; }
 
