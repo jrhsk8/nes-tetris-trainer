@@ -22,7 +22,7 @@ import {
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
 import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
-import { filterByConsensus } from './pipeline/consensus.js';
+import { finishWithConsensus } from './pipeline/bank-insert.js';
 import { isNearDuplicate, type BankKey } from './pipeline/dedup.js';
 import { loadRepoEnv, createBetaTetrisJudge, createManagedStackRabbit, loadActiveBankKeys } from './gen-harness.js';
 import { constructTSpinDouble, coreVerify } from './spin-seed-gen.js';
@@ -107,25 +107,16 @@ async function main() {
   console.log(`assembled ${survivors.length} spin puzzles from ${constructed} constructions`);
   console.log(`rejections:`, rejections);
 
-  // BetaTetris 7/7 consensus
-  const consensus = await filterByConsensus(survivors, judge, { existing: existingKeys, maxHamming: config.dedupMaxHamming });
-  console.log(`\nBetaTetris consensus: kept ${consensus.kept.length}/${survivors.length} (rate ${(consensus.keepRate * 100).toFixed(0)}%, bt-errors ${consensus.btErrors})`);
-  const dropReasons: Record<string, number> = {};
-  for (const d of consensus.dropped) dropReasons[d.reason] = (dropReasons[d.reason] ?? 0) + 1;
-  if (consensus.dropped.length) console.log(`  dropped:`, dropReasons);
-
-  const kept = consensus.kept;
-  const tagsOf = (p: { tags?: readonly string[] | null }) => (p.tags ?? []).filter((t) => t.endsWith('-spin') || t === 'spin').join('+');
-  if (dryRun) {
-    console.log(`\n--dry-run: would insert ${kept.length} engine-agreed spin puzzles:`);
-    for (const p of kept) console.log(`  ${p.piece1}+${p.piece2} [${(p.tags ?? []).join(',')}]`);
-  } else if (kept.length) {
-    const stored = await db.insertPuzzles(kept);
-    console.log(`\ninserted ${stored.length} spin puzzles:`);
-    for (const p of stored) console.log(`  #${p.number} ${p.piece1}+${p.piece2} (${tagsOf(p)})`);
-  } else {
-    console.log(`\nnothing to insert`);
-  }
+  // BetaTetris 7/7 consensus + insert (the shared generator tail).
+  await finishWithConsensus(survivors, {
+    judge,
+    existingKeys,
+    maxHamming: config.dedupMaxHamming,
+    db,
+    dryRun,
+    label: 'spin puzzles',
+    describe: (p) => (p.tags ?? []).filter((t) => t.endsWith('-spin') || t === 'spin').join('+'),
+  });
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

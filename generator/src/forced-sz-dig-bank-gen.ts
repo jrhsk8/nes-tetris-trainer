@@ -27,7 +27,7 @@ import {
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
 import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
-import { filterByConsensus } from './pipeline/consensus.js';
+import { finishWithConsensus } from './pipeline/bank-insert.js';
 import { isNearDuplicate, type BankKey } from './pipeline/dedup.js';
 import { loadRepoEnv, createBetaTetrisJudge, createManagedStackRabbit, loadActiveBankKeys } from './gen-harness.js';
 import type { Candidate } from './selfplay/board-source.js';
@@ -147,21 +147,14 @@ async function main(): Promise<void> {
   }
   console.log(`assembled ${survivors.length} S/Z dig-spin puzzles from ${constructed} constructions`);
   console.log('rejections:', rejections);
-  const consensus = await filterByConsensus(survivors, judge, { existing: existingKeys, maxHamming: config.dedupMaxHamming });
-  console.log(`\nBetaTetris consensus: kept ${consensus.kept.length}/${survivors.length} (rate ${(consensus.keepRate * 100).toFixed(0)}%, bt-errors ${consensus.btErrors})`);
-  const dr: Record<string, number> = {};
-  for (const d of consensus.dropped) dr[d.reason] = (dr[d.reason] ?? 0) + 1;
-  if (consensus.dropped.length) console.log('  dropped:', dr);
-  const kept = consensus.kept;
-  if (dryRun) {
-    console.log(`\n--dry-run: would insert ${kept.length} S/Z dig-spins:`);
-    for (const p of kept) console.log(`  ${p.piece1}+${p.piece2} [${(p.tags ?? []).join(',')}]`);
-  } else if (kept.length) {
-    const stored = await db.insertPuzzles(kept);
-    console.log(`\ninserted ${stored.length}:`);
-    for (const p of stored) console.log(`  #${p.number} ${p.piece1}+${p.piece2} (${(p.tags ?? []).filter((t) => t.endsWith('-spin')).join('+')})`);
-  } else {
-    console.log('\nnothing to insert');
-  }
+  await finishWithConsensus(survivors, {
+    judge,
+    existingKeys,
+    maxHamming: config.dedupMaxHamming,
+    db,
+    dryRun,
+    label: 'S/Z dig-spins',
+    describe: (p) => (p.tags ?? []).filter((t) => t.endsWith('-spin')).join('+'),
+  });
 }
 main().catch((e) => { console.error(e); process.exit(1); });
