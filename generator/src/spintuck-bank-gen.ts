@@ -28,7 +28,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  emptyBoard,
   cloneBoard,
   decodeBoard,
   emptyColorGrid,
@@ -43,6 +42,8 @@ import {
   type RestingPlacement,
 } from '@trainer/core';
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
+import { constructSpintuckBoard } from './spintuck-board.js';
+import { isNaturalBoard, floatingCellCount } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
 import { filterByConsensus, type ConsensusJudge } from './pipeline/consensus.js';
 import { type BankKey } from './pipeline/dedup.js';
@@ -67,34 +68,6 @@ if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY required');
 const R = (n: number) => Math.floor(Math.random() * n);
 const cc = (b: Grid) => b.reduce((n, r) => n + r.reduce((a, c) => a + (c ? 1 : 0), 0), 0);
 const fr = (b: Grid) => b.filter((r) => r.every((c) => c)).length;
-
-/** A varied, overhang-rich board: random heights, covered pockets, and lips (tucks need lips). */
-function variedBoard(): Grid {
-  const b = emptyBoard();
-  const base = 10 + R(7);
-  const rough = 1 + R(3);
-  const h: number[] = [];
-  for (let c = 0; c < 10; c++) h[c] = Math.max(4, Math.min(19, base + R(rough + 1) - R(rough + 1)));
-  for (let c = 0; c < 10; c++) for (let r = 19; r >= h[c]; r--) b[r][c] = 1;
-  for (let k = 0; k < 2 + R(3); k++) {
-    const c = R(10);
-    const r = h[c] + R(3);
-    if (r >= 0 && r <= 19) {
-      b[r][c] = 0;
-      if (R(2) && r + 1 <= 19) b[r + 1][c] = 0;
-    }
-  }
-  for (let k = 0; k < 2 + R(3); k++) {
-    const c = R(10);
-    let s = 0;
-    while (s < 20 && !b[s]?.[c]) s++;
-    if (s >= 2 && s < 19) {
-      b[s - 1][c] = 1; // lip
-      b[s][c] = 0; // pocket under the lip
-    }
-  }
-  return b;
-}
 
 /** Find a reachable spintuck on `b` (preferring a hole-reducing dig). */
 function findSpintuck(b: Grid): { piece: Piece; placement: RestingPlacement; dig: boolean } | null {
@@ -232,8 +205,9 @@ async function main(): Promise<void> {
       break;
     }
     constructed++;
-    const board = variedBoard();
+    const board = constructSpintuckBoard();
     if (fr(board) > 0 || cc(board) % 2 !== 0) continue;
+    if (!isNaturalBoard(board, 6)) { rejections['unnatural-board'] = (rejections['unnatural-board'] ?? 0) + 1; continue; }
     const st = findSpintuck(board);
     if (!st) continue;
     // Random framing for anti-give-away variety (--framing p1|p2|mix overrides).
@@ -291,7 +265,15 @@ async function main(): Promise<void> {
 
   if (dryRun) {
     console.log(`\n--dry-run: would insert ${kept.length} spintucks:`);
-    for (const p of kept) console.log(`  ${p.piece1}+${p.piece2} [${(p.tags ?? []).join(',')}]`);
+    for (const p of kept) {
+      const g = decodeBoard(p.board);
+      console.log(`  ${p.piece1}+${p.piece2} [${(p.tags ?? []).join(',')}]  floatingCells=${floatingCellCount(g)}`);
+      for (let r = 0; r < 20; r++) {
+        let s = '';
+        for (let c = 0; c < 10; c++) s += g[r][c] ? (r < 19 && !g[r + 1][c] ? '@' : '#') : '.';
+        if (s.includes('#') || s.includes('@')) console.log('    ' + s);
+      }
+    }
   } else if (kept.length) {
     const stored = await db.insertPuzzles(kept);
     console.log(`\ninserted ${stored.length} spintucks:`);
