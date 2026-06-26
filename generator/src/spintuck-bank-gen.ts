@@ -21,7 +21,7 @@
 // @ts-expect-error - ws has no types here
 import ws from 'ws';
 Object.assign(globalThis, { WebSocket: globalThis.WebSocket ?? ws });
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -161,8 +161,47 @@ const judge: ConsensusJudge = async (rows) => {
 };
 
 async function main(): Promise<void> {
-  const engine = new StackRabbitClient({ baseUrl: process.env.STACKRABBIT_URL ?? 'http://127.0.0.1:3000' });
-  if (!(await engine.ping())) throw new Error('StackRabbit not reachable (start it first)');
+  const engineUrl = process.env.STACKRABBIT_URL ?? 'http://127.0.0.1:3000';
+  const engine = new StackRabbitClient({ baseUrl: engineUrl });
+
+  // Auto-start / auto-restart StackRabbit — it segfaults on messy high-hole
+  // boards, so a long run must survive crashes (ported from tuck-gen).
+  const srDir = join(root, 'engines', 'stackrabbit');
+  const srApp = join(srDir, 'built', 'src', 'server', 'app.js');
+  const sr: { proc: ChildProcess | null } = { proc: null };
+  let consecutiveCrashes = 0;
+  const MAX_CONSECUTIVE_CRASHES = 5;
+  function killEngine(): void {
+    if (!sr.proc) return;
+    const pid = sr.proc.pid;
+    sr.proc.kill('SIGKILL');
+    sr.proc = null;
+    if (pid && process.platform === 'win32') {
+      try { spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' }); } catch {}
+    }
+  }
+  async function ensureEngine(): Promise<boolean> {
+    if (await engine.ping()) { consecutiveCrashes = 0; return true; }
+    consecutiveCrashes++;
+    if (consecutiveCrashes > MAX_CONSECUTIVE_CRASHES) return false;
+    killEngine();
+    console.log(`(re)starting StackRabbit… (crash #${consecutiveCrashes})`);
+    try {
+      sr.proc = spawn(process.execPath, [srApp], { cwd: srDir, env: { ...process.env, PORT: '3000' }, stdio: 'ignore' });
+      sr.proc.on('error', () => { sr.proc = null; });
+      sr.proc.on('exit', () => { sr.proc = null; });
+    } catch { return false; }
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      if (await engine.ping()) { consecutiveCrashes = 0; return true; }
+    }
+    return false;
+  }
+  process.on('exit', killEngine);
+  process.on('SIGINT', () => { killEngine(); process.exit(1); });
+  process.on('SIGTERM', () => { killEngine(); process.exit(1); });
+  if (!(await ensureEngine())) throw new Error(`StackRabbit not reachable at ${engineUrl}`);
+
   const client = createSupabaseClient(supabaseUrl, serviceKey);
   const db = createDataAccess(client);
   const existingKeys: BankKey[] = [];
@@ -187,6 +226,10 @@ async function main(): Promise<void> {
   let constructed = 0;
   const cap = target * 4000; // spintucks are rare (~0.03% of boards), so the pure search dominates
   while (survivors.length < target && constructed < cap) {
+    if (!(await ensureEngine())) {
+      console.log('too many consecutive StackRabbit crashes — aborting early');
+      break;
+    }
     constructed++;
     const board = variedBoard();
     if (fr(board) > 0 || cc(board) % 2 !== 0) continue;
@@ -217,7 +260,7 @@ async function main(): Promise<void> {
       result = await assemblePuzzle(engine, candidate, config);
     } catch {
       rejections['engine-error'] = (rejections['engine-error'] ?? 0) + 1;
-      if (!(await engine.ping())) throw new Error('StackRabbit died mid-run');
+      await ensureEngine(); // restart on crash and keep going
       continue;
     }
     if (!result.ok) { rejections[result.reason] = (rejections[result.reason] ?? 0) + 1; continue; }
