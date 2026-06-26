@@ -23,6 +23,7 @@ import {
   enumerateResting,
   type RestingPlacement,
 } from './placement.js';
+import { slideReachableAtSpeed, spinReachableAtSpeed } from './nes-reachability.js';
 import { columnHeights, holes } from './metrics.js';
 import type { ComboEntry, ComboTable } from './combo.js';
 import { restingLineForEntry, lockAndClear, lineClearsTetris } from './combo-replay.js';
@@ -189,34 +190,31 @@ export function maneuver(
 }
 
 /**
- * A position-independent key for an orientation's cell **shape** — used to tell
- * whether two rotations are genuinely different shapes. Pieces with repeated
- * orientations (O has one shape; S/Z/I have two) collapse to the same key, so a
- * piece resting in a rotation that matches its spawn shape counts as "no rotation
- * needed".
- */
-const orientShapeKey = (piece: Piece, rotation: number): string =>
-  pieceCells(piece, rotation, 0, 0)
-    .map(([r, c]) => `${r},${c}`)
-    .sort()
-    .join('|');
-
-/**
- * A **spintuck**: a single move that is BOTH a spin and a tuck — the piece is
- * rotated out of its spawn orientation AND slid under an overhang to reach
- * `placement`. Formally it is a `tuck` (a non-hard-drop placement reachable by
- * sliding under a lip) whose resting orientation differs in **shape** from the
- * spawn orientation (rotation 0), so a rotation was required to fit.
+ * A **spintuck**: a placement you can only reach at NES level-19 speed by
+ * rotating the piece into its cells **at the last second** — "the spin comes last
+ * second". Formally:
  *
- * A plain tuck that keeps the spawn shape (an O, or a flat piece slid in
- * unrotated) returns `false`. A spin that screws straight down a column with no
- * lateral tuck is a `spin`, not a spintuck. This matches the owner's definition:
- * "one move that is both a spin and a tuck" — the rotation may happen at the top
- * before the slide; what matters is that the placement both rotated and tucked.
+ *  1. It is an idealized `tuck` (the final cells sit under an overhang and are
+ *     slide-reachable given unlimited time). This excludes pure `spin`s (a screw
+ *     straight down a pocket with no lateral travel — that stays `spin`) and
+ *     hard-drops.
+ *  2. It is NOT {@link slideReachableAtSpeed}: at level 19, DAS-only, you cannot
+ *     slide it under the lip in time pre-rotated (it needs more than the one
+ *     under-cover shift you can land before it locks).
+ *  3. It IS {@link spinReachableAtSpeed}: a last-second rotation at depth DOES
+ *     seat it. This excludes placements that are simply impossible at speed —
+ *     e.g. an O that would need a two-cell under-lip slide (an O cannot rotate, so
+ *     no trick saves it; that is an unreachable tuck, not a spintuck).
+ *
+ * So a pre-rotated drop into a 1-deep notch is a plain tuck (slide-reachable at
+ * speed); the owner's J — rotated to point down and seated under a row-above lip
+ * into a 2-wide pocket — is a spintuck (the under-lip slide is too slow at 19, the
+ * spin is not).
  */
 export function isSpintuck(grid: Grid, piece: Piece, placement: RestingPlacement): boolean {
   if (maneuver(grid, piece, placement) !== 'tuck') return false;
-  return orientShapeKey(piece, placement.rotation) !== orientShapeKey(piece, 0);
+  if (slideReachableAtSpeed(grid, piece, placement)) return false;
+  return spinReachableAtSpeed(grid, piece, placement);
 }
 
 // --- Single-piece dependencies + avoid-<piece> contrast tags (#90) ----------

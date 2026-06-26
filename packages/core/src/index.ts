@@ -45,6 +45,8 @@ export {
 } from './placement.js';
 export type { RestingPlacement } from './placement.js';
 
+export { slideReachableAtSpeed, spinReachableAtSpeed } from './nes-reachability.js';
+
 export { columnHeights, aggregateHeight, bumpiness, holes, boardMetrics } from './metrics.js';
 export type { BoardMetrics } from './metrics.js';
 

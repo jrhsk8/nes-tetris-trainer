@@ -106,7 +106,7 @@ describe('tagPuzzle (#81)', () => {
     expect(tags).toContain('tetris-ready');
   });
 
-  it('a VERTICAL I slid under an overhang into a pocket is a spintuck (rotated + tucked)', () => {
+  it('tuck: a PRE-ROTATED vertical I slid one column under a lip (NOT a spintuck)', () => {
     const start = board([
       [10, 4],
       [10, 5],
@@ -121,10 +121,9 @@ describe('tagPuzzle (#81)', () => {
     expect(restingLineForEntry(start, 'I', 'O', entry)).not.toBeNull();
     const tags = tagPuzzle(start, 'I', 'O', entry);
     expect(tags).toContain('tuck');
-    // The I is rotated out of spawn (horizontal) into a vertical tuck → spintuck,
-    // which also reads as spin. (I has no per-piece <piece>-spin tag.)
-    expect(tags).toContain('spintuck');
-    expect(tags).toContain('spin');
+    // The I enters col 4 with a SINGLE under-lip shift (from the ledge-free col 3),
+    // so it's slide-reachable at 19 speed pre-rotated — a plain tuck, not a spintuck.
+    expect(tags).not.toContain('spintuck');
   });
 
   it('spin: a T rotated at depth into a pocket (not translation-reachable)', () => {
@@ -182,13 +181,15 @@ describe('tagPuzzle (#81)', () => {
     expect(isSpintuck(start, 'T', p1)).toBe(false); // a spin (no lateral tuck) is never a spintuck
   });
 
-  it('a tuck in SPAWN orientation (horizontal I under a lip) is NOT a spintuck', () => {
+  it('a horizontal I that would need a multi-cell slide under a wide roof is NOT a spintuck', () => {
     let start = emptyBoard();
     start = fillRows(start, 15, 15, [0, 1, 2, 3]); // roof
     start = fillRows(start, 19, 19, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]); // floor
-    const pl: RestingPlacement = { rotation: 0, row: 18, col: 0 }; // slid left under the roof
-    expect(maneuver(start, 'I', pl)).toBe('tuck');
-    expect(isSpintuck(start, 'I', pl)).toBe(false); // same shape as spawn → no rotation needed
+    const pl: RestingPlacement = { rotation: 0, row: 18, col: 0 }; // 4-wide, fully under the roof
+    expect(maneuver(start, 'I', pl)).toBe('tuck'); // slide-reachable given unlimited time
+    // …but at 19 speed it needs 4 under-roof shifts (impossible) and no rotation
+    // seats a horizontal I there — an impossible-at-speed tuck, not a spintuck.
+    expect(isSpintuck(start, 'I', pl)).toBe(false);
   });
 
   it('hard-drops are never spintucks', () => {
