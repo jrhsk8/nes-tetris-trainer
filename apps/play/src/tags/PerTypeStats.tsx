@@ -5,7 +5,7 @@
  */
 
 import { perTypeStats, type TaggedAttempt } from './tagStats.js';
-import { TAG_VOCAB } from './tagVocab.js';
+import { tagDisplay } from './tagVocab.js';
 
 export function PerTypeStats({ attempts }: { attempts: readonly TaggedAttempt[] }) {
   const stats = perTypeStats(attempts);
@@ -27,7 +27,7 @@ export function PerTypeStats({ attempts }: { attempts: readonly TaggedAttempt[] 
           <tbody>
             {stats.map((s) => (
               <tr key={s.tag} data-tag={s.tag}>
-                <td>{TAG_VOCAB[s.tag].label}</td>
+                <td>{tagDisplay(s.tag).label}</td>
                 <td>{s.attempts}</td>
                 <td>{Math.round(s.solveRate * 100)}%</td>
               </tr>

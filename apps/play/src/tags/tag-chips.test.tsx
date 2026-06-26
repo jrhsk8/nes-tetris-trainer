@@ -29,4 +29,16 @@ describe('TagChips (#84)', () => {
     render(<TagChips tags={[]} />);
     expect(screen.queryByTestId('tag-chips')).not.toBeInTheDocument();
   });
+
+  it('degrades gracefully on an UNKNOWN tag instead of crashing', () => {
+    // The live bank can serve a tag newer than the deployed app (e.g. a freshly
+    // added type like 'spintuck' before a redeploy). The cast models that runtime
+    // reality (a string not in the app's PuzzleTag union). It must NOT crash.
+    const unknown = 'spintuck-future' as unknown as Parameters<typeof TagChips>[0]['tags'][number];
+    expect(() => render(<TagChips tags={['tuck', unknown]} />)).not.toThrow();
+    const chips = screen.getByTestId('tag-chips');
+    expect(chips).toHaveTextContent(TAG_VOCAB['tuck'].label);
+    expect(chips).toHaveTextContent('spintuck-future'); // raw tag as a fallback label
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
 });

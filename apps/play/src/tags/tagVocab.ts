@@ -39,7 +39,13 @@ export const TAG_VOCAB: Record<PuzzleTag, TagDisplay> = {
   'avoid-l-dependency': { label: 'Avoid L-dep', kind: 'avoid' },
 };
 
-/** The display label + colour for a tag (one source of truth). */
+/**
+ * The display label + colour for a tag (one source of truth). Falls back to the
+ * raw tag string with a neutral colour for an UNKNOWN tag — which happens when the
+ * live bank serves a tag newer than the deployed app (e.g. a freshly added puzzle
+ * type before the app redeploys). Degrading gracefully here keeps the chip render
+ * and the per-type stats from crashing on an unrecognised tag.
+ */
 export function tagDisplay(tag: PuzzleTag): TagDisplay {
-  return TAG_VOCAB[tag];
+  return TAG_VOCAB[tag] ?? { label: String(tag), kind: 'maneuver' };
 }
