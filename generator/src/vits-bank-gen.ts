@@ -22,14 +22,6 @@
  *
  *   npx tsx generator/src/vits-bank-gen.ts [--count N] [--relax K] [--dry-run]
  */
-// @ts-expect-error - ws has no types here
-import ws from 'ws';
-Object.assign(globalThis, { WebSocket: globalThis.WebSocket ?? ws });
-import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   emptyBoard,
   cloneBoard,
@@ -46,14 +38,13 @@ import {
   isInputReachable,
   ORIENTATIONS,
   type Grid,
-  type Piece,
 } from '@trainer/core';
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
 import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
-import { boardHamming, type BankKey, isNearDuplicate } from './pipeline/dedup.js';
+import { boardHamming, isNearDuplicate } from './pipeline/dedup.js';
 import type { ConsensusKeyRow, ConsensusVerdict } from './pipeline/consensus.js';
-import { StackRabbitClient } from './engine/index.js';
+import { loadRepoEnv, createBetaTetrisJudge, createManagedStackRabbit, loadActiveBankKeys } from './gen-harness.js';
 import type { Candidate } from './selfplay/board-source.js';
 
 const args = process.argv.slice(2);
@@ -63,13 +54,7 @@ const RELAX_RANK = Number(args[args.indexOf('--relax') + 1]) || 3;
 const BATCH_MIN_HAMMING = 10;
 const VERT = ORIENTATIONS.I.length - 1; // vertical I rotation
 
-const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-for (const line of readFileSync(join(root, '.env'), 'utf8').split('\n')) {
-  const t = line.trim();
-  if (!t || t.startsWith('#') || !t.includes('=')) continue;
-  const i = t.indexOf('=');
-  if (!process.env[t.slice(0, i).trim()]) process.env[t.slice(0, i).trim()] = t.slice(i + 1).trim().replace(/^['"]|['"]$/g, '');
-}
+loadRepoEnv();
 const supabaseUrl = process.env.SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY required');
@@ -116,27 +101,13 @@ function syntheticColors(board: Grid) {
   return colors;
 }
 
-const BT = join(root, 'engines', 'betatetris');
-const btEnv = {
-  ...process.env,
-  BT_HOME: BT + '\\',
-  BT_REPO_PY: join(BT, 'betatetris-tablebase', 'python'),
-  BT_MODELS: join(BT, 'models'),
-  BT_OUT: BT + '\\',
-};
 /** Run consensus.py and return raw verdicts (we read `rank` ourselves for the relaxed bar). */
+const btJudge = createBetaTetrisJudge('vits');
 async function judgeRanks(rows: ConsensusKeyRow[]): Promise<Map<string, ConsensusVerdict>> {
-  const dir = mkdtempSync(join(tmpdir(), 'bt-vits-'));
-  const inPath = join(dir, 'keys.json');
-  const outPath = join(dir, 'verdict.json');
-  writeFileSync(inPath, JSON.stringify(rows));
-  await new Promise<void>((resolve, reject) => {
-    const ch = spawn('python', [join(BT, 'consensus.py'), inPath, outPath], { env: btEnv, stdio: ['ignore', 'inherit', 'inherit'] });
-    ch.on('error', reject);
-    ch.on('close', (c) => (c === 0 ? resolve() : reject(new Error(`consensus.py exited ${c}`))));
-  });
-  const raw = JSON.parse(readFileSync(outPath, 'utf8')) as ConsensusVerdict[];
-  return new Map(raw.map((v) => [String(v.id), v] as const));
+  const verdicts = await btJudge(rows);
+  const byId = new Map<string, ConsensusVerdict>();
+  for (const v of verdicts) if (v) byId.set(String(v.id), v);
+  return byId;
 }
 
 /** Verify the stored optimal performs the reachable vertical-I tuck and leaves tetris-ready. */
@@ -157,17 +128,11 @@ function vitsOptimal(p: NewPuzzle): boolean {
 }
 
 async function main(): Promise<void> {
-  const engine = new StackRabbitClient({ baseUrl: process.env.STACKRABBIT_URL ?? 'http://127.0.0.1:3000' });
-  if (!(await engine.ping())) throw new Error('StackRabbit not reachable (start it first)');
+  const { engine, ensureEngine } = createManagedStackRabbit();
+  if (!(await ensureEngine())) throw new Error('StackRabbit not reachable at :3000');
   const client = createSupabaseClient(supabaseUrl, serviceKey);
   const db = createDataAccess(client);
-  const existingKeys: BankKey[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await client.from('puzzles').select('board, piece1, piece2').eq('active', true).range(from, from + 999);
-    if (error) throw new Error(error.message);
-    for (const r of data ?? []) existingKeys.push({ board: decodeBoard(r.board), piece1: r.piece1 as Piece, piece2: r.piece2 as Piece });
-    if (!data || data.length < 1000) break;
-  }
+  const existingKeys = await loadActiveBankKeys(client);
   console.log(`loaded ${existingKeys.length} active bank keys; target ${target} VITS; relaxed BT rank ≤ ${RELAX_RANK}${dryRun ? ' (dry-run)' : ''}`);
   const config: GenerationConfig = {
     ...DEFAULT_GENERATION_CONFIG,
@@ -203,7 +168,7 @@ async function main(): Promise<void> {
       result = await assemblePuzzle(engine, candidate, config);
     } catch {
       rejections['engine-error'] = (rejections['engine-error'] ?? 0) + 1;
-      if (!(await engine.ping())) throw new Error('StackRabbit died mid-run');
+      await ensureEngine();
       continue;
     }
     if (!result.ok) { rejections[result.reason] = (rejections[result.reason] ?? 0) + 1; continue; }

@@ -19,16 +19,7 @@
  * Env: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
  */
 
-// @ts-expect-error - ws has no type declarations here
-import ws from 'ws';
-// Node < 22 has no global WebSocket; supabase-js's realtime client needs one.
-Object.assign(globalThis, { WebSocket: globalThis.WebSocket ?? ws });
-
-import { pathToFileURL, fileURLToPath } from 'node:url';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   PIECES,
   COLS,
@@ -38,7 +29,6 @@ import {
   cloneBoard,
   emptyBoard,
   emptyColorGrid,
-  decodeBoard,
   maneuver,
   isInputReachable,
   lockAndClear,
@@ -49,7 +39,7 @@ import {
 } from '@trainer/core';
 import { createDataAccess, createSupabaseClient } from '@trainer/data';
 import type { NewPuzzle } from '@trainer/data';
-import { StackRabbitClient } from './engine/index.js';
+import type { StackRabbitClient } from './engine/index.js';
 import { toHardDropPlacement } from './selfplay/self-play.js';
 import type { Candidate } from './selfplay/board-source.js';
 import { isNaturalBoard } from './board-natural.js';
@@ -59,8 +49,11 @@ import {
   DEFAULT_GENERATION_CONFIG,
 } from './pipeline/generate.js';
 import { restingLineForEntry } from '@trainer/core';
-import { filterByConsensus, type ConsensusJudge } from './pipeline/consensus.js';
+import { filterByConsensus } from './pipeline/consensus.js';
 import { isNearDuplicate, type BankKey } from './pipeline/dedup.js';
+import { loadRepoEnv, createBetaTetrisJudge, createManagedStackRabbit, loadActiveBankKeys } from './gen-harness.js';
+
+loadRepoEnv();
 
 const TIMELINE = 'X.';
 const LEVEL = 18;
@@ -201,37 +194,6 @@ function parseArgs(): CliArgs {
   return args;
 }
 
-/**
- * Windows-safe BetaTetris consensus judge (matches the spin-bank generators):
- * spawn `python consensus.py` directly with the BT env set, rather than the
- * shared {@link betaTetrisJudge}'s `bt-run.cmd` shell, which EINVALs on modern
- * Node/Windows. `repoRoot` locates `engines/betatetris`.
- */
-function windowsSafeJudge(repoRoot: string): ConsensusJudge {
-  const BT = join(repoRoot, 'engines', 'betatetris');
-  const btEnv = {
-    ...process.env,
-    BT_HOME: BT + '\\',
-    BT_REPO_PY: join(BT, 'betatetris-tablebase', 'python'),
-    BT_MODELS: join(BT, 'models'),
-    BT_OUT: BT + '\\',
-  };
-  return async (rows) => {
-    const dir = mkdtempSync(join(tmpdir(), 'bt-tuck-'));
-    const inPath = join(dir, 'keys.json');
-    const outPath = join(dir, 'verdict.json');
-    writeFileSync(inPath, JSON.stringify(rows));
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn('python', [join(BT, 'consensus.py'), inPath, outPath], { env: btEnv, stdio: ['ignore', 'inherit', 'inherit'] });
-      child.on('error', reject);
-      child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`consensus.py exited ${code}`))));
-    });
-    const raw = JSON.parse(readFileSync(outPath, 'utf8')) as any[];
-    const byId = new Map(raw.map((v) => [v.id, v]));
-    return rows.map((r) => byId.get(r.id));
-  };
-}
-
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -242,74 +204,14 @@ async function main(): Promise<void> {
 
   const client = createSupabaseClient(supabaseUrl, key);
   const db = createDataAccess(client);
-  const engineUrl = process.env.STACKRABBIT_URL ?? 'http://127.0.0.1:3000';
-  const engine = new StackRabbitClient({ baseUrl: engineUrl });
 
-  // Auto-start StackRabbit if not already running
-  // import.meta.url is generator/src/tuck-gen.ts → up 3 levels to repo root
-  const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-  const srDir = join(repoRoot, 'engines', 'stackrabbit');
-  const srApp = join(srDir, 'built', 'src', 'server', 'app.js');
-  const sr: { proc: ChildProcess | null } = { proc: null };
-  let consecutiveCrashes = 0;
-  const MAX_CONSECUTIVE_CRASHES = 5;
-
-  function killEngine(): void {
-    if (!sr.proc) return;
-    const pid = sr.proc.pid;
-    sr.proc.kill('SIGKILL');
-    sr.proc = null;
-    // On Windows, kill the process tree (worker threads)
-    if (pid && process.platform === 'win32') {
-      try { spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' }); } catch {}
-    }
-  }
-
-  async function ensureEngine(): Promise<boolean> {
-    if (await engine.ping()) { consecutiveCrashes = 0; return true; }
-    consecutiveCrashes++;
-    if (consecutiveCrashes > MAX_CONSECUTIVE_CRASHES) {
-      console.log(`engine crashed ${consecutiveCrashes} times in a row, giving up`);
-      return false;
-    }
-    killEngine();
-    console.log(`(re)starting StackRabbit… (crash #${consecutiveCrashes})`);
-    try {
-      sr.proc = spawn(process.execPath, [srApp], {
-        cwd: srDir,
-        env: { ...process.env, PORT: '3000' },
-        stdio: 'ignore',
-      });
-      sr.proc.on('error', () => { sr.proc = null; });
-      sr.proc.on('exit', () => { sr.proc = null; });
-    } catch {
-      return false;
-    }
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      if (await engine.ping()) { consecutiveCrashes = 0; return true; }
-    }
-    return false;
-  }
-
-  // Clean up engine on exit so orphans don't linger
-  process.on('exit', killEngine);
-  process.on('SIGINT', () => { killEngine(); process.exit(1); });
-  process.on('SIGTERM', () => { killEngine(); process.exit(1); });
-
-  if (!(await ensureEngine())) throw new Error(`StackRabbit not reachable at ${engineUrl}`);
-  console.log(`engine alive at ${engineUrl}`);
+  // Managed StackRabbit on :3000 (pings + auto-restarts on crash).
+  const { engine, ensureEngine, killEngine } = createManagedStackRabbit();
+  if (!(await ensureEngine())) throw new Error('StackRabbit not reachable at :3000');
+  console.log('engine alive at :3000');
 
   // Load existing bank keys for dedup
-  const { data: existing } = await client
-    .from('puzzles')
-    .select('board, piece1, piece2')
-    .eq('active', true);
-  const existingKeys: BankKey[] = (existing ?? []).map((r: any) => ({
-    board: decodeBoard(r.board),
-    piece1: r.piece1,
-    piece2: r.piece2,
-  }));
+  const existingKeys = await loadActiveBankKeys(client);
   console.log(`loaded ${existingKeys.length} existing puzzle keys for dedup`);
 
   // Pipeline config: fast timeline, relaxed holes (overhangs create covered holes)
@@ -331,13 +233,8 @@ async function main(): Promise<void> {
 
   while (survivors.length < args.count && boardsTried < args.maxBoards) {
     if (!(await ensureEngine())) {
-      if (consecutiveCrashes > MAX_CONSECUTIVE_CRASHES) {
-        console.log('too many consecutive engine crashes — aborting');
-        break;
-      }
-      console.log('engine dead, waiting 5s…');
-      await new Promise((r) => setTimeout(r, 5000));
-      continue;
+      console.log('too many consecutive engine crashes — aborting');
+      break;
     }
 
     const board = await buildBoard(engine);
@@ -444,7 +341,7 @@ async function main(): Promise<void> {
   let finalSurvivors = survivors;
   if (args.consensus && survivors.length > 0) {
     console.log(`\nrunning BetaTetris consensus on ${survivors.length} survivors…`);
-    const judge = windowsSafeJudge(repoRoot);
+    const judge = createBetaTetrisJudge('tuck');
     const result = await filterByConsensus(survivors, judge, { existing: existingKeys, maxHamming: config.dedupMaxHamming });
     finalSurvivors = result.kept as NewPuzzle[];
     console.log(

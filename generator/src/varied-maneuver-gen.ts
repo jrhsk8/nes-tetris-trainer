@@ -19,14 +19,6 @@
  *
  *   npx tsx generator/src/varied-maneuver-gen.ts [--count N] [--dry-run]
  */
-// @ts-expect-error - ws has no types here
-import ws from 'ws';
-Object.assign(globalThis, { WebSocket: globalThis.WebSocket ?? ws });
-import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   emptyBoard,
   cloneBoard,
@@ -46,9 +38,9 @@ import {
 import { createDataAccess, createSupabaseClient, type NewPuzzle } from '@trainer/data';
 import { isNaturalBoard } from './board-natural.js';
 import { assemblePuzzle, DEFAULT_GENERATION_CONFIG, type GenerationConfig } from './pipeline/generate.js';
-import { filterByConsensus, type ConsensusJudge } from './pipeline/consensus.js';
-import { isNearDuplicate, boardHamming, type BankKey } from './pipeline/dedup.js';
-import { StackRabbitClient } from './engine/index.js';
+import { filterByConsensus } from './pipeline/consensus.js';
+import { isNearDuplicate, boardHamming } from './pipeline/dedup.js';
+import { loadRepoEnv, createBetaTetrisJudge, createManagedStackRabbit, loadActiveBankKeys } from './gen-harness.js';
 import type { Candidate } from './selfplay/board-source.js';
 
 const args = process.argv.slice(2);
@@ -57,13 +49,7 @@ const target = Number(args[args.indexOf('--count') + 1]) || 24;
 /** Reject a candidate whose board is within this many cells of any accepted board. */
 const BATCH_MIN_HAMMING = 12;
 
-const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-for (const line of readFileSync(join(root, '.env'), 'utf8').split('\n')) {
-  const t = line.trim();
-  if (!t || t.startsWith('#') || !t.includes('=')) continue;
-  const i = t.indexOf('=');
-  if (!process.env[t.slice(0, i).trim()]) process.env[t.slice(0, i).trim()] = t.slice(i + 1).trim().replace(/^['"]|['"]$/g, '');
-}
+loadRepoEnv();
 const supabaseUrl = process.env.SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY required');
@@ -122,28 +108,7 @@ function syntheticColors(board: Grid) {
   return colors;
 }
 
-const BT = join(root, 'engines', 'betatetris');
-const btEnv = {
-  ...process.env,
-  BT_HOME: BT + '\\',
-  BT_REPO_PY: join(BT, 'betatetris-tablebase', 'python'),
-  BT_MODELS: join(BT, 'models'),
-  BT_OUT: BT + '\\',
-};
-const judge: ConsensusJudge = async (rows) => {
-  const dir = mkdtempSync(join(tmpdir(), 'bt-varied-'));
-  const inPath = join(dir, 'keys.json');
-  const outPath = join(dir, 'verdict.json');
-  writeFileSync(inPath, JSON.stringify(rows));
-  await new Promise<void>((resolve, reject) => {
-    const ch = spawn('python', [join(BT, 'consensus.py'), inPath, outPath], { env: btEnv, stdio: ['ignore', 'inherit', 'inherit'] });
-    ch.on('error', reject);
-    ch.on('close', (c) => (c === 0 ? resolve() : reject(new Error(`consensus.py exited ${c}`))));
-  });
-  const raw = JSON.parse(readFileSync(outPath, 'utf8')) as any[];
-  const byId = new Map(raw.map((v) => [v.id, v]));
-  return rows.map((r) => byId.get(r.id));
-};
+const judge = createBetaTetrisJudge('varied');
 
 /** The stored optimal must perform a reachable tuck/spin on piece 1. */
 function optimalIsReachableManeuver(p: NewPuzzle): boolean {
@@ -158,17 +123,11 @@ function optimalIsReachableManeuver(p: NewPuzzle): boolean {
 }
 
 async function main(): Promise<void> {
-  const engine = new StackRabbitClient({ baseUrl: process.env.STACKRABBIT_URL ?? 'http://127.0.0.1:3000' });
-  if (!(await engine.ping())) throw new Error('StackRabbit not reachable (start it first)');
+  const { engine, ensureEngine } = createManagedStackRabbit();
+  if (!(await ensureEngine())) throw new Error('StackRabbit not reachable at :3000');
   const client = createSupabaseClient(supabaseUrl, serviceKey);
   const db = createDataAccess(client);
-  const existingKeys: BankKey[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await client.from('puzzles').select('board, piece1, piece2').eq('active', true).range(from, from + 999);
-    if (error) throw new Error(error.message);
-    for (const r of data ?? []) existingKeys.push({ board: decodeBoard(r.board), piece1: r.piece1 as Piece, piece2: r.piece2 as Piece });
-    if (!data || data.length < 1000) break;
-  }
+  const existingKeys = await loadActiveBankKeys(client);
   const existingBoards = existingKeys.map((k) => k.board);
   console.log(`loaded ${existingKeys.length} active bank keys; target ${target} varied tuck/spin${dryRun ? ' (dry-run)' : ''}`);
   const config: GenerationConfig = {
@@ -205,7 +164,7 @@ async function main(): Promise<void> {
       result = await assemblePuzzle(engine, candidate, config);
     } catch {
       rejections['engine-error'] = (rejections['engine-error'] ?? 0) + 1;
-      if (!(await engine.ping())) throw new Error('StackRabbit died mid-run');
+      await ensureEngine();
       continue;
     }
     if (!result.ok) { rejections[result.reason] = (rejections[result.reason] ?? 0) + 1; continue; }
