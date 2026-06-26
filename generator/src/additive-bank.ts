@@ -21,29 +21,17 @@
  * the backup stamp (default 20260622). Offline / generator-only.
  */
 
-import { spawnSync } from 'node:child_process';
 import { decodeBoard, type Grid } from '@trainer/core';
 import { createDataAccess, createSupabaseClient } from '@trainer/data';
 import { StackRabbitClient } from './engine/index.js';
 import { SelfPlayBoardSource } from './selfplay/index.js';
 import { betaTetrisJudge, generateBank, type BankKey } from './pipeline/index.js';
+import { backupBank, pruneOldBackups } from './bank-backup.js';
 
 interface ExistingRow {
   board: string;
   piece1: string;
   piece2: string;
-}
-
-function backupBank(databaseUrl: string, date: string): void {
-  const table = `puzzles_bak_${date}_grill6`;
-  const sql = `create table if not exists public.${table} as select * from public.puzzles;`;
-  const res = spawnSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
-    encoding: 'utf8',
-  });
-  if (res.status !== 0) {
-    throw new Error(`backup DDL failed: ${res.stderr || res.stdout || res.error?.message}`);
-  }
-  console.log(`backup ensured → ${table}`);
 }
 
 async function main(): Promise<void> {
@@ -84,7 +72,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (databaseUrl) backupBank(databaseUrl, date);
+  if (databaseUrl) {
+    backupBank(databaseUrl, `puzzles_bak_${date}_grill6`);
+    pruneOldBackups(databaseUrl);
+  }
   else console.warn('DATABASE_URL unset — skipping backup DDL (a backup already exists from #71).');
 
   const existingKeys: BankKey[] = existing.map((p) => ({

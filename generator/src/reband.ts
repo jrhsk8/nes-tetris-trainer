@@ -22,11 +22,11 @@
  * to stamp the backup table (defaults to 20260622).
  */
 
-import { spawnSync } from 'node:child_process';
 import { decodeBoard, isPiece, type Piece } from '@trainer/core';
 import type { ComboTable } from '@trainer/data';
 import { createSupabaseClient } from '@trainer/data';
 import { rebandPuzzle, DIFFICULTY_BANDS, type DifficultyBand } from './pipeline/index.js';
+import { backupBank, pruneOldBackups } from './bank-backup.js';
 
 interface BankRow {
   id: string;
@@ -43,18 +43,6 @@ function emptyBandCounts(): Record<DifficultyBand, number> {
   return { 'very-easy': 0, easy: 0, medium: 0, hard: 0 };
 }
 
-function backupBank(databaseUrl: string, date: string): void {
-  const table = `puzzles_bak_${date}_grill6`;
-  const sql = `create table if not exists public.${table} as select * from public.puzzles;`;
-  const res = spawnSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
-    encoding: 'utf8',
-  });
-  if (res.status !== 0) {
-    throw new Error(`backup DDL failed: ${res.stderr || res.stdout || res.error?.message}`);
-  }
-  console.log(`backed up bank → ${table}`);
-}
-
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -64,7 +52,10 @@ async function main(): Promise<void> {
   if (!databaseUrl && !dryRun) throw new Error('DATABASE_URL required for the backup DDL');
   const date = process.env.REBAND_DATE ?? '20260622';
 
-  if (!dryRun) backupBank(databaseUrl!, date);
+  if (!dryRun) {
+    backupBank(databaseUrl!, `puzzles_bak_${date}_grill6`);
+    pruneOldBackups(databaseUrl!);
+  }
 
   const client = createSupabaseClient(supabaseUrl, serviceKey);
   const { data, error } = await client

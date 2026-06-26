@@ -24,11 +24,11 @@
  * to stamp the backup table (defaults to 20260624).
  */
 
-import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { decodeBoard, isPiece, tagPuzzle, type Piece, type PuzzleTag } from '@trainer/core';
 import type { ComboTable } from '@trainer/data';
 import { createSupabaseClient } from '@trainer/data';
+import { backupBank, pruneOldBackups } from './bank-backup.js';
 
 export interface BankRow {
   id: string;
@@ -85,18 +85,6 @@ export function computeRetag(rows: readonly BankRow[]): RetagResult {
   return { updates, perTag, taggedPuzzles, failures };
 }
 
-function backupBank(databaseUrl: string, date: string): void {
-  const table = `puzzles_bak_${date}_retag`;
-  const sql = `create table if not exists public.${table} as select * from public.puzzles;`;
-  const res = spawnSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
-    encoding: 'utf8',
-  });
-  if (res.status !== 0) {
-    throw new Error(`backup DDL failed: ${res.stderr || res.stdout || res.error?.message}`);
-  }
-  console.log(`backed up bank → ${table}`);
-}
-
 /** Stable per-tag tally over the bank (sorted by tag for a readable report). */
 function reportCounts(perTag: Map<PuzzleTag, number>, taggedPuzzles: number, total: number): void {
   console.log(`\nper-tag counts (a puzzle may carry several tags):`);
@@ -115,7 +103,10 @@ async function main(): Promise<void> {
   if (!databaseUrl && !dryRun) throw new Error('DATABASE_URL required for the backup DDL');
   const date = process.env.RETAG_DATE ?? '20260624';
 
-  if (!dryRun) backupBank(databaseUrl!, date);
+  if (!dryRun) {
+    backupBank(databaseUrl!, `puzzles_bak_${date}_retag`);
+    pruneOldBackups(databaseUrl!);
+  }
 
   const client = createSupabaseClient(supabaseUrl, serviceKey);
   // Page past PostgREST's default 1000-row cap, or a bank over 1000 puzzles would

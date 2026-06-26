@@ -73,11 +73,11 @@ function tetrisReady(b: Grid): boolean {
  */
 function constructBoard(): Grid | null {
   const b = emptyBoard();
-  const F = 8 + R(3); // flat height 8..10 (col 7 notch = F-4 ≥ 4)
-  const peak = F + R(4); // far-left peak height
+  const F = 8 + R(3); // base height 8..10 (col 7 notch = F-4 ≥ 4)
   const h: number[] = [];
-  let cur = peak;
-  for (let c = 0; c <= 6; c++) { h[c] = cur; cur = Math.max(F, cur - 1); } // descend to F then flat
+  // cols 0–6: varied TALL columns (≥ F) so there's no clean low alternative to the
+  // notch, but the profile differs board-to-board (more distinct boards → variety).
+  for (let c = 0; c <= 6; c++) h[c] = Math.min(13, F + R(5));
   h[7] = F - 4; // deep notch
   h[8] = 1 + R(2); // pocket floor in the bottom 0–3 band
   h[9] = 0; // empty tetris well
