@@ -114,6 +114,38 @@ describe('createAuth.ensureAnonymousSession (#39)', () => {
   });
 });
 
+describe('createAuth.continueAsGuest (#39)', () => {
+  it('returns the real anonymous user when sign-in succeeds', async () => {
+    const client = {
+      auth: {
+        signInAnonymously: async () => ({
+          data: { user: { id: '11111111-1111-1111-1111-111111111111', email: null, is_anonymous: true } },
+          error: null,
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+    expect(await createAuth(client).continueAsGuest()).toEqual({
+      id: '11111111-1111-1111-1111-111111111111',
+      email: null,
+      isAnonymous: true,
+    });
+  });
+
+  it('throws — does NOT fabricate a local user — when anonymous sign-ins are disabled', async () => {
+    const client = {
+      auth: {
+        signInAnonymously: async () => ({
+          data: { user: null },
+          error: { message: 'Anonymous sign-ins are disabled' },
+        }),
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+    await expect(createAuth(client).continueAsGuest()).rejects.toThrow('Anonymous sign-ins are disabled');
+  });
+});
+
 describe('Authenticated anonymous-session gating (#39)', () => {
   it('drops a visitor with an anonymous session straight into the app', async () => {
     const auth = fakeAuth({ id: 'anon-1', email: null, isAnonymous: true });

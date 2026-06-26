@@ -22,9 +22,10 @@ export interface AuthApi {
   /** The currently signed-in user, or null. */
   currentUser(): Promise<AuthUser | null>;
   /**
-   * Force a guest session: tries Supabase anonymous sign-in first; if that
-   * fails (disabled on the project), creates a local-only guest user and
-   * fires the onChange callback so the app gates open.
+   * Start a guest session = a real Supabase ANONYMOUS sign-in (#39), so the user
+   * has a genuine UUID and their ratings/attempts persist. THROWS if the project
+   * has anonymous sign-ins disabled (enable them in the Supabase dashboard,
+   * Authentication > Sign In) — it does not fabricate an offline user.
    */
   continueAsGuest(): Promise<AuthUser>;
   /**
@@ -78,8 +79,6 @@ function toAuthUser(user: User | null | undefined): AuthUser | null {
 
 /** Build an {@link AuthApi} over a Supabase client. */
 export function createAuth(client: SupabaseClient): AuthApi {
-  let listeners: Array<(user: AuthUser | null) => void> = [];
-
   return {
     async currentUser() {
       const { data } = await client.auth.getUser();
@@ -87,17 +86,17 @@ export function createAuth(client: SupabaseClient): AuthApi {
     },
 
     async continueAsGuest() {
-      // Try real anonymous sign-in first
-      const { data: anon, error } = await client.auth.signInAnonymously();
-      if (!error && anon.user) return toAuthUser(anon.user)!;
-      // Supabase anonymous sign-ins disabled — create a local-only guest
-      const guest: AuthUser = {
-        id: `guest-${crypto.randomUUID()}`,
-        email: null,
-        isAnonymous: true,
-      };
-      for (const cb of listeners) cb(guest);
-      return guest;
+      // "Continue as guest" is a real ONLINE anonymous session (#39). If the
+      // project has anonymous sign-ins disabled, surface that error — do NOT
+      // fabricate a local user (its non-UUID id broke every user-id DB call, e.g.
+      // getUserRating). Fix: enable Anonymous sign-ins in the Supabase dashboard
+      // (Authentication > Sign In). Supabase fires onAuthStateChange on success,
+      // so the app gates open via onChange — no manual notification needed.
+      const { data, error } = await client.auth.signInAnonymously();
+      if (error || !data.user) {
+        throw new Error(error?.message ?? 'Anonymous sign-in failed');
+      }
+      return toAuthUser(data.user)!;
     },
 
     async ensureAnonymousSession() {
@@ -112,14 +111,10 @@ export function createAuth(client: SupabaseClient): AuthApi {
     },
 
     onChange(callback) {
-      listeners.push(callback);
       const { data } = client.auth.onAuthStateChange((_event, session) => {
         callback(toAuthUser(session?.user));
       });
-      return () => {
-        listeners = listeners.filter((cb) => cb !== callback);
-        data.subscription.unsubscribe();
-      };
+      return () => data.subscription.unsubscribe();
     },
 
     async signInWithEmail(email, password) {
